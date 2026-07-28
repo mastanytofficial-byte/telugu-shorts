@@ -72,6 +72,20 @@ function ensureSentenceBreaks(text, maxLen = 140) {
   return fixed.join(' ').replace(/\s+/g, ' ').trim();
 }
 
+// Final-resort extractor: pulls a "field": "value" pair out with regex when
+// the text is close to JSON but not quite parseable. Reuses JSON.parse on
+// just the matched string to correctly un-escape it.
+function extractJsonField(text, field) {
+  const re = new RegExp(`"${field}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, 's');
+  const m = text.match(re);
+  if (!m) return null;
+  try {
+    return JSON.parse(`"${m[1]}"`);
+  } catch (e) {
+    return m[1];
+  }
+}
+
 async function generateScript(article) {
   log('Generating script via Groq...');
   const prompt = `ఈ వార్త మీద YouTube Short video కోసం రెండు వేర్వేరు విషయాలు తెలుగులో తయారు చేయి: "${article.title}". ${article.description || ''}
@@ -81,23 +95,49 @@ async function generateScript(article) {
 
 జవాబును ఖచ్చితంగా ఈ JSON ఫార్మాట్‌లో మాత్రమే ఇవ్వు, మరేమీ ముందు/వెనుక రాయకు: {"headline": "...", "script": "..."}`;
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${GROQ_API_KEY}`
-    },
-    body: JSON.stringify({
+  async function callGroq(useJsonMode) {
+    const body = {
       model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' }
-    })
-  });
-  const data = await res.json();
-  if (!data.choices || !data.choices[0]) {
-    throw new Error('Groq did not return a script: ' + JSON.stringify(data));
+      messages: [{ role: 'user', content: prompt }]
+    };
+    if (useJsonMode) body.response_format = { type: 'json_object' };
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`
+      },
+      body: JSON.stringify(body)
+    });
+    return res.json();
   }
-  const raw = data.choices[0].message.content.trim();
+
+  let data = await callGroq(true);
+  let raw = null;
+
+  if (!data.choices || !data.choices[0]) {
+    // Groq's own JSON-mode validator sometimes rejects output that's
+    // actually usable — it echoes the attempt back in error.failed_generation.
+    // Try that first since it costs no extra API call.
+    const attempt = data.error && data.error.failed_generation;
+    if (attempt) {
+      log('WARNING: Groq JSON-mode validation failed, recovering content from failed_generation.');
+      // failed_generation sometimes contains raw newline/control characters
+      // embedded inside the JSON string values — that's usually WHY Groq's
+      // own validator rejected it. Strip those before attempting to parse.
+      raw = attempt.replace(/[\r\n\t]+/g, ' ').trim();
+    } else {
+      // No usable content at all — retry once without forcing JSON mode.
+      log('WARNING: Groq returned no content (' + JSON.stringify(data.error || data) + '), retrying without strict JSON mode...');
+      data = await callGroq(false);
+      if (!data.choices || !data.choices[0]) {
+        throw new Error('Groq did not return a script after retry: ' + JSON.stringify(data));
+      }
+      raw = data.choices[0].message.content.trim();
+    }
+  } else {
+    raw = data.choices[0].message.content.trim();
+  }
 
   let headline, script;
   try {
@@ -106,12 +146,24 @@ async function generateScript(article) {
     script = (parsed.script || '').trim().replace(/\n+/g, ' ');
     if (!headline || !script) throw new Error('missing headline or script field');
   } catch (e) {
-    // Fallback so one malformed JSON response doesn't fail the whole run:
-    // treat the raw reply as the script and derive an old-style headline
-    // (first few words) from it.
-    log('WARNING: Groq did not return valid JSON, falling back to plain-text parsing.');
-    script = raw.replace(/\n+/g, ' ');
-    headline = deriveHeadline(script);
+    // Full JSON parse failed. Before giving up entirely, try pulling the
+    // headline/script fields out directly with regex — this recovers cleanly
+    // structured content even when the overall JSON has a stray character
+    // somewhere that breaks strict parsing.
+    const extractedHeadline = extractJsonField(raw, 'headline');
+    const extractedScript = extractJsonField(raw, 'script');
+    if (extractedHeadline && extractedScript) {
+      log('WARNING: Full JSON parse failed, but recovered headline/script via regex extraction.');
+      headline = extractedHeadline.trim();
+      script = extractedScript.trim().replace(/\n+/g, ' ');
+    } else {
+      // Last resort so a single bad response doesn't fail the whole run:
+      // treat the raw reply as the script and derive an old-style headline
+      // (first few words) from it.
+      log('WARNING: Groq did not return valid or extractable JSON, falling back to plain-text parsing.');
+      script = raw.replace(/\n+/g, ' ');
+      headline = deriveHeadline(script);
+    }
   }
 
   script = ensureSentenceBreaks(script);
