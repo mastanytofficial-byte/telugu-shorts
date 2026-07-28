@@ -131,32 +131,65 @@ function buildVideo(headline, audioPath) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontPath = path.join(__dirname, 'fonts', 'NotoSansTelugu-Regular.ttf');
+  // Bold weight for the badge/branding/CTA — falls back to the regular font
+  // if a bold Telugu file isn't present in the repo.
+  const fontPathBoldCandidate = path.join(__dirname, 'fonts', 'NotoSansTelugu-Bold.ttf');
+  const fontPathBold = fs.existsSync(fontPathBoldCandidate) ? fontPathBoldCandidate : fontPath;
+
+  const ACCENT = '0xFFC107'; // gold/amber - brand accent (badge, channel name, progress bar)
+  const CTA = '0xE62117';    // YouTube red - subscribe button, instantly recognizable
+  const BG1 = '0x0f1024';
+  const BG2 = '0x1b2a4a';
 
   // Match the video length to the ACTUAL narration length instead of a hardcoded 30s.
-  // This is what was clipping the closing "like and share" line before.
-  const duration = getAudioDuration(audioPath) + 0.3; // small buffer so the last word/beat isn't clipped
-  log(`Audio duration: ${duration.toFixed(2)}s — video length set to match`);
+  const duration = getAudioDuration(audioPath) + 0.3;
+  const fd = duration.toFixed(2);
+  log(`Audio duration: ${fd}s — video length set to match`);
 
-  // Wrap the headline so it never overflows the left/right edges of the frame,
-  // and shrink the font a bit automatically when there are more lines.
-  const wrapped = wrapText(headline, 20);
+  // Wider lines + bigger font so the headline fills the frame instead of
+  // looking like a small paragraph floating in empty space.
+  const wrapped = wrapText(headline, 24);
   const lineCount = wrapped.split('\n').length;
-  const fontsize = lineCount > 4 ? 34 : lineCount > 2 ? 38 : 42;
+  const fontsize = lineCount <= 2 ? 56 : lineCount <= 4 ? 46 : 36;
 
-  // Write the wrapped text to a file and use drawtext's textfile= option instead of
-  // an inline text= string — far more reliable for multi-line Telugu text than
-  // trying to escape newlines inside a shell command.
   const textFilePath = path.join(WORK_DIR, 'headline.txt');
   fs.writeFileSync(textFilePath, wrapped, 'utf8');
 
+  // NOTE on drawbox positioning: inside drawbox, 'w' and 'h' in x/y expressions
+  // refer to the box's OWN width/height option (not the frame) — using them
+  // there silently pushes the box off-screen. Always use 'iw'/'ih' (input
+  // width/height) for x/y math in drawbox. drawtext does not have this
+  // problem — its 'w'/'h' correctly mean the frame's width/height.
+  const filters = [
+    'vignette',
+    // "NEWS" badge, top-left
+    `drawbox=x=40:y=60:w=120:h=44:color=${ACCENT}@0.95:t=fill`,
+    `drawtext=fontfile='${fontPathBold}':text='NEWS':fontcolor=${BG1}:fontsize=24:x=40+(120-text_w)/2:y=60+(44-text_h)/2`,
+    // Channel branding, top-center, with a thin accent underline
+    `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=32:x=(w-text_w)/2:y=140`,
+    `drawbox=x=(iw-160)/2:y=192:w=160:h=4:color=${ACCENT}@0.85:t=fill`,
+    // Headline card: shadowed text on a semi-transparent panel so it reads as
+    // a designed card, not text floating on a flat background
+    `drawtext=fontfile='${fontPath}':textfile='${textFilePath}':fontcolor=white:fontsize=${fontsize}:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=18:box=1:boxcolor=black@0.45:boxborderw=30:shadowcolor=black@0.6:shadowx=2:shadowy=2`,
+    // Subscribe CTA styled as a real button (YouTube red), with a small tagline
+    `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.95:t=fill`,
+    `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2`,
+    `drawtext=fontfile='${fontPath}':text='for daily Telugu news updates':fontcolor=white@0.75:fontsize=18:x=(w-text_w)/2:y=h-100`,
+    // Progress bar along the very bottom edge
+    `drawbox=x=0:y=ih-8:w='iw*min(t/${fd}\,1)':h=8:color=${ACCENT}@0.9:t=fill`,
+    // Smooth fade in/out
+    `fade=t=in:st=0:d=0.5`,
+    `fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5`
+  ].join(',');
+
   const cmd = [
     'ffmpeg -y',
-    `-f lavfi -i color=c=0x1a1a2e:s=720x1280:d=${duration}`,
+    `-f lavfi -i "gradients=s=720x1280:c0=${BG1}:c1=${BG2}:x0=0:y0=0:x1=0:y1=1280:speed=0.00001:d=${fd}"`,
     `-i "${audioPath}"`,
-    `-vf "drawtext=fontfile='${fontPath}':textfile='${textFilePath}':fontcolor=white:fontsize=${fontsize}:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=14:box=0"`,
+    `-vf "${filters}"`,
     '-c:v libx264 -pix_fmt yuv420p',
     '-c:a aac -b:a 128k',
-    `-t ${duration}`,
+    `-t ${fd}`,
     `"${outPath}"`
   ].join(' ');
 
@@ -202,13 +235,23 @@ function saveState(article) {
   fs.writeFileSync(STATE_FILE, JSON.stringify({ usedUrls, lastTitle: article.title, lastDate: new Date().toISOString() }, null, 2));
 }
 
+// Uses the opening words of the Telugu script as the on-screen headline instead
+// of NewsAPI's English title — keeps the video fully in Telugu (voice + text).
+function deriveHeadline(script, maxWords = 12) {
+  const words = script.split(' ').filter(Boolean);
+  let headline = words.slice(0, maxWords).join(' ');
+  if (words.length > maxWords) headline += '...';
+  return headline;
+}
+
 async function main() {
   if (!fs.existsSync(WORK_DIR)) fs.mkdirSync(WORK_DIR, { recursive: true });
 
   const article = await fetchNews();
   const script = await generateScript(article);
   const audioPath = await generateAudio(script);
-  const videoPath = buildVideo(article.title, audioPath);
+  const onScreenHeadline = deriveHeadline(script);
+  const videoPath = buildVideo(onScreenHeadline, audioPath);
   await uploadToYouTube(videoPath, article.title, script + '\n\n#TeluguEcho #TeluguNews #Shorts');
   saveState(article);
   log('Done!');
