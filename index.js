@@ -22,11 +22,30 @@ function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+// A stalled connection to any external API (NewsAPI, Groq, Google TTS,
+// Pexels) could otherwise hang until GitHub Actions' 15-minute job timeout
+// kills the whole run with no useful error message. Every external fetch in
+// this file goes through this wrapper so a hang fails fast and loud instead.
+async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms: ${url}`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchNews() {
   log('Fetching news from NewsAPI...');
   // pageSize raised 10 -> 20 to give the dedup check more room to find a fresh article
   const url = `https://newsapi.org/v2/everything?q=India&language=en&sortBy=publishedAt&pageSize=20&apiKey=${NEWSAPI_KEY}`;
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   const data = await res.json();
   if (!data.articles || data.articles.length === 0) {
     throw new Error('No articles found from NewsAPI');
@@ -82,7 +101,7 @@ async function generateScript(article) {
 
 కేవలం script టెక్స్ట్ మాత్రమే ఇవ్వు — JSON వద్దు, headers వద్దు, ముందు/వెనుక ఎలాంటి extra text వద్దు.`;
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -107,7 +126,7 @@ async function generateAudio(script) {
   log('Generating audio via Google Cloud TTS...');
   // te-IN-Chirp3-HD-Achird: male, Chirp 3: HD tier — natural/human-sounding.
   // Free quota: 1,000,000 chars/month, separate from Standard's 4,000,000/month.
-  const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
+  const res = await fetchWithTimeout(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -143,7 +162,7 @@ function cleanTitleForImageSearch(title) {
 async function fetchImages(query, count) {
   log(`Fetching ${count} images from Pexels for: "${query}"...`);
   const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=portrait`;
-  const res = await fetch(url, { headers: { Authorization: PEXELS_API_KEY } });
+  const res = await fetchWithTimeout(url, { headers: { Authorization: PEXELS_API_KEY } });
   const data = await res.json();
   if (!data.photos || data.photos.length === 0) {
     throw new Error(`Pexels returned no photos for "${query}": ` + JSON.stringify(data));
@@ -152,7 +171,7 @@ async function fetchImages(query, count) {
   for (let i = 0; i < data.photos.length; i++) {
     const src = data.photos[i].src || {};
     const imgUrl = src.large2x || src.large || src.original;
-    const imgRes = await fetch(imgUrl);
+    const imgRes = await fetchWithTimeout(imgUrl);
     const buf = Buffer.from(await imgRes.arrayBuffer());
     const imgPath = path.join(WORK_DIR, `image_${i}.jpg`);
     fs.writeFileSync(imgPath, buf);
@@ -209,6 +228,9 @@ function buildVideo(imagePaths, audioPath) {
   log(`Audio duration: ${fd}s — video length set to match`);
 
   const n = imagePaths.length;
+  if (n === 0) {
+    throw new Error('buildVideo received zero images — refusing to continue (would divide duration by zero).');
+  }
   const perImageDur = duration / n;
   log(`Building ${n}-image Ken Burns slideshow, ~${perImageDur.toFixed(2)}s per image...`);
 
