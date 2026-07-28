@@ -55,7 +55,7 @@ async function fetchNews() {
 // sentences, but LLMs don't always follow formatting instructions exactly —
 // this guarantees no run of text exceeds maxLen without a period, by forcing
 // one in at the nearest comma if needed.
-function ensureSentenceBreaks(text, maxLen = 100) {
+function ensureSentenceBreaks(text, maxLen = 140) {
   const parts = text.split(/(?<=\.)\s*/);
   const fixed = [];
   for (let part of parts) {
@@ -188,8 +188,13 @@ function wrapText(text, maxCharsPerLine = 20) {
 // screen-long event. Rendered via the 'subtitles' filter (libass) instead of
 // drawtext so Telugu conjuncts/vowel-signs shape correctly.
 // ASS colours are &HAABBGGRR (alpha first, then BGR — reverse of usual RGB).
-function writeHeadlineAss(wrappedText, fontsize, filePath) {
-  const assText = wrappedText.split('\n').join('\\N').replace(/[{}\\]/g, ''); // strip ASS override chars
+function writeHeadlineAss(wrappedText, fontsize, filePath, fontFamily) {
+  // Sanitize each line's OWN content first, then join with the ASS forced
+  // line-break marker \N. Doing it in the other order (join first, strip
+  // backslashes after) destroys our own \N marker, leaving a stray "N" in
+  // the middle of the text — exactly the bug that showed up on screen.
+  const sanitizedLines = wrappedText.split('\n').map(line => line.replace(/[{}\\]/g, ''));
+  const assText = sanitizedLines.join('\\N');
   const ass = [
     '[Script Info]',
     'ScriptType: v4.00+',
@@ -199,7 +204,7 @@ function writeHeadlineAss(wrappedText, fontsize, filePath) {
     '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    `Style: Headline,NotoSansTelugu,${fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H8C0A0A14,0,0,0,0,100,100,0,0,3,0,2,5,60,60,0,1`,
+    `Style: Headline,${fontFamily},${fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H8C0A0A14,0,0,0,0,100,100,0,0,3,0,2,5,60,60,0,1`,
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
@@ -207,6 +212,23 @@ function writeHeadlineAss(wrappedText, fontsize, filePath) {
     ''
   ].join('\n');
   fs.writeFileSync(filePath, ass, 'utf8');
+}
+
+// libass (the 'subtitles' filter) looks fonts up by the family name embedded
+// INSIDE the font file, not by the filename — "NotoSansTelugu-Regular.ttf"
+// does not guarantee the font's internal family name is "NotoSansTelugu".
+// If the name in our .ass Style doesn't match exactly, libass silently
+// falls back to a default font with no Telugu glyphs, rendering every
+// Telugu character as an empty box (□) — which is exactly what showed up
+// on screen. Detecting the real name via fontconfig avoids guessing.
+function getFontFamilyName(fontPath, fallback) {
+  try {
+    const out = execSync(`fc-scan --format "%{family}\n" "${fontPath}"`).toString().trim().split('\n')[0];
+    return out || fallback;
+  } catch (e) {
+    log(`WARNING: could not detect font family name for ${fontPath}, falling back to "${fallback}"`);
+    return fallback;
+  }
 }
 
 function buildVideo(headline, audioPath) {
@@ -244,7 +266,9 @@ function buildVideo(headline, audioPath) {
   // exactly what showed up in the last render. libass uses HarfBuzz
   // internally and shapes Telugu correctly.
   const assPath = path.join(WORK_DIR, 'headline.ass');
-  writeHeadlineAss(wrapped, fontsize, assPath);
+  const teluguFontFamily = getFontFamilyName(fontPath, 'NotoSansTelugu');
+  log(`Detected Telugu font family name: ${teluguFontFamily}`);
+  writeHeadlineAss(wrapped, fontsize, assPath, teluguFontFamily);
 
   // NOTE on drawbox positioning: inside drawbox, 'w' and 'h' in x/y expressions
   // refer to the box's OWN width/height option (not the frame) — using them
