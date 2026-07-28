@@ -22,23 +22,30 @@ function log(msg) {
 
 async function fetchNews() {
   log('Fetching news from NewsAPI...');
-  const url = `https://newsapi.org/v2/everything?q=India&language=en&sortBy=publishedAt&pageSize=10&apiKey=${NEWSAPI_KEY}`;
+  // pageSize raised 10 -> 20 to give the dedup check more room to find a fresh article
+  const url = `https://newsapi.org/v2/everything?q=India&language=en&sortBy=publishedAt&pageSize=20&apiKey=${NEWSAPI_KEY}`;
   const res = await fetch(url);
   const data = await res.json();
   if (!data.articles || data.articles.length === 0) {
     throw new Error('No articles found from NewsAPI');
   }
 
-  // Load last used article to avoid duplicates
-  let lastUrl = null;
+  // Load history of previously used article URLs (last 50 runs), not just the last one.
+  // A single "lastUrl" check misses articles that stay in NewsAPI's top results for
+  // multiple days and resurface after being pushed down temporarily.
+  let usedUrls = [];
   if (fs.existsSync(STATE_FILE)) {
     try {
-      lastUrl = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')).url;
+      const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+      // supports both the old single-url format and the new history format
+      usedUrls = state.usedUrls || (state.url ? [state.url] : []);
     } catch (e) {}
   }
 
-  // Pick the first article whose URL differs from the last one used
-  const article = data.articles.find(a => a.url !== lastUrl) || data.articles[0];
+  const article = data.articles.find(a => !usedUrls.includes(a.url)) || data.articles[0];
+  if (usedUrls.includes(article.url)) {
+    log('WARNING: every fetched article was already used in the last 50 runs — reusing the newest one so the run does not fail.');
+  }
   log(`Selected article: ${article.title}`);
   return article;
 }
@@ -96,20 +103,60 @@ function escapeForFfmpeg(text) {
     .replace(/%/g, '\\%');
 }
 
+function getAudioDuration(audioPath) {
+  const out = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${audioPath}"`).toString().trim();
+  return parseFloat(out);
+}
+
+// Breaks a headline into multiple lines so it never runs wider than the 720px frame.
+// maxCharsPerLine is tuned for Telugu glyphs at fontsize ~38-42 on a 720px-wide video.
+function wrapText(text, maxCharsPerLine = 20) {
+  const words = text.split(' ');
+  let lines = [];
+  let current = '';
+  for (const w of words) {
+    const candidate = (current + ' ' + w).trim();
+    if (candidate.length > maxCharsPerLine && current) {
+      lines.push(current.trim());
+      current = w;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current.trim());
+  return lines.join('\n');
+}
+
 function buildVideo(headline, audioPath) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontPath = path.join(__dirname, 'fonts', 'NotoSansTelugu-Regular.ttf');
-  const safeHeadline = escapeForFfmpeg(headline);
+
+  // Match the video length to the ACTUAL narration length instead of a hardcoded 30s.
+  // This is what was clipping the closing "like and share" line before.
+  const duration = getAudioDuration(audioPath) + 0.3; // small buffer so the last word/beat isn't clipped
+  log(`Audio duration: ${duration.toFixed(2)}s — video length set to match`);
+
+  // Wrap the headline so it never overflows the left/right edges of the frame,
+  // and shrink the font a bit automatically when there are more lines.
+  const wrapped = wrapText(headline, 20);
+  const lineCount = wrapped.split('\n').length;
+  const fontsize = lineCount > 4 ? 34 : lineCount > 2 ? 38 : 42;
+
+  // Write the wrapped text to a file and use drawtext's textfile= option instead of
+  // an inline text= string — far more reliable for multi-line Telugu text than
+  // trying to escape newlines inside a shell command.
+  const textFilePath = path.join(WORK_DIR, 'headline.txt');
+  fs.writeFileSync(textFilePath, wrapped, 'utf8');
 
   const cmd = [
     'ffmpeg -y',
-    `-f lavfi -i color=c=0x1a1a2e:s=720x1280:d=30`,
+    `-f lavfi -i color=c=0x1a1a2e:s=720x1280:d=${duration}`,
     `-i "${audioPath}"`,
-    `-vf "drawtext=fontfile='${fontPath}':text='${safeHeadline}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=12:box=0"`,
+    `-vf "drawtext=fontfile='${fontPath}':textfile='${textFilePath}':fontcolor=white:fontsize=${fontsize}:x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=14:box=0"`,
     '-c:v libx264 -pix_fmt yuv420p',
     '-c:a aac -b:a 128k',
-    '-shortest',
+    `-t ${duration}`,
     `"${outPath}"`
   ].join(' ');
 
@@ -142,7 +189,17 @@ async function uploadToYouTube(videoPath, title, description) {
 }
 
 function saveState(article) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify({ url: article.url, title: article.title, date: new Date().toISOString() }, null, 2));
+  let usedUrls = [];
+  if (fs.existsSync(STATE_FILE)) {
+    try {
+      const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+      usedUrls = state.usedUrls || [];
+    } catch (e) {}
+  }
+  usedUrls.push(article.url);
+  // keep only the most recent 50 so the file doesn't grow forever
+  if (usedUrls.length > 50) usedUrls = usedUrls.slice(-50);
+  fs.writeFileSync(STATE_FILE, JSON.stringify({ usedUrls, lastTitle: article.title, lastDate: new Date().toISOString() }, null, 2));
 }
 
 async function main() {
