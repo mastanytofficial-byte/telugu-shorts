@@ -1,5 +1,5 @@
 // Telugu Daily News Shorts — fully automated, runs on GitHub Actions
-// News -> Script (Groq) -> Voice (Google TTS) -> Video (FFmpeg) -> YouTube
+// News -> Script (Groq) -> Voice (Google TTS) -> Images (Pexels) -> Video (FFmpeg) -> YouTube
 
 const fs = require('fs');
 const path = require('path');
@@ -9,12 +9,14 @@ const { google } = require('googleapis');
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY;
+const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
 const YT_CLIENT_ID = process.env.YT_CLIENT_ID;
 const YT_CLIENT_SECRET = process.env.YT_CLIENT_SECRET;
 const YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
 
 const STATE_FILE = path.join(__dirname, 'last-article.json');
 const WORK_DIR = path.join(__dirname, 'work');
+const IMAGE_COUNT = 4;
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
@@ -31,13 +33,10 @@ async function fetchNews() {
   }
 
   // Load history of previously used article URLs (last 50 runs), not just the last one.
-  // A single "lastUrl" check misses articles that stay in NewsAPI's top results for
-  // multiple days and resurface after being pushed down temporarily.
   let usedUrls = [];
   if (fs.existsSync(STATE_FILE)) {
     try {
       const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-      // supports both the old single-url format and the new history format
       usedUrls = state.usedUrls || (state.url ? [state.url] : []);
     } catch (e) {}
   }
@@ -72,119 +71,42 @@ function ensureSentenceBreaks(text, maxLen = 140) {
   return fixed.join(' ').replace(/\s+/g, ' ').trim();
 }
 
-// Final-resort extractor: pulls a "field": "value" pair out with regex when
-// the text is close to JSON but not quite parseable. Reuses JSON.parse on
-// just the matched string to correctly un-escape it.
-function extractJsonField(text, field) {
-  const re = new RegExp(`"${field}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, 's');
-  const m = text.match(re);
-  if (!m) return null;
-  try {
-    return JSON.parse(`"${m[1]}"`);
-  } catch (e) {
-    return m[1];
-  }
-}
-
 async function generateScript(article) {
   log('Generating script via Groq...');
-  const prompt = `ఈ వార్త మీద YouTube Short video కోసం రెండు వేర్వేరు విషయాలు తెలుగులో తయారు చేయి: "${article.title}". ${article.description || ''}
+  // No on-screen headline anymore (video is images + narration only), so this
+  // just asks for the narration script — plain text, no JSON. Simpler and
+  // avoids Groq's occasional JSON-mode validation failures entirely.
+  const prompt = `ఈ వార్త మీద YouTube Short video కోసం 20 సెకన్ల వాయిస్-ఓవర్ script తెలుగులో రాయి: "${article.title}". ${article.description || ''}
 
-1. headline: ఈ వార్త యొక్క ప్రధాన అంశం (core theme) ఏమిటో ఒక్క చూపులో అర్థమయ్యేలా, 5 నుండి 8 తెలుగు పదాల్లో ఒక స్పష్టమైన, పూర్తి అర్థం వచ్చే headline. ఇది స్వతంత్రమైన headline గా ఉండాలి — script లో నుండి ముందు కొన్ని పదాలు కత్తిరించినట్టు కాకుండా, వార్త మొత్తం సారాంశాన్ని ప్రతిబింబించాలి.
-2. script: 20 సెకన్ల వాయిస్-ఓవర్ కోసం పూర్తి వివరణాత్మక script — వార్త యొక్క నేపథ్యం, ఏమి జరిగింది, ఎందుకు ముఖ్యమో అన్నీ ఇందులో ఉండాలి. సులభమైన భాషలో, ఆకర్షణీయంగా రాయి. ఇది 4-6 చిన్న వాక్యాలుగా ఉండాలి, ప్రతి వాక్యం తర్వాత తప్పకుండా పూర్ణవిరామం (.) పెట్టాలి — ఏ ఒక్క వాక్యం కూడా చాలా పొడవుగా (commas తో కలిపి ఒకే వాక్యంగా) ఉండకూడదు, ఎందుకంటే అలా ఉంటే వాయిస్ జనరేషన్ fail అవుతుంది. Line breaks మాత్రం వాడకు, అన్నీ ఒకే paragraph లో ఉండాలి, కానీ వాక్యాల మధ్య పూర్ణవిరామం మాత్రం ఖచ్చితంగా ఉండాలి. తప్పకుండా కనీసం 85 తెలుగు పదాలు వాడి 95 పదాలు మీరకూడదు. చివర్లో ఖచ్చితంగా ఈ వాక్యం జోడించు (ఇది కూడా ఒక పూర్తి వాక్యంగా, ముందు పూర్ణవిరామం తర్వాత): మరిన్ని ఇలాంటి వార్తల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.
+వార్త యొక్క నేపథ్యం, ఏమి జరిగింది, ఎందుకు ముఖ్యమో అన్నీ ఇందులో ఉండాలి. సులభమైన భాషలో, ఆకర్షణీయంగా రాయి. ఇది 4-6 చిన్న వాక్యాలుగా ఉండాలి, ప్రతి వాక్యం తర్వాత తప్పకుండా పూర్ణవిరామం (.) పెట్టాలి — ఏ ఒక్క వాక్యం కూడా చాలా పొడవుగా (commas తో కలిపి ఒకే వాక్యంగా) ఉండకూడదు, ఎందుకంటే అలా ఉంటే వాయిస్ జనరేషన్ fail అవుతుంది. Line breaks మాత్రం వాడకు, అన్నీ ఒకే paragraph లో ఉండాలి, కానీ వాక్యాల మధ్య పూర్ణవిరామం మాత్రం ఖచ్చితంగా ఉండాలి. తప్పకుండా కనీసం 85 తెలుగు పదాలు వాడి 95 పదాలు మీరకూడదు. చివర్లో ఖచ్చితంగా ఈ వాక్యం జోడించు (ఇది కూడా ఒక పూర్తి వాక్యంగా, ముందు పూర్ణవిరామం తర్వాత): మరిన్ని ఇలాంటి వార్తల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.
 
-జవాబును ఖచ్చితంగా ఈ JSON ఫార్మాట్‌లో మాత్రమే ఇవ్వు, మరేమీ ముందు/వెనుక రాయకు: {"headline": "...", "script": "..."}`;
+కేవలం script టెక్స్ట్ మాత్రమే ఇవ్వు — JSON వద్దు, headers వద్దు, ముందు/వెనుక ఎలాంటి extra text వద్దు.`;
 
-  async function callGroq(useJsonMode) {
-    const body = {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${GROQ_API_KEY}`
+    },
+    body: JSON.stringify({
       model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: prompt }]
-    };
-    if (useJsonMode) body.response_format = { type: 'json_object' };
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`
-      },
-      body: JSON.stringify(body)
-    });
-    return res.json();
-  }
-
-  let data = await callGroq(true);
-  let raw = null;
-
+    })
+  });
+  const data = await res.json();
   if (!data.choices || !data.choices[0]) {
-    // Groq's own JSON-mode validator sometimes rejects output that's
-    // actually usable — it echoes the attempt back in error.failed_generation.
-    // Try that first since it costs no extra API call.
-    const attempt = data.error && data.error.failed_generation;
-    if (attempt) {
-      log('WARNING: Groq JSON-mode validation failed, recovering content from failed_generation.');
-      // failed_generation sometimes contains raw newline/control characters
-      // embedded inside the JSON string values — that's usually WHY Groq's
-      // own validator rejected it. Strip those before attempting to parse.
-      raw = attempt.replace(/[\r\n\t]+/g, ' ').trim();
-    } else {
-      // No usable content at all — retry once without forcing JSON mode.
-      log('WARNING: Groq returned no content (' + JSON.stringify(data.error || data) + '), retrying without strict JSON mode...');
-      data = await callGroq(false);
-      if (!data.choices || !data.choices[0]) {
-        throw new Error('Groq did not return a script after retry: ' + JSON.stringify(data));
-      }
-      raw = data.choices[0].message.content.trim();
-    }
-  } else {
-    raw = data.choices[0].message.content.trim();
+    throw new Error('Groq did not return a script: ' + JSON.stringify(data));
   }
-
-  let headline, script;
-  try {
-    const parsed = JSON.parse(raw);
-    headline = (parsed.headline || '').trim();
-    script = (parsed.script || '').trim().replace(/\n+/g, ' ');
-    if (!headline || !script) throw new Error('missing headline or script field');
-  } catch (e) {
-    // Full JSON parse failed. Before giving up entirely, try pulling the
-    // headline/script fields out directly with regex — this recovers cleanly
-    // structured content even when the overall JSON has a stray character
-    // somewhere that breaks strict parsing.
-    const extractedHeadline = extractJsonField(raw, 'headline');
-    const extractedScript = extractJsonField(raw, 'script');
-    if (extractedHeadline && extractedScript) {
-      log('WARNING: Full JSON parse failed, but recovered headline/script via regex extraction.');
-      headline = extractedHeadline.trim();
-      script = extractedScript.trim().replace(/\n+/g, ' ');
-    } else {
-      // Last resort so a single bad response doesn't fail the whole run:
-      // treat the raw reply as the script and derive an old-style headline
-      // (first few words) from it.
-      log('WARNING: Groq did not return valid or extractable JSON, falling back to plain-text parsing.');
-      script = raw.replace(/\n+/g, ' ');
-      headline = deriveHeadline(script);
-    }
-  }
-
+  let script = data.choices[0].message.content.trim().replace(/\n+/g, ' ');
   script = ensureSentenceBreaks(script);
-
-  log(`Headline: ${headline}`);
   log(`Script (${script.length} chars): ${script}`);
-  return { headline, script };
+  return script;
 }
 
 async function generateAudio(script) {
   log('Generating audio via Google Cloud TTS...');
-  // te-IN-Chirp3-HD-Achird: male, Chirp 3: HD tier — Google's newest, most
-  // natural/human-sounding voice family (vs. the old Standard tier, which
-  // sounds noticeably robotic). Chirp 3: HD has its own free quota of
-  // 1,000,000 characters/month, completely separate from the Standard
-  // voices' 4,000,000/month quota — at ~15,000 chars/month this pipeline
-  // stays comfortably inside the free tier either way.
-  // Other male options in the same tier if you want to compare:
-  // te-IN-Chirp3-HD-Algenib, te-IN-Chirp3-HD-Algieba, te-IN-Chirp3-HD-Alnilam
-  // Note: Chirp 3: HD voices don't support SSML, pitch, or speakingRate —
-  // fine here since we only ever send plain text.
+  // te-IN-Chirp3-HD-Achird: male, Chirp 3: HD tier — natural/human-sounding.
+  // Free quota: 1,000,000 chars/month, separate from Standard's 4,000,000/month.
   const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -204,139 +126,120 @@ async function generateAudio(script) {
   return audioPath;
 }
 
-function escapeForFfmpeg(text) {
-  return text
-    .replace(/\\/g, '\\\\')
-    .replace(/:/g, '\\:')
-    .replace(/'/g, '\u2019')
-    .replace(/%/g, '\\%');
-}
-
 function getAudioDuration(audioPath) {
   const out = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${audioPath}"`).toString().trim();
   return parseFloat(out);
 }
 
-// Breaks a headline into multiple lines so it never runs wider than the 720px frame.
-// maxCharsPerLine is tuned for Telugu glyphs at fontsize ~38-42 on a 720px-wide video.
-function wrapText(text, maxCharsPerLine = 20) {
-  const words = text.split(' ');
-  let lines = [];
-  let current = '';
-  for (const w of words) {
-    const candidate = (current + ' ' + w).trim();
-    if (candidate.length > maxCharsPerLine && current) {
-      lines.push(current.trim());
-      current = w;
-    } else {
-      current = candidate;
-    }
+// NewsAPI titles usually end with " - Source Name" (e.g. "... - CNBC").
+// Strip that trailing segment so the Pexels search query is just the story
+// itself, not polluted with a publisher name.
+function cleanTitleForImageSearch(title) {
+  const parts = title.split(' - ');
+  if (parts.length > 1) return parts.slice(0, -1).join(' - ').trim();
+  return title.trim();
+}
+
+async function fetchImages(query, count) {
+  log(`Fetching ${count} images from Pexels for: "${query}"...`);
+  const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=portrait`;
+  const res = await fetch(url, { headers: { Authorization: PEXELS_API_KEY } });
+  const data = await res.json();
+  if (!data.photos || data.photos.length === 0) {
+    throw new Error(`Pexels returned no photos for "${query}": ` + JSON.stringify(data));
   }
-  if (current) lines.push(current.trim());
-  return lines.join('\n');
+  const imagePaths = [];
+  for (let i = 0; i < data.photos.length; i++) {
+    const src = data.photos[i].src || {};
+    const imgUrl = src.large2x || src.large || src.original;
+    const imgRes = await fetch(imgUrl);
+    const buf = Buffer.from(await imgRes.arrayBuffer());
+    const imgPath = path.join(WORK_DIR, `image_${i}.jpg`);
+    fs.writeFileSync(imgPath, buf);
+    imagePaths.push(imgPath);
+  }
+  log(`Downloaded ${imagePaths.length} images from Pexels.`);
+  return imagePaths;
 }
 
-// Writes a minimal .ass subtitle file containing the headline as a single,
-// screen-long event. Rendered via the 'subtitles' filter (libass) instead of
-// drawtext so Telugu conjuncts/vowel-signs shape correctly.
-// ASS colours are &HAABBGGRR (alpha first, then BGR — reverse of usual RGB).
-function writeHeadlineAss(wrappedText, fontsize, filePath, fontFamily) {
-  // Sanitize each line's OWN content first, then join with the ASS forced
-  // line-break marker \N. Doing it in the other order (join first, strip
-  // backslashes after) destroys our own \N marker, leaving a stray "N" in
-  // the middle of the text — exactly the bug that showed up on screen.
-  const sanitizedLines = wrappedText.split('\n').map(line => line.replace(/[{}\\]/g, ''));
-  const assText = sanitizedLines.join('\\N');
-  const ass = [
-    '[Script Info]',
-    'ScriptType: v4.00+',
-    'PlayResX: 720',
-    'PlayResY: 1280',
-    'WrapStyle: 2',
-    '',
-    '[V4+ Styles]',
-    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    `Style: Headline,${fontFamily},${fontsize},&H00FFFFFF,&H000000FF,&H00000000,&H8C0A0A14,0,0,0,0,100,100,0,0,3,0,2,5,60,60,0,1`,
-    '',
-    '[Events]',
-    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
-    `Dialogue: 0,0:00:00.00,0:59:59.00,Headline,,0,0,0,,${assText}`,
-    ''
-  ].join('\n');
-  fs.writeFileSync(filePath, ass, 'utf8');
-}
-
-// libass (the 'subtitles' filter) looks fonts up by the family name embedded
-// INSIDE the font file, not by the filename — "NotoSansTelugu-Regular.ttf"
-// does not guarantee the font's internal family name is "NotoSansTelugu".
-// If the name in our .ass Style doesn't match exactly, libass silently
-// falls back to a default font with no Telugu glyphs, rendering every
-// Telugu character as an empty box (□) — which is exactly what showed up
-// on screen. Detecting the real name via fontconfig avoids guessing.
-function getFontFamilyName(fontPath, fallback) {
+// If the story-specific search comes up empty (can happen for very niche
+// headlines), fall back to a generic query so the run doesn't fail outright.
+async function fetchImagesWithFallback(query, count) {
   try {
-    const out = execSync(`fc-scan --format "%{family}\n" "${fontPath}"`).toString().trim().split('\n')[0];
-    return out || fallback;
+    return await fetchImages(query, count);
   } catch (e) {
-    log(`WARNING: could not detect font family name for ${fontPath}, falling back to "${fallback}"`);
-    return fallback;
+    log('WARNING: image search failed for the specific headline, falling back to a generic query. ' + e.message);
+    return await fetchImages('India news', count);
   }
 }
 
-function buildVideo(headline, audioPath) {
+// Renders one still image as a short Ken-Burns (slow zoom) video clip.
+// Pre-scaling to a canvas larger than the 720x1280 output gives zoompan room
+// to move without upscaling artifacts partway through the zoom.
+function buildImageClip(imagePath, duration, outPath, zoomIn) {
+  const fps = 25;
+  const totalFrames = Math.max(1, Math.round(duration * fps));
+  const zoomExpr = zoomIn
+    ? `min(zoom+0.0020,1.2)`
+    : `if(eq(on,0),1.2,max(zoom-0.0020,1.0))`;
+  const cmd = [
+    'ffmpeg -y',
+    `-loop 1 -i "${imagePath}"`,
+    `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='${zoomExpr}':d=${totalFrames}:s=720x1280:fps=${fps}"`,
+    `-frames:v ${totalFrames}`,
+    '-c:v libx264 -pix_fmt yuv420p',
+    `"${outPath}"`
+  ].join(' ');
+  execSync(cmd, { stdio: 'inherit' });
+}
+
+function buildVideo(imagePaths, audioPath) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontsDir = path.join(__dirname, 'fonts');
   const fontPath = path.join(fontsDir, 'NotoSansTelugu-Regular.ttf');
-  // Bold weight for the badge/branding/CTA — falls back to the regular font
-  // if a bold Telugu file isn't present in the repo.
   const fontPathBoldCandidate = path.join(fontsDir, 'NotoSansTelugu-Bold.ttf');
   const fontPathBold = fs.existsSync(fontPathBoldCandidate) ? fontPathBoldCandidate : fontPath;
 
-  const ACCENT = '0xFFC107'; // gold/amber - brand accent (badge, channel name)
-  const CTA = '0xE62117';    // YouTube red - subscribe button, instantly recognizable
-  const BG1 = '0x0f1024';
-  const BG2 = '0x1b2a4a';
+  const ACCENT = '0xFFC107'; // gold/amber - brand accent
+  const CTA = '0xE62117';    // YouTube red - subscribe button
 
-  // Match the video length to the ACTUAL narration length instead of a hardcoded 30s.
   const duration = getAudioDuration(audioPath) + 0.3;
   const fd = duration.toFixed(2);
   log(`Audio duration: ${fd}s — video length set to match`);
 
-  // Wider lines + bigger font so the headline fills the frame instead of
-  // looking like a small paragraph floating in empty space.
-  const wrapped = wrapText(headline, 24);
-  const lineCount = wrapped.split('\n').length;
-  const fontsize = lineCount <= 2 ? 56 : lineCount <= 4 ? 46 : 36;
+  const n = imagePaths.length;
+  const perImageDur = duration / n;
+  log(`Building ${n}-image Ken Burns slideshow, ~${perImageDur.toFixed(2)}s per image...`);
 
-  // IMPORTANT: the Telugu headline is rendered via libass (the 'subtitles'
-  // filter), NOT drawtext. ffmpeg's drawtext filter has no complex-script
-  // shaping engine — it draws each Unicode codepoint's base glyph one after
-  // another with no reordering or conjunct/vowel-sign shaping. For Telugu
-  // (and other Indic scripts) that produces visibly scrambled text on
-  // screen even though the underlying string is 100% correct — this is
-  // exactly what showed up in the last render. libass uses HarfBuzz
-  // internally and shapes Telugu correctly.
-  const assPath = path.join(WORK_DIR, 'headline.ass');
-  const teluguFontFamily = getFontFamilyName(fontPath, 'NotoSansTelugu');
-  log(`Detected Telugu font family name: ${teluguFontFamily}`);
-  writeHeadlineAss(wrapped, fontsize, assPath, teluguFontFamily);
+  // Step 1: one Ken-Burns clip per image, alternating zoom-in/zoom-out for variety.
+  const clipPaths = [];
+  for (let i = 0; i < n; i++) {
+    const clipPath = path.join(WORK_DIR, `clip_${i}.mp4`);
+    buildImageClip(imagePaths[i], perImageDur, clipPath, i % 2 === 0);
+    clipPaths.push(clipPath);
+  }
 
-  // NOTE on drawbox positioning: inside drawbox, 'w' and 'h' in x/y expressions
-  // refer to the box's OWN width/height option (not the frame) — using them
-  // there silently pushes the box off-screen. Always use 'iw'/'ih' (input
-  // width/height) for x/y math in drawbox. drawtext does not have this
-  // problem — its 'w'/'h' correctly mean the frame's width/height.
+  // Step 2: concatenate the clips into one background video.
+  const concatListPath = path.join(WORK_DIR, 'concat_list.txt');
+  fs.writeFileSync(concatListPath, clipPaths.map(p => `file '${p}'`).join('\n'), 'utf8');
+  const bgPath = path.join(WORK_DIR, 'background.mp4');
+  execSync(`ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${bgPath}"`, { stdio: 'inherit' });
+
+  // Step 3: overlay branding/CTA + scrims (for legibility over photos), mux audio.
+  // NOTE on drawbox positioning: inside drawbox, 'w'/'h' in x/y expressions mean
+  // the box's OWN width/height (not the frame) — always use 'iw'/'ih' there.
+  // drawtext does not have this problem — its 'w'/'h' correctly mean the frame.
   const filters = [
-    'vignette',
+    // dark scrims top & bottom so branding/CTA text stays legible over any photo
+    `drawbox=x=0:y=0:w=iw:h=260:color=black@0.55:t=fill`,
+    `drawbox=x=0:y=ih-260:w=iw:h=260:color=black@0.55:t=fill`,
     // "NEWS" badge, top-left
     `drawbox=x=40:y=60:w=120:h=44:color=${ACCENT}@0.95:t=fill`,
-    `drawtext=fontfile='${fontPathBold}':text='NEWS':fontcolor=${BG1}:fontsize=24:x=40+(120-text_w)/2:y=60+(44-text_h)/2`,
+    `drawtext=fontfile='${fontPathBold}':text='NEWS':fontcolor=0x0f1024:fontsize=24:x=40+(120-text_w)/2:y=60+(44-text_h)/2`,
     // Channel branding, top-center, with a thin accent underline
     `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=32:x=(w-text_w)/2:y=140`,
     `drawbox=x=(iw-160)/2:y=192:w=160:h=4:color=${ACCENT}@0.85:t=fill`,
-    // Headline card, rendered through libass for correct Telugu shaping
-    `subtitles='${assPath}':fontsdir='${fontsDir}'`,
     // Subscribe CTA styled as a real button (YouTube red), with a small tagline
     `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.95:t=fill`,
     `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2`,
@@ -348,7 +251,7 @@ function buildVideo(headline, audioPath) {
 
   const cmd = [
     'ffmpeg -y',
-    `-f lavfi -i "gradients=s=720x1280:c0=${BG1}:c1=${BG2}:x0=0:y0=0:x1=0:y1=1280:speed=0.00001:d=${fd}"`,
+    `-i "${bgPath}"`,
     `-i "${audioPath}"`,
     `-vf "${filters}"`,
     '-c:v libx264 -pix_fmt yuv420p',
@@ -394,30 +297,24 @@ function saveState(article) {
     } catch (e) {}
   }
   usedUrls.push(article.url);
-  // keep only the most recent 50 so the file doesn't grow forever
   if (usedUrls.length > 50) usedUrls = usedUrls.slice(-50);
   fs.writeFileSync(STATE_FILE, JSON.stringify({ usedUrls, lastTitle: article.title, lastDate: new Date().toISOString() }, null, 2));
-}
-
-// FALLBACK ONLY: used if Groq ever fails to return valid JSON (see
-// generateScript). Normally the headline comes from Groq itself, written to
-// actually summarize the news — not just the script's opening words, which
-// used to cut off mid-thought and not convey the story.
-function deriveHeadline(script, maxWords = 12) {
-  const words = script.split(' ').filter(Boolean);
-  let headline = words.slice(0, maxWords).join(' ');
-  if (words.length > maxWords) headline += '...';
-  return headline;
 }
 
 async function main() {
   if (!fs.existsSync(WORK_DIR)) fs.mkdirSync(WORK_DIR, { recursive: true });
 
   const article = await fetchNews();
-  const { headline, script } = await generateScript(article);
+  const script = await generateScript(article);
   const audioPath = await generateAudio(script);
-  const videoPath = buildVideo(headline, audioPath);
-  await uploadToYouTube(videoPath, article.title, script + '\n\n#TeluguEcho #TeluguNews #Shorts');
+  const imageQuery = cleanTitleForImageSearch(article.title);
+  const imagePaths = await fetchImagesWithFallback(imageQuery, IMAGE_COUNT);
+  const videoPath = buildVideo(imagePaths, audioPath);
+  await uploadToYouTube(
+    videoPath,
+    article.title,
+    script + '\n\nPhotos via Pexels (pexels.com).\n\n#TeluguEcho #TeluguNews #Shorts'
+  );
   saveState(article);
   log('Done!');
 }
