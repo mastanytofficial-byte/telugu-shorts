@@ -50,12 +50,34 @@ async function fetchNews() {
   return article;
 }
 
+// Safety net: Google's Chirp 3: HD voice rejects any single "sentence" (text
+// between periods) that's too long. Groq is prompted to add periods between
+// sentences, but LLMs don't always follow formatting instructions exactly —
+// this guarantees no run of text exceeds maxLen without a period, by forcing
+// one in at the nearest comma if needed.
+function ensureSentenceBreaks(text, maxLen = 100) {
+  const parts = text.split(/(?<=\.)\s*/);
+  const fixed = [];
+  for (let part of parts) {
+    while (part.length > maxLen) {
+      let cut = part.lastIndexOf(',', maxLen);
+      if (cut === -1) cut = part.lastIndexOf(' ', maxLen); // fall back to nearest word boundary
+      if (cut === -1) cut = maxLen; // last resort: hard cut, never leave a chunk over maxLen
+      const before = part.slice(0, cut).replace(/,\s*$/, '').trim();
+      fixed.push(before + '.');
+      part = part.slice(cut + 1).trim();
+    }
+    if (part) fixed.push(part);
+  }
+  return fixed.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 async function generateScript(article) {
   log('Generating script via Groq...');
   const prompt = `ఈ వార్త మీద YouTube Short video కోసం రెండు వేర్వేరు విషయాలు తెలుగులో తయారు చేయి: "${article.title}". ${article.description || ''}
 
 1. headline: ఈ వార్త యొక్క ప్రధాన అంశం (core theme) ఏమిటో ఒక్క చూపులో అర్థమయ్యేలా, 5 నుండి 8 తెలుగు పదాల్లో ఒక స్పష్టమైన, పూర్తి అర్థం వచ్చే headline. ఇది స్వతంత్రమైన headline గా ఉండాలి — script లో నుండి ముందు కొన్ని పదాలు కత్తిరించినట్టు కాకుండా, వార్త మొత్తం సారాంశాన్ని ప్రతిబింబించాలి.
-2. script: 20 సెకన్ల వాయిస్-ఓవర్ కోసం పూర్తి వివరణాత్మక script — వార్త యొక్క నేపథ్యం, ఏమి జరిగింది, ఎందుకు ముఖ్యమో అన్నీ ఇందులో ఉండాలి. సులభమైన భాషలో, ఆకర్షణీయంగా, ఒకే paragraph గా, ఎటువంటి line breaks లేకుండా, తప్పకుండా కనీసం 85 తెలుగు పదాలు వాడి 95 పదాలు మీరకూడదు. చివర్లో ఖచ్చితంగా ఈ వాక్యం జోడించు: మరిన్ని ఇలాంటి వార్తల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.
+2. script: 20 సెకన్ల వాయిస్-ఓవర్ కోసం పూర్తి వివరణాత్మక script — వార్త యొక్క నేపథ్యం, ఏమి జరిగింది, ఎందుకు ముఖ్యమో అన్నీ ఇందులో ఉండాలి. సులభమైన భాషలో, ఆకర్షణీయంగా రాయి. ఇది 4-6 చిన్న వాక్యాలుగా ఉండాలి, ప్రతి వాక్యం తర్వాత తప్పకుండా పూర్ణవిరామం (.) పెట్టాలి — ఏ ఒక్క వాక్యం కూడా చాలా పొడవుగా (commas తో కలిపి ఒకే వాక్యంగా) ఉండకూడదు, ఎందుకంటే అలా ఉంటే వాయిస్ జనరేషన్ fail అవుతుంది. Line breaks మాత్రం వాడకు, అన్నీ ఒకే paragraph లో ఉండాలి, కానీ వాక్యాల మధ్య పూర్ణవిరామం మాత్రం ఖచ్చితంగా ఉండాలి. తప్పకుండా కనీసం 85 తెలుగు పదాలు వాడి 95 పదాలు మీరకూడదు. చివర్లో ఖచ్చితంగా ఈ వాక్యం జోడించు (ఇది కూడా ఒక పూర్తి వాక్యంగా, ముందు పూర్ణవిరామం తర్వాత): మరిన్ని ఇలాంటి వార్తల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.
 
 జవాబును ఖచ్చితంగా ఈ JSON ఫార్మాట్‌లో మాత్రమే ఇవ్వు, మరేమీ ముందు/వెనుక రాయకు: {"headline": "...", "script": "..."}`;
 
@@ -91,6 +113,8 @@ async function generateScript(article) {
     script = raw.replace(/\n+/g, ' ');
     headline = deriveHeadline(script);
   }
+
+  script = ensureSentenceBreaks(script);
 
   log(`Headline: ${headline}`);
   log(`Script (${script.length} chars): ${script}`);
