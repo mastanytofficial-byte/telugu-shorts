@@ -161,8 +161,15 @@ function cleanTitleForImageSearch(title) {
 
 async function fetchImages(query, count) {
   log(`Fetching ${count} images from Pexels for: "${query}"...`);
+  // TEMPORARY DEBUG — remove once the 401 issue is resolved. Never logs the
+  // full key, just enough to confirm the secret actually reached the script.
+  if (!PEXELS_API_KEY) {
+    log('DEBUG: PEXELS_API_KEY is EMPTY/undefined — the GitHub secret is not reaching this script at all.');
+  } else {
+    log(`DEBUG: PEXELS_API_KEY length=${PEXELS_API_KEY.length}, starts="${PEXELS_API_KEY.slice(0, 4)}", ends="${PEXELS_API_KEY.slice(-4)}"`);
+  }
   const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=portrait`;
-  const res = await fetchWithTimeout(url, { headers: { Authorization: PEXELS_API_KEY } });
+  const res = await fetchWithTimeout(url, { headers: { Authorization: (PEXELS_API_KEY || '').trim() } });
   const data = await res.json();
   if (!data.photos || data.photos.length === 0) {
     throw new Error(`Pexels returned no photos for "${query}": ` + JSON.stringify(data));
@@ -323,8 +330,30 @@ function saveState(article) {
   fs.writeFileSync(STATE_FILE, JSON.stringify({ usedUrls, lastTitle: article.title, lastDate: new Date().toISOString() }, null, 2));
 }
 
+// Logs only whether each required secret is present and its character
+// length — never the value itself. This makes copy-paste mistakes (stray
+// whitespace/newlines, wrong secret name, empty value) immediately visible
+// in the run log instead of showing up as a confusing downstream API error.
+function checkSecret(name, value) {
+  if (!value) {
+    log(`WARNING: ${name} is missing or empty — check it's set in GitHub Secrets with this exact name.`);
+  } else {
+    const trimmedLen = value.trim().length;
+    const hasWhitespace = trimmedLen !== value.length;
+    log(`${name}: present, length=${value.length}${hasWhitespace ? ' (WARNING: has leading/trailing whitespace — re-paste it without extra spaces/newlines)' : ''}`);
+  }
+}
+
 async function main() {
   if (!fs.existsSync(WORK_DIR)) fs.mkdirSync(WORK_DIR, { recursive: true });
+
+  checkSecret('NEWSAPI_KEY', NEWSAPI_KEY);
+  checkSecret('GROQ_API_KEY', GROQ_API_KEY);
+  checkSecret('GOOGLE_TTS_API_KEY', GOOGLE_TTS_API_KEY);
+  checkSecret('PEXELS_API_KEY', PEXELS_API_KEY);
+  checkSecret('YT_CLIENT_ID', YT_CLIENT_ID);
+  checkSecret('YT_CLIENT_SECRET', YT_CLIENT_SECRET);
+  checkSecret('YT_REFRESH_TOKEN', YT_REFRESH_TOKEN);
 
   const article = await fetchNews();
   const script = await generateScript(article);
