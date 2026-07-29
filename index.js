@@ -1,5 +1,6 @@
-// Telugu Daily News Shorts — fully automated, runs on GitHub Actions
-// News -> Script (Groq) -> Voice (Google TTS) -> Images (Pexels) -> Video (FFmpeg) -> YouTube
+// Telugu Daily Shorts — fully automated, runs on GitHub Actions
+// Rotates through 4 content types daily: news, moral stories, facts, parenting tips
+// Topic/Script (Groq) -> Voice (Google TTS) -> Images (Pexels) -> Video (FFmpeg) -> YouTube
 
 const fs = require('fs');
 const path = require('path');
@@ -41,6 +42,32 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
   }
 }
 
+const CATEGORIES = ['news', 'moral_story', 'fact', 'parenting'];
+
+// Rotates through content types by day-of-year so the channel isn't only
+// dry news — cycles evenly through all 4 categories over time.
+function pickCategory() {
+  const now = new Date();
+  const startOfYear = new Date(now.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((now - startOfYear) / 86400000);
+  const category = CATEGORIES[dayOfYear % CATEGORIES.length];
+  log(`Today's category: ${category}`);
+  return category;
+}
+
+function loadState() {
+  if (fs.existsSync(STATE_FILE)) {
+    try {
+      const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+      return {
+        usedUrls: state.usedUrls || (state.url ? [state.url] : []),
+        usedTitles: state.usedTitles || []
+      };
+    } catch (e) {}
+  }
+  return { usedUrls: [], usedTitles: [] };
+}
+
 async function fetchNews() {
   log('Fetching news from NewsAPI...');
   // pageSize raised 10 -> 20 to give the dedup check more room to find a fresh article
@@ -52,13 +79,7 @@ async function fetchNews() {
   }
 
   // Load history of previously used article URLs (last 50 runs), not just the last one.
-  let usedUrls = [];
-  if (fs.existsSync(STATE_FILE)) {
-    try {
-      const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-      usedUrls = state.usedUrls || (state.url ? [state.url] : []);
-    } catch (e) {}
-  }
+  const { usedUrls } = loadState();
 
   const article = data.articles.find(a => !usedUrls.includes(a.url)) || data.articles[0];
   if (usedUrls.includes(article.url)) {
@@ -90,20 +111,60 @@ function ensureSentenceBreaks(text, maxLen = 140) {
   return fixed.join(' ').replace(/\s+/g, ' ').trim();
 }
 
-async function generateScript(article) {
-  log('Generating script via Groq...');
-  // No on-screen headline anymore (video is images + narration only), so this
-  // just asks for the narration script — plain text, no JSON. Simpler and
-  // avoids Groq's occasional JSON-mode validation failures entirely.
-  const prompt = `ఈ వార్త మీద YouTube Short video కోసం 20 సెకన్ల వాయిస్-ఓవర్ script తెలుగులో రాయి: "${article.title}". ${article.description || ''}
+const FALLBACK_KEYWORDS = {
+  news: 'India news',
+  moral_story: 'wisdom life India',
+  fact: 'knowledge curious facts',
+  parenting: 'family parenting India'
+};
 
-వార్త యొక్క నేపథ్యం, ఏమి జరిగింది, ఎందుకు ముఖ్యమో అన్నీ ఇందులో ఉండాలి. సులభమైన భాషలో, ఆకర్షణీయంగా రాయి. ఇది 4-6 చిన్న వాక్యాలుగా ఉండాలి, ప్రతి వాక్యం తర్వాత తప్పకుండా పూర్ణవిరామం (.) పెట్టాలి — ఏ ఒక్క వాక్యం కూడా చాలా పొడవుగా (commas తో కలిపి ఒకే వాక్యంగా) ఉండకూడదు, ఎందుకంటే అలా ఉంటే వాయిస్ జనరేషన్ fail అవుతుంది. Line breaks మాత్రం వాడకు, అన్నీ ఒకే paragraph లో ఉండాలి, కానీ వాక్యాల మధ్య పూర్ణవిరామం మాత్రం ఖచ్చితంగా ఉండాలి. తప్పకుండా కనీసం 85 తెలుగు పదాలు వాడి 95 పదాలు మీరకూడదు.
+// Shared formatting/voice rules appended to every category's prompt.
+const COMMON_RULES = `
+సులభమైన భాషలో, ఆకర్షణీయంగా రాయి. ఇది 4-6 చిన్న వాక్యాలుగా ఉండాలి, ప్రతి వాక్యం తర్వాత తప్పకుండా పూర్ణవిరామం (.) పెట్టాలి — ఏ ఒక్క వాక్యం కూడా చాలా పొడవుగా (commas తో కలిపి ఒకే వాక్యంగా) ఉండకూడదు, ఎందుకంటే అలా ఉంటే వాయిస్ జనరేషన్ fail అవుతుంది. Line breaks మాత్రం వాడకు, అన్నీ ఒకే paragraph లో ఉండాలి, కానీ వాక్యాల మధ్య పూర్ణవిరామం మాత్రం ఖచ్చితంగా ఉండాలి. తప్పకుండా కనీసం 85 తెలుగు పదాలు వాడి 95 పదాలు మీరకూడదు.
 
-ముఖ్యమైనది: వార్తలో వచ్చే కంపెనీ పేర్లు, product పేర్లు, వ్యక్తుల పేర్లు, brand పేర్లు (ఉదా. Uber, Apple, Google, Elon Musk లాంటివి) ఎప్పుడూ వాటి అసలైన ఆంగ్ల స్పెల్లింగ్‌లోనే (English letters లోనే) రాయి — వాటిని తెలుగు లిపిలోకి (ఉదా. "ఉబర్") transliterate చేయకు, ఎందుకంటే అలా చేస్తే వాయిస్ తప్పుగా ఉచ్చరిస్తుంది. మిగతా వాక్యం మొత్తం తెలుగు లిపిలోనే ఉండాలి, ఆంగ్ల పేర్లు మాత్రమే మధ్యలో ఆంగ్ల అక్షరాల్లో ఉండొచ్చు.
+ముఖ్యమైనది: కంపెనీ పేర్లు, product పేర్లు, వ్యక్తుల పేర్లు, brand పేర్లు (ఉదా. Uber, Apple, Google లాంటివి) ఎప్పుడూ వాటి అసలైన ఆంగ్ల స్పెల్లింగ్‌లోనే రాయి — తెలుగు లిపిలోకి transliterate చేయకు, ఎందుకంటే అలా చేస్తే వాయిస్ తప్పుగా ఉచ్చరిస్తుంది.
 
-చివర్లో ఖచ్చితంగా ఈ వాక్యం జోడించు (ఇది కూడా ఒక పూర్తి వాక్యంగా, ముందు పూర్ణవిరామం తర్వాత): మరిన్ని ఇలాంటి వార్తల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.
+చివర్లో script లో ఖచ్చితంగా ఈ వాక్యం జోడించు (ఇది కూడా ఒక పూర్తి వాక్యంగా, ముందు పూర్ణవిరామం తర్వాత): మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.`;
 
-కేవలం script టెక్స్ట్ మాత్రమే ఇవ్వు — JSON వద్దు, headers వద్దు, ముందు/వెనుక ఎలాంటి extra text వద్దు.`;
+function buildPrompt(category, article, recentTitles) {
+  const avoidLine = recentTitles.length
+    ? `\n\nఇటీవల ఈ అంశాలు వాడాము, వీటిని పునరావృతం చేయకు, కొత్త కోణం ఎంచుకో: ${recentTitles.slice(-5).join(' | ')}`
+    : '';
+
+  let topicInstruction;
+  if (category === 'news') {
+    topicInstruction = `ఈ వార్తను తీసుకుని, కేవలం పొడి facts లా కాకుండా, అందులో ఉన్న మనుషుల కోణం నుండి, భావోద్వేగంగా, రిలేటబుల్‌గా చెప్పు — వార్త: "${article.title}". ${article.description || ''}\nవార్త నేపథ్యం, ఏమి జరిగింది, ఇది సామాన్య ప్రజలను ఎలా ప్రభావితం చేస్తుందో చెప్పు.`;
+  } else if (category === 'moral_story') {
+    topicInstruction = `ఒక చిన్న, హృదయాన్ని తాకే నీతి కథ లేదా జీవిత పాఠం తెలుగులో కొత్తగా రాయి (పాత well-known కథలు కాకుండా, కొత్త సన్నివేశం సృష్టించు). కథ మొదట్లోనే ఆసక్తి పెట్టాలి, చివర్లో ఒక స్పష్టమైన జీవిత పాఠంతో ముగియాలి.${avoidLine}`;
+  } else if (category === 'fact') {
+    topicInstruction = `ఒక నిజమైన, ఆసక్తికరమైన, ఆశ్చర్యపరిచే విషయం (fact) గురించి "మీకు తెలుసా?" స్టైల్‌లో తెలుగులో రాయి — సైన్స్, చరిత్ర, ప్రకృతి, మానవ శరీరం, అంతరిక్షం వీటిలో దేనిమీదైనా కావొచ్చు. తప్పుడు సమాచారం ఇవ్వకు, నిజమైన, verifiable fact మాత్రమే వాడు.${avoidLine}`;
+  } else {
+    topicInstruction = `పిల్లల పెంపకం, కుటుంబ సంబంధాలు, తల్లిదండ్రుల-పిల్లల బంధం గురించి ఒక చిన్న, ఆచరణాత్మకమైన, హృదయాన్ని తాకే సలహా లేదా పాఠం తెలుగులో రాయి.${avoidLine}`;
+  }
+
+  return `${topicInstruction}
+${COMMON_RULES}
+
+జవాబును ఖచ్చితంగా ఈ మూడు లైన్ల ఫార్మాట్‌లోనే ఇవ్వు, ఇదే క్రమంలో, మరేమీ ముందు/వెనుక రాయకు:
+TITLE: (5-8 తెలుగు పదాల్లో ఒక చిన్న శీర్షిక)
+KEYWORDS: (ఈ వీడియోకి నేపథ్య ఫోటోల కోసం 3 ఆంగ్ల కీవర్డ్లు, comma తో వేరు చేసి, ఉదా: family, sunrise, hands)
+SCRIPT: (పైన చెప్పిన నియమాల ప్రకారం పూర్తి వాయిస్-ఓవర్ టెక్స్ట్)`;
+}
+
+function parseLabeledContent(raw) {
+  const titleMatch = raw.match(/TITLE:\s*(.+)/i);
+  const keywordsMatch = raw.match(/KEYWORDS:\s*(.+)/i);
+  const scriptMatch = raw.match(/SCRIPT:\s*([\s\S]+)/i);
+  return {
+    title: titleMatch ? titleMatch[1].trim() : null,
+    keywords: keywordsMatch ? keywordsMatch[1].trim() : null,
+    script: scriptMatch ? scriptMatch[1].trim().replace(/\n+/g, ' ') : null
+  };
+}
+
+async function generateContent(category, article, recentTitles) {
+  log(`Generating ${category} content via Groq...`);
+  const prompt = buildPrompt(category, article, recentTitles);
 
   const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -118,12 +179,33 @@ async function generateScript(article) {
   });
   const data = await res.json();
   if (!data.choices || !data.choices[0]) {
-    throw new Error('Groq did not return a script: ' + JSON.stringify(data));
+    throw new Error('Groq did not return content: ' + JSON.stringify(data));
   }
-  let script = data.choices[0].message.content.trim().replace(/\n+/g, ' ');
+  const raw = data.choices[0].message.content.trim();
+  let { title, keywords, script } = parseLabeledContent(raw);
+
+  if (!script) {
+    // Labeled format wasn't followed — fall back to treating the whole
+    // reply as the script so one malformed response doesn't fail the run.
+    log('WARNING: Groq did not follow the TITLE/KEYWORDS/SCRIPT format, falling back to plain-text parsing.');
+    script = raw.replace(/\n+/g, ' ');
+  }
+  if (!title) title = deriveHeadline(script);
+  if (!keywords) keywords = FALLBACK_KEYWORDS[category];
+
   script = ensureSentenceBreaks(script);
+  log(`Title: ${title}`);
+  log(`Keywords: ${keywords}`);
   log(`Script (${script.length} chars): ${script}`);
-  return script;
+  return { title, keywords, script };
+}
+
+// FALLBACK ONLY: used if Groq ever fails to return a usable TITLE line.
+function deriveHeadline(script, maxWords = 8) {
+  const words = script.split(' ').filter(Boolean);
+  let headline = words.slice(0, maxWords).join(' ');
+  if (words.length > maxWords) headline += '...';
+  return headline;
 }
 
 async function generateAudio(script) {
@@ -154,24 +236,8 @@ function getAudioDuration(audioPath) {
   return parseFloat(out);
 }
 
-// NewsAPI titles usually end with " - Source Name" (e.g. "... - CNBC").
-// Strip that trailing segment so the Pexels search query is just the story
-// itself, not polluted with a publisher name.
-function cleanTitleForImageSearch(title) {
-  const parts = title.split(' - ');
-  if (parts.length > 1) return parts.slice(0, -1).join(' - ').trim();
-  return title.trim();
-}
-
 async function fetchImages(query, count) {
   log(`Fetching ${count} images from Pexels for: "${query}"...`);
-  // TEMPORARY DEBUG — remove once the 401 issue is resolved. Never logs the
-  // full key, just enough to confirm the secret actually reached the script.
-  if (!PEXELS_API_KEY) {
-    log('DEBUG: PEXELS_API_KEY is EMPTY/undefined — the GitHub secret is not reaching this script at all.');
-  } else {
-    log(`DEBUG: PEXELS_API_KEY length=${PEXELS_API_KEY.length}, starts="${PEXELS_API_KEY.slice(0, 4)}", ends="${PEXELS_API_KEY.slice(-4)}"`);
-  }
   const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=portrait`;
   const res = await fetchWithTimeout(url, { headers: { Authorization: (PEXELS_API_KEY || '').trim() } });
   const data = await res.json();
@@ -192,14 +258,14 @@ async function fetchImages(query, count) {
   return imagePaths;
 }
 
-// If the story-specific search comes up empty (can happen for very niche
-// headlines), fall back to a generic query so the run doesn't fail outright.
-async function fetchImagesWithFallback(query, count) {
+// If the specific keyword search comes up empty, fall back to a
+// category-appropriate generic query so the run doesn't fail outright.
+async function fetchImagesWithFallback(query, count, category) {
   try {
     return await fetchImages(query, count);
   } catch (e) {
-    log('WARNING: image search failed for the specific headline, falling back to a generic query. ' + e.message);
-    return await fetchImages('India news', count);
+    log('WARNING: image search failed for the specific keywords, falling back to a generic query. ' + e.message);
+    return await fetchImages(FALLBACK_KEYWORDS[category] || 'India', count);
   }
 }
 
@@ -321,17 +387,20 @@ async function uploadToYouTube(videoPath, title, description) {
   return res.data.id;
 }
 
-function saveState(article) {
-  let usedUrls = [];
-  if (fs.existsSync(STATE_FILE)) {
-    try {
-      const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-      usedUrls = state.usedUrls || [];
-    } catch (e) {}
+function saveState(article, title) {
+  const { usedUrls, usedTitles } = loadState();
+  let newUrls = usedUrls;
+  if (article) {
+    newUrls = [...usedUrls, article.url];
+    if (newUrls.length > 50) newUrls = newUrls.slice(-50);
   }
-  usedUrls.push(article.url);
-  if (usedUrls.length > 50) usedUrls = usedUrls.slice(-50);
-  fs.writeFileSync(STATE_FILE, JSON.stringify({ usedUrls, lastTitle: article.title, lastDate: new Date().toISOString() }, null, 2));
+  let newTitles = [...usedTitles, title];
+  if (newTitles.length > 50) newTitles = newTitles.slice(-50);
+  fs.writeFileSync(STATE_FILE, JSON.stringify({
+    usedUrls: newUrls,
+    usedTitles: newTitles,
+    lastDate: new Date().toISOString()
+  }, null, 2));
 }
 
 // Logs only whether each required secret is present and its character
@@ -359,18 +428,22 @@ async function main() {
   checkSecret('YT_CLIENT_SECRET', YT_CLIENT_SECRET);
   checkSecret('YT_REFRESH_TOKEN', YT_REFRESH_TOKEN);
 
-  const article = await fetchNews();
-  const script = await generateScript(article);
+  const category = pickCategory();
+  const article = category === 'news' ? await fetchNews() : null;
+  const { usedTitles } = loadState();
+
+  const { title, keywords, script } = await generateContent(category, article, usedTitles);
   const audioPath = await generateAudio(script);
-  const imageQuery = cleanTitleForImageSearch(article.title);
-  const imagePaths = await fetchImagesWithFallback(imageQuery, IMAGE_COUNT);
+  const imagePaths = await fetchImagesWithFallback(keywords, IMAGE_COUNT, category);
   const videoPath = buildVideo(imagePaths, audioPath);
+
+  const ytTitle = article ? article.title : title;
   await uploadToYouTube(
     videoPath,
-    article.title,
+    ytTitle,
     script + '\n\nPhotos via Pexels (pexels.com).\n\n#TeluguEcho #TeluguNews #Shorts'
   );
-  saveState(article);
+  saveState(article, title);
   log('Done!');
 }
 
