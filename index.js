@@ -367,7 +367,30 @@ ${numbered}
 }
 
 // Fetches one image per sentence (own Pexels search each), falling back to
-// the category-generic keyword if a specific sentence search fails.
+const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt/';
+
+// Generates one AI image matching the sentence's content via Pollinations.ai
+// (free, no API key required). This has NO reliability guarantee (can be
+// slow or down), so every call here is immediately backed by a Pexels
+// fallback in fetchImagesPerSentence — never the only path to an image.
+async function generateAIImage(prompt, savePath) {
+  const styledPrompt = `${prompt}, cinematic photo, high quality, realistic, vertical portrait composition`;
+  const seed = Math.floor(Math.random() * 100000);
+  const url = `${POLLINATIONS_BASE}${encodeURIComponent(styledPrompt)}?width=768&height=1365&nologo=true&seed=${seed}`;
+  const res = await fetchWithTimeout(url, {}, 30000);
+  if (!res.ok) {
+    throw new Error(`Pollinations returned HTTP ${res.status}`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length < 5000) {
+    throw new Error(`Pollinations image suspiciously small (${buf.length} bytes) — likely an error response, not a real image`);
+  }
+  fs.writeFileSync(savePath, buf);
+  return savePath;
+}
+
+// Fetches one image per sentence: AI-generated first (exact content match),
+// Pexels as the fallback if generation fails, times out, or is rate-limited.
 async function fetchImagesPerSentence(sentences, category) {
   let sentenceKeywords;
   try {
@@ -380,12 +403,23 @@ async function fetchImagesPerSentence(sentences, category) {
   const imagePaths = [];
   for (let i = 0; i < sentences.length; i++) {
     const query = sentenceKeywords[i] || FALLBACK_KEYWORDS[category];
-    log(`Sentence ${i} ("${sentences[i].slice(0, 40)}...") -> image search: "${query}"`);
+    log(`Sentence ${i} ("${sentences[i].slice(0, 40)}...") -> image prompt: "${query}"`);
+
+    const aiPath = path.join(WORK_DIR, `ai_image_${i}.jpg`);
+    try {
+      await generateAIImage(query, aiPath);
+      log(`  -> AI-generated image succeeded for sentence ${i}.`);
+      imagePaths.push(aiPath);
+      continue;
+    } catch (e) {
+      log(`  WARNING: AI image generation failed for sentence ${i} (${e.message}), falling back to Pexels.`);
+    }
+
     try {
       const paths = await fetchImagesWithFallback(query, 1, category, i);
       imagePaths.push(paths[0]);
     } catch (e) {
-      log(`WARNING: sentence ${i} image totally failed (${e.message}) — this sentence will be skipped visually.`);
+      log(`  WARNING: sentence ${i} image totally failed (${e.message}) — this sentence will be skipped visually.`);
       imagePaths.push(null);
     }
   }
