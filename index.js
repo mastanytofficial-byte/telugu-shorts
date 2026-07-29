@@ -154,7 +154,15 @@ function buildPrompt(category, article, recentTitles) {
   if (category === 'news') {
     topicInstruction = `ఈ వార్తను తీసుకుని, కేవలం పొడి facts లా కాకుండా, అందులో ఉన్న మనుషుల కోణం నుండి, భావోద్వేగంగా, రిలేటబుల్‌గా చెప్పు — వార్త: "${article.title}". ${article.description || ''}\nవార్త నేపథ్యం, ఏమి జరిగింది, ఇది సామాన్య ప్రజలను ఎలా ప్రభావితం చేస్తుందో చెప్పు.`;
   } else if (category === 'moral_story') {
-    topicInstruction = `ఒక చిన్న, హృదయాన్ని తాకే నీతి కథ లేదా జీవిత పాఠం తెలుగులో కొత్తగా రాయి. చాలా ముఖ్యం: ఇది ప్రసిద్ధమైన, అందరికీ ఇప్పటికే తెలిసిన కథ (ఈసప్ కథలు, పంచతంత్రం, బుద్ధుడి కథలు, తెనాలి రామకృష్ణ లాంటివి) అయ్యుండకూడదు — పూర్తిగా కొత్తగా, ఊహించని పాత్రలు/సన్నివేశంతో నువ్వే సృష్టించు. కథ మొదట్లోనే ఆసక్తి పెట్టాలి, చివర్లో ఒక స్పష్టమైన, unexpected జీవిత పాఠంతో ముగియాలి.${avoidLine}`;
+    topicInstruction = `ఒక చిన్న, హృదయాన్ని తాకే నీతి కథ తెలుగులో కొత్తగా రాయి. చాలా ముఖ్యం: ఇది ప్రసిద్ధమైన, అందరికీ ఇప్పటికే తెలిసిన కథ (ఈసప్ కథలు, పంచతంత్రం, బుద్ధుడి కథలు, తెనాలి రామకృష్ణ లాంటివి) అయ్యుండకూడదు — పూర్తిగా కొత్త పాత్రలు/సన్నివేశంతో నువ్వే సృష్టించు.
+
+కథ నిర్మాణం ఖచ్చితంగా ఇలా ఉండాలి:
+1. ఒక పాత్ర, ఒక సమస్య/పరిస్థితి పరిచయం.
+2. ఆ పాత్ర ఏం చేసింది (సానుకూలమైన లక్షణం — నిజాయితీ, దయ, ఓర్పు, కృషి, క్షమ, సహాయం చేయడం — వీటిలో దేనినైనా ప్రదర్శించేలా).
+3. ఫలితం — ఆ సానుకూల చర్య వల్ల మంచి ఫలితం రావాలి (ప్రతికూల/అనైతిక చర్య ద్వారా లాభం పొందడం చూపించకూడదు).
+4. కథ చివర్లో, ఒక ప్రత్యేక వాక్యంగా, ఖచ్చితంగా ఇలా మొదలుపెట్టి నీతిని స్పష్టంగా చెప్పాలి: "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." — ఈ నీతి వాక్యం లేకుండా కథ పూర్తి కాదు.
+
+ఖచ్చితంగా వద్దు (very important — ఈ ఇతివృత్తాలు అస్సలు వాడకు): ఎవరినైనా exploit చేయడం, ఒక వ్యక్తిని బహుమతిలా ఇవ్వడం/మార్పిడి చేయడం, బలవంతపు లేదా లావాదేవీ పెళ్ళిళ్ళు, హింస, మోసం/అబద్ధం ద్వారా లాభం పొందడం, ఇతరులను ఉపయోగించుకోవడం ద్వారా సమస్య పరిష్కారం కావడం. కథ ముగింపులో మంచి విలువలే గెలవాలి, ఏ పాత్ర యొక్క దోపిడీ/నష్టం ద్వారా కాదు.${avoidLine}`;
   } else if (category === 'fact') {
     topicInstruction = `ఒక నిజమైన, ఆసక్తికరమైన విషయం (fact) గురించి "మీకు తెలుసా?" స్టైల్‌లో తెలుగులో రాయి. చాలా ముఖ్యం: సాధారణంగా అందరికీ ఇప్పటికే తెలిసిన, ఇంటర్నెట్‌లో ఎక్కడ చూసినా కనిపించే overused facts (ఉదా. "ఆక్టోపస్‌కి మూడు గుండెలు ఉంటాయి" లాంటివి) వాడకు — తక్కువ మందికి తెలిసిన, నిజంగా ఆశ్చర్యపరిచే fact ఎంచుకో. తప్పుడు సమాచారం ఇవ్వకు, నిజమైన, verifiable fact మాత్రమే వాడు.${avoidLine}`;
   } else {
@@ -238,6 +246,26 @@ async function generateContent(category, article, recentTitles) {
   }
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
+
+  // moral_story specifically requires an explicit, clearly-stated moral —
+  // this is what's missing when a story ends on an incoherent or
+  // inappropriate note with no real lesson attached. If the required marker
+  // phrase isn't present, retry once with a pointed reminder rather than
+  // silently publishing a story with no coherent takeaway.
+  if (category === 'moral_story' && !script.includes('నేర్చుకునేది')) {
+    log('WARNING: script is missing the required explicit moral statement — retrying with a pointed reminder.');
+    const retryPrompt = prompt + `\n\nచాలా ముఖ్యం: మీ మునుపటి ప్రయత్నంలో "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." అనే స్పష్టమైన నీతి వాక్యం లేదు. ఈసారి తప్పకుండా ఆ వాక్యంతో కథను ముగించు, మరియు కథ మొత్తం ఆ నీతికి తార్కికంగా సరిపోవాలి (ఎవరినీ దోపిడీ చేయకుండా, మంచి విలువలే గెలిచేలా).`;
+    raw = await callGroq(retryPrompt);
+    const retryParsed = parseLabeledContent(raw);
+    if (retryParsed.script && retryParsed.script.includes('నేర్చుకునేది')) {
+      title = retryParsed.title || title;
+      keywords = retryParsed.keywords || keywords;
+      script = retryParsed.script;
+      log('Retry produced a script with the explicit moral statement.');
+    } else {
+      log('WARNING: retry still missing the moral statement — publishing as-is; please spot-check this video before/after upload.');
+    }
+  }
 
   script = ensureSentenceBreaks(script);
   log(`Title: ${title}`);
