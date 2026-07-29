@@ -17,7 +17,6 @@ const YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
 
 const STATE_FILE = path.join(__dirname, 'last-article.json');
 const WORK_DIR = path.join(__dirname, 'work');
-const IMAGE_COUNT = 4;
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
@@ -120,18 +119,15 @@ const FALLBACK_KEYWORDS = {
 
 // Shared formatting/voice rules appended to every category's prompt.
 const COMMON_RULES = `
-సులభమైన భాషలో, ఆకర్షణీయంగా రాయి. ఇది 4-6 చిన్న వాక్యాలుగా ఉండాలి. తప్పకుండా కనీసం 85 తెలుగు పదాలు వాడి 95 పదాలు మీరకూడదు.
+ఇది చాలా ముఖ్యం: script తప్పకుండా కనీసం 85 తెలుగు పదాలు ఉండాలి, 95 పదాలు మీరకూడదు. దీని కన్నా తక్కువ రాయకు — తక్కువ రాస్తే వీడియో చాలా చిన్నదిగా అయిపోతుంది.
 
-విరామచిహ్నాల (punctuation) గురించి — వాయిస్ ఆడియో సహజంగా వినిపించాలంటే ఇది చాలా ముఖ్యం:
-- ప్రతి పూర్తి ఆలోచన/వాక్యం అయిపోయాక మాత్రమే పూర్ణవిరామం (.) పెట్టు — వాక్యం మధ్యలో ఆలోచన పూర్తి కాకముందే పెట్టకు.
-- ఒక వాక్యం లోపల, మాట్లాడేటప్పుడు సహజంగా చిన్న ఆగే చోట్ల మాత్రమే (ఉదా. items జాబితా వేసేటప్పుడు, లేదా "అయితే", "కానీ" లాంటి పదాల ముందు) comma పెట్టు — prosody కోసం అనవసరమైన చోట్ల comma పెట్టకు.
-- ఏ ఒక్క వాక్యం కూడా 25 పదాల కన్నా ఎక్కువ పొడవుగా ఉండకూడదు — పొడవైన ఆలోచనని రెండు చిన్న వాక్యాలుగా విడగొట్టు, ఒకే వాక్యంలో commas తో కలపకు.
+సహజంగా, మాట్లాడేటట్టు, ఆకర్షణీయంగా రాయి — ఒక వ్యక్తి మరొకరికి ఈ విషయం చెప్తున్నట్టు అనిపించాలి. సాధారణ వాక్యాల్లా రాయి, ప్రతి పూర్తి వాక్యం అయిపోయాక పూర్ణవిరామం (.) పెట్టు.
 
-సంఖ్యల గురించి: ఏదైనా సంఖ్య వస్తే (ఉదా. 2000, 50, 10 లక్షలు) దాన్ని ఎప్పుడూ అంకెలలో (2000) రాయకు — పూర్తిగా తెలుగు మాటల్లోనే రాయి (ఉదా. 2000 బదులు "రెండు వేలు", 50 బదులు "యాభై" అని రాయి). అంకెలు రాస్తే వాయిస్ వాటిని ఒక్కో అంకెగా ("రెండు సున్నా సున్నా సున్నా") తప్పుగా చదువుతుంది.
+సంఖ్యలను ఎప్పుడూ అంకెలలో (2000) కాకుండా తెలుగు మాటల్లోనే రాయి (ఉదా. 2000 బదులు "రెండు వేలు" అని రాయి) — లేకపోతే వాయిస్ వాటిని తప్పుగా చదువుతుంది.
 
-ముఖ్యమైనది: కంపెనీ పేర్లు, product పేర్లు, వ్యక్తుల పేర్లు, brand పేర్లు (ఉదా. Uber, Apple, Google లాంటివి) ఎప్పుడూ వాటి అసలైన ఆంగ్ల స్పెల్లింగ్‌లోనే రాయి — తెలుగు లిపిలోకి transliterate చేయకు, ఎందుకంటే అలా చేస్తే వాయిస్ తప్పుగా ఉచ్చరిస్తుంది.
+కంపెనీ/వ్యక్తుల/brand పేర్లను (ఉదా. Uber, Apple, Google) ఎప్పుడూ ఆంగ్ల స్పెల్లింగ్‌లోనే ఉంచు, తెలుగులోకి మార్చకు.
 
-చివర్లో script లో ఖచ్చితంగా ఈ వాక్యం జోడించు (ఇది కూడా ఒక పూర్తి వాక్యంగా, ముందు పూర్ణవిరామం తర్వాత): మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.`;
+చివర్లో ఖచ్చితంగా ఈ వాక్యం జోడించు: మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.`;
 
 function buildPrompt(category, article, recentTitles) {
   const avoidLine = recentTitles.length
@@ -169,10 +165,7 @@ function parseLabeledContent(raw) {
   };
 }
 
-async function generateContent(category, article, recentTitles) {
-  log(`Generating ${category} content via Groq...`);
-  const prompt = buildPrompt(category, article, recentTitles);
-
+async function callGroq(prompt) {
   const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -188,7 +181,14 @@ async function generateContent(category, article, recentTitles) {
   if (!data.choices || !data.choices[0]) {
     throw new Error('Groq did not return content: ' + JSON.stringify(data));
   }
-  const raw = data.choices[0].message.content.trim();
+  return data.choices[0].message.content.trim();
+}
+
+async function generateContent(category, article, recentTitles) {
+  log(`Generating ${category} content via Groq...`);
+  const prompt = buildPrompt(category, article, recentTitles);
+
+  let raw = await callGroq(prompt);
   let { title, keywords, script } = parseLabeledContent(raw);
 
   if (!script) {
@@ -196,6 +196,28 @@ async function generateContent(category, article, recentTitles) {
     // reply as the script so one malformed response doesn't fail the run.
     log('WARNING: Groq did not follow the TITLE/KEYWORDS/SCRIPT format, falling back to plain-text parsing.');
     script = raw.replace(/\n+/g, ' ');
+  }
+
+  // The many formatting/punctuation rules can sometimes cause the model to
+  // under-shoot the word count badly (seen once: ~16s of audio instead of
+  // ~25-30s). One retry with the word count called out more forcefully
+  // fixes this far more often than not — cheap insurance against a
+  // noticeably-too-short video.
+  let wordCount = script.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 70) {
+    log(`WARNING: script came back too short (${wordCount} words, need 85-95) — retrying with a stronger word-count reminder.`);
+    const retryPrompt = prompt + `\n\nచాలా ముఖ్యం: మీ మునుపటి ప్రయత్నం చాలా చిన్నగా (${wordCount} పదాలు మాత్రమే) వచ్చింది. ఈసారి ఖచ్చితంగా 85-95 తెలుగు పదాలు ఉండేలా SCRIPT రాయి — అవసరమైతే మరిన్ని వివరాలు/ఉదాహరణలు జోడించి పొడిగించు.`;
+    raw = await callGroq(retryPrompt);
+    const retryParsed = parseLabeledContent(raw);
+    if (retryParsed.script) {
+      const retryWordCount = retryParsed.script.split(/\s+/).filter(Boolean).length;
+      log(`Retry produced ${retryWordCount} words.`);
+      if (retryWordCount > wordCount) {
+        title = retryParsed.title;
+        keywords = retryParsed.keywords;
+        script = retryParsed.script;
+      }
+    }
   }
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
@@ -243,7 +265,7 @@ function getAudioDuration(audioPath) {
   return parseFloat(out);
 }
 
-async function fetchImages(query, count) {
+async function fetchImages(query, count, startIndex = 0) {
   log(`Fetching ${count} images from Pexels for: "${query}"...`);
   const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=portrait`;
   const res = await fetchWithTimeout(url, { headers: { Authorization: (PEXELS_API_KEY || '').trim() } });
@@ -255,25 +277,119 @@ async function fetchImages(query, count) {
   for (let i = 0; i < data.photos.length; i++) {
     const src = data.photos[i].src || {};
     const imgUrl = src.large2x || src.large || src.original;
-    const imgRes = await fetchWithTimeout(imgUrl);
-    const buf = Buffer.from(await imgRes.arrayBuffer());
-    const imgPath = path.join(WORK_DIR, `image_${i}.jpg`);
-    fs.writeFileSync(imgPath, buf);
-    imagePaths.push(imgPath);
+    try {
+      const imgRes = await fetchWithTimeout(imgUrl);
+      if (!imgRes.ok) {
+        log(`WARNING: image ${i} download failed (HTTP ${imgRes.status}), skipping it.`);
+        continue;
+      }
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+      if (buf.length < 5000) {
+        // A real photo is essentially never this small — this is almost
+        // certainly an error page/placeholder that slipped through, not a
+        // usable image. Including it would give that "slide" a broken or
+        // wildly wrong-duration clip in the final video.
+        log(`WARNING: image ${i} downloaded but is suspiciously small (${buf.length} bytes), skipping it.`);
+        continue;
+      }
+      const imgPath = path.join(WORK_DIR, `image_${startIndex}_${imagePaths.length}.jpg`);
+      fs.writeFileSync(imgPath, buf);
+      imagePaths.push(imgPath);
+    } catch (e) {
+      log(`WARNING: image ${i} download threw an error (${e.message}), skipping it.`);
+    }
   }
-  log(`Downloaded ${imagePaths.length} images from Pexels.`);
+  if (imagePaths.length === 0) {
+    throw new Error(`All ${data.photos.length} image downloads failed for "${query}"`);
+  }
+  if (imagePaths.length < count) {
+    log(`WARNING: only ${imagePaths.length}/${count} images downloaded successfully — video will use fewer, evenly-longer slides instead of failing.`);
+  } else {
+    log(`Downloaded ${imagePaths.length} images from Pexels.`);
+  }
   return imagePaths;
 }
 
 // If the specific keyword search comes up empty, fall back to a
 // category-appropriate generic query so the run doesn't fail outright.
-async function fetchImagesWithFallback(query, count, category) {
+async function fetchImagesWithFallback(query, count, category, startIndex = 0) {
   try {
-    return await fetchImages(query, count);
+    return await fetchImages(query, count, startIndex);
   } catch (e) {
     log('WARNING: image search failed for the specific keywords, falling back to a generic query. ' + e.message);
-    return await fetchImages(FALLBACK_KEYWORDS[category] || 'India', count);
+    return await fetchImages(FALLBACK_KEYWORDS[category] || 'India', count, startIndex);
   }
+}
+
+// Splits a script into its individual sentences (by period) — used to fetch
+// one image per sentence instead of a handful of generic images for the
+// whole script, so what's on screen actually matches what's being said at
+// that moment.
+function splitIntoSentences(script) {
+  return script.split(/(?<=\.)\s*/).map(s => s.trim()).filter(Boolean);
+}
+
+// Asks Groq for one concrete, visual English keyword phrase per sentence, in
+// a single call (cheap) so each sentence can get its own matching photo.
+async function getSentenceKeywords(sentences) {
+  const numbered = sentences.map((s, i) => `${i + 1}. ${s}`).join('\n');
+  const prompt = `కింద ఇచ్చిన ప్రతి వాక్యానికి, ఒక stock-photo వెబ్‌సైట్ (Pexels) లో సెర్చ్ చేసేందుకు ఆంగ్ల keyword phrase (3-5 పదాలు) ఇవ్వు.
+
+చాలా ముఖ్యమైన నియమం — వాక్యంలోని పదాలను నేరుగా అనువదించకు, బదులుగా ఆ వాక్యానికి సరిపోయే **నిజమైన దృశ్యం (scene)** ఏమిటో ఆలోచించి రాయి. కొన్ని పదాలను direct గా అనువదిస్తే stock photo sites లో పూర్తిగా వేరే అర్థం వచ్చే ఫోటోలు వస్తాయి:
+- "గుండె" (heart) గురించి వైద్యపరంగా మాట్లాడితే "heart" అని రాస్తే stock sites లో romance/couple ఫోటోలు వస్తాయి — బదులుగా "doctor stethoscope checkup" లేదా "healthy heart medical" అని రాయి.
+- భావోద్వేగాలు/నైరూప్య భావనలు (courage, wisdom, love అనే మాటలు మాత్రమే) వాడకు — ఆ భావన కళ్ళకి ఎలా కనిపిస్తుందో ఆ దృశ్యం రాయి (ఉదా. "courage" కి బదులు "person climbing mountain").
+- ఒక దేశం/ప్రదేశం ప్రస్తావిస్తే, ఆ దేశం పేరుని కూడా keyword లో చేర్చు (ఉదా. చైనాలో ఒక క్రీడ గురించి అయితే "China [sport name] athletes" అని రాయి, కేవలం sport పేరు మాత్రమే కాదు).
+- ఎప్పుడూ ఇలా ప్రశ్నించుకో: "ఈ కీవర్డ్ సెర్చ్ చేస్తే వచ్చే ఫోటో నిజంగా ఈ వాక్యం సందర్భానికి సరిపోతుందా?"
+
+వాక్యాలు:
+${numbered}
+
+జవాబును ఇదే నంబరింగ్‌తో, ఒక్కో లైన్‌లో ఒకటి చొప్పున ఇవ్వు, మరేమీ ముందు/వెనుక రాయకు:
+1. keyword phrase
+2. keyword phrase
+...`;
+
+  const raw = await callGroq(prompt);
+  log(`Raw sentence-keywords response from Groq:\n${raw}`);
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  return sentences.map((_, i) => {
+    // Lenient match: allows leading markdown (*, -, **), then the number,
+    // then '.', ')', or ':' as the separator — real Groq responses have
+    // varied on this and a strict match silently nulled every keyword,
+    // which is what was causing every sentence to fall back to the same
+    // generic category image regardless of what it actually said.
+    const re = new RegExp(`^[\\*\\-\\s]*${i + 1}\\s*[.):]\\s*(.+)`);
+    const line = lines.map(l => l.match(re)).find(Boolean);
+    const keyword = line ? line[1].replace(/\*\*/g, '').trim() : null;
+    log(`  sentence ${i} keyword: ${keyword || '(none parsed — will use category fallback)'}`);
+    return keyword;
+  });
+}
+
+// Fetches one image per sentence (own Pexels search each), falling back to
+// the category-generic keyword if a specific sentence search fails.
+async function fetchImagesPerSentence(sentences, category) {
+  let sentenceKeywords;
+  try {
+    sentenceKeywords = await getSentenceKeywords(sentences);
+  } catch (e) {
+    log('WARNING: per-sentence keyword generation failed, all slides will use the generic category query. ' + e.message);
+    sentenceKeywords = sentences.map(() => null);
+  }
+
+  const imagePaths = [];
+  for (let i = 0; i < sentences.length; i++) {
+    const query = sentenceKeywords[i] || FALLBACK_KEYWORDS[category];
+    log(`Sentence ${i} ("${sentences[i].slice(0, 40)}...") -> image search: "${query}"`);
+    try {
+      const paths = await fetchImagesWithFallback(query, 1, category, i);
+      imagePaths.push(paths[0]);
+    } catch (e) {
+      log(`WARNING: sentence ${i} image totally failed (${e.message}) — this sentence will be skipped visually.`);
+      imagePaths.push(null);
+    }
+  }
+  return imagePaths;
 }
 
 // Renders one still image as a short Ken-Burns (slow zoom) video clip.
@@ -296,7 +412,7 @@ function buildImageClip(imagePath, duration, outPath, zoomIn) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
-function buildVideo(imagePaths, audioPath) {
+function buildVideo(imagePaths, audioPath, customDurations) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontsDir = path.join(__dirname, 'fonts');
@@ -315,14 +431,24 @@ function buildVideo(imagePaths, audioPath) {
   if (n === 0) {
     throw new Error('buildVideo received zero images — refusing to continue (would divide duration by zero).');
   }
-  const perImageDur = duration / n;
-  log(`Building ${n}-image Ken Burns slideshow, ~${perImageDur.toFixed(2)}s per image...`);
+  // customDurations lets each slide match how long its sentence actually
+  // takes to say, instead of every slide getting an equal, arbitrary share
+  // of the total — this is what keeps the image on screen in sync with
+  // what's being narrated at that moment.
+  let durations = customDurations;
+  if (!durations || durations.length !== n) {
+    const equal = duration / n;
+    durations = imagePaths.map(() => equal);
+  }
+  log(`Building ${n}-image Ken Burns slideshow, durations: ${durations.map(d => d.toFixed(2)).join('s, ')}s...`);
 
   // Step 1: one Ken-Burns clip per image, alternating zoom-in/zoom-out for variety.
   const clipPaths = [];
   for (let i = 0; i < n; i++) {
     const clipPath = path.join(WORK_DIR, `clip_${i}.mp4`);
-    buildImageClip(imagePaths[i], perImageDur, clipPath, i % 2 === 0);
+    buildImageClip(imagePaths[i], durations[i], clipPath, i % 2 === 0);
+    const actualDur = getAudioDuration(clipPath); // works for video streams too via ffprobe format=duration
+    log(`  clip_${i}: target ${durations[i].toFixed(2)}s, actual ${actualDur.toFixed(2)}s${Math.abs(actualDur - durations[i]) > 1 ? ' ⚠️ MISMATCH' : ''}`);
     clipPaths.push(clipPath);
   }
 
@@ -331,6 +457,7 @@ function buildVideo(imagePaths, audioPath) {
   fs.writeFileSync(concatListPath, clipPaths.map(p => `file '${p}'`).join('\n'), 'utf8');
   const bgPath = path.join(WORK_DIR, 'background.mp4');
   execSync(`ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${bgPath}"`, { stdio: 'inherit' });
+  log(`  background.mp4 total duration: ${getAudioDuration(bgPath).toFixed(2)}s (expected ~${fd}s)`);
 
   // Step 3: overlay branding/CTA + scrims (for legibility over photos), mux audio.
   // NOTE on drawbox positioning: inside drawbox, 'w'/'h' in x/y expressions mean
@@ -439,10 +566,54 @@ async function main() {
   const article = category === 'news' ? await fetchNews() : null;
   const { usedTitles } = loadState();
 
-  const { title, keywords, script } = await generateContent(category, article, usedTitles);
+  const { title, script } = await generateContent(category, article, usedTitles);
   const audioPath = await generateAudio(script);
-  const imagePaths = await fetchImagesWithFallback(keywords, IMAGE_COUNT, category);
-  const videoPath = buildVideo(imagePaths, audioPath);
+  const duration = getAudioDuration(audioPath) + 0.3;
+
+  // Split into sentences and pull the closing CTA sentence out — a stock
+  // photo search for "like share subscribe" wouldn't mean anything, so its
+  // speaking time is folded into the last content sentence's slide instead.
+  let sentences = splitIntoSentences(script);
+  const ctaIndex = sentences.findIndex(s => s.includes('తెలుగు ఎకో ఛానెల్'));
+  let ctaWords = 0;
+  if (ctaIndex !== -1) {
+    ctaWords = sentences[ctaIndex].split(/\s+/).filter(Boolean).length;
+    sentences.splice(ctaIndex, 1);
+  }
+  // Cap slide count so an unusually long script doesn't trigger excessive
+  // Pexels calls / render time — merge any extra sentences into the last slide.
+  const MAX_SLIDES = 6;
+  if (sentences.length > MAX_SLIDES) {
+    const merged = sentences.slice(MAX_SLIDES - 1).join(' ');
+    sentences = sentences.slice(0, MAX_SLIDES - 1).concat([merged]);
+  }
+
+  const wordCounts = sentences.map(s => s.split(/\s+/).filter(Boolean).length);
+  if (wordCounts.length > 0) wordCounts[wordCounts.length - 1] += ctaWords;
+
+  log(`Fetching one content-matched image per sentence (${sentences.length} sentences)...`);
+  const rawImagePaths = await fetchImagesPerSentence(sentences, category);
+
+  // Drop any sentence whose image totally failed, redistributing its share
+  // of time to the remaining successful slides so there's no dead/black gap.
+  const imagePaths = [];
+  const keptWordCounts = [];
+  for (let i = 0; i < rawImagePaths.length; i++) {
+    if (rawImagePaths[i]) {
+      imagePaths.push(rawImagePaths[i]);
+      keptWordCounts.push(wordCounts[i]);
+    }
+  }
+  if (imagePaths.length === 0) {
+    log('WARNING: every per-sentence image failed — falling back to one generic image for the whole video.');
+    const fallbackPaths = await fetchImagesWithFallback(FALLBACK_KEYWORDS[category], 1, category, 999);
+    imagePaths.push(fallbackPaths[0]);
+    keptWordCounts.push(1);
+  }
+  const keptTotalWords = keptWordCounts.reduce((a, b) => a + b, 0);
+  const durations = keptWordCounts.map(w => duration * (w / keptTotalWords));
+
+  const videoPath = buildVideo(imagePaths, audioPath, durations);
 
   const ytTitle = article ? article.title : title;
   await uploadToYouTube(
