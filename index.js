@@ -117,9 +117,21 @@ const FALLBACK_KEYWORDS = {
   parenting: 'family parenting India'
 };
 
+// news/moral_story need more room to actually tell a story (~40-45s);
+// fact/parenting work better short and punchy (~20-30s) per YouTube Shorts
+// retention data — longer isn't better for a single quick tip or fact.
+const WORD_COUNT_TARGETS = {
+  news: { min: 130, max: 150 },
+  moral_story: { min: 130, max: 150 },
+  fact: { min: 85, max: 95 },
+  parenting: { min: 85, max: 95 }
+};
+
 // Shared formatting/voice rules appended to every category's prompt.
-const COMMON_RULES = `
-ఇది చాలా ముఖ్యం: script తప్పకుండా కనీసం 85 తెలుగు పదాలు ఉండాలి, 95 పదాలు మీరకూడదు. దీని కన్నా తక్కువ రాయకు — తక్కువ రాస్తే వీడియో చాలా చిన్నదిగా అయిపోతుంది.
+function getCommonRules(category) {
+  const { min, max } = WORD_COUNT_TARGETS[category];
+  return `
+ఇది చాలా ముఖ్యం: script తప్పకుండా కనీసం ${min} తెలుగు పదాలు ఉండాలి, ${max} పదాలు మీరకూడదు. దీని కన్నా తక్కువ రాయకు — తక్కువ రాస్తే వీడియో చాలా చిన్నదిగా అయిపోతుంది.
 
 సహజంగా, మాట్లాడేటట్టు, ఆకర్షణీయంగా రాయి — ఒక వ్యక్తి మరొకరికి ఈ విషయం చెప్తున్నట్టు అనిపించాలి. సాధారణ వాక్యాల్లా రాయి, ప్రతి పూర్తి వాక్యం అయిపోయాక పూర్ణవిరామం (.) పెట్టు.
 
@@ -128,6 +140,7 @@ const COMMON_RULES = `
 కంపెనీ/వ్యక్తుల/brand పేర్లను (ఉదా. Uber, Apple, Google) ఎప్పుడూ ఆంగ్ల స్పెల్లింగ్‌లోనే ఉంచు, తెలుగులోకి మార్చకు.
 
 చివర్లో ఖచ్చితంగా ఈ వాక్యం జోడించు: మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.`;
+}
 
 function buildPrompt(category, article, recentTitles) {
   const avoidLine = recentTitles.length
@@ -146,7 +159,7 @@ function buildPrompt(category, article, recentTitles) {
   }
 
   return `${topicInstruction}
-${COMMON_RULES}
+${getCommonRules(category)}
 
 జవాబును ఖచ్చితంగా ఈ మూడు లైన్ల ఫార్మాట్‌లోనే ఇవ్వు, ఇదే క్రమంలో, మరేమీ ముందు/వెనుక రాయకు:
 TITLE: (5-8 తెలుగు పదాల్లో ఒక చిన్న శీర్షిక)
@@ -203,10 +216,11 @@ async function generateContent(category, article, recentTitles) {
   // ~25-30s). One retry with the word count called out more forcefully
   // fixes this far more often than not — cheap insurance against a
   // noticeably-too-short video.
+  const target = WORD_COUNT_TARGETS[category];
   let wordCount = script.split(/\s+/).filter(Boolean).length;
-  if (wordCount < 70) {
-    log(`WARNING: script came back too short (${wordCount} words, need 85-95) — retrying with a stronger word-count reminder.`);
-    const retryPrompt = prompt + `\n\nచాలా ముఖ్యం: మీ మునుపటి ప్రయత్నం చాలా చిన్నగా (${wordCount} పదాలు మాత్రమే) వచ్చింది. ఈసారి ఖచ్చితంగా 85-95 తెలుగు పదాలు ఉండేలా SCRIPT రాయి — అవసరమైతే మరిన్ని వివరాలు/ఉదాహరణలు జోడించి పొడిగించు.`;
+  if (wordCount < target.min - 15) {
+    log(`WARNING: script came back too short (${wordCount} words, need ${target.min}-${target.max}) — retrying with a stronger word-count reminder.`);
+    const retryPrompt = prompt + `\n\nచాలా ముఖ్యం: మీ మునుపటి ప్రయత్నం చాలా చిన్నగా (${wordCount} పదాలు మాత్రమే) వచ్చింది. ఈసారి ఖచ్చితంగా ${target.min}-${target.max} తెలుగు పదాలు ఉండేలా SCRIPT రాయి — అవసరమైతే మరిన్ని వివరాలు/ఉదాహరణలు జోడించి పొడిగించు.`;
     raw = await callGroq(retryPrompt);
     const retryParsed = parseLabeledContent(raw);
     if (retryParsed.script) {
