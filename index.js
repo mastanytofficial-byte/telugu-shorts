@@ -254,20 +254,51 @@ function deriveHeadline(script, maxWords = 8) {
   return headline;
 }
 
+function escapeSSML(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Wraps each sentence in <s> tags so Chirp 3 HD gets an explicit, structural
+// signal about sentence boundaries — a guaranteed pause between sentences
+// instead of leaving pause length up to the model's read of a plain-text
+// period, which is what let a couple of sentences run together with no
+// audible gap.
+function buildSSML(script) {
+  const sentences = splitIntoSentences(script);
+  const wrapped = sentences.map(s => `<s>${escapeSSML(s)}</s>`).join('');
+  return `<speak><p>${wrapped}</p></speak>`;
+}
+
 async function generateAudio(script) {
   log('Generating audio via Google Cloud TTS...');
   // te-IN-Chirp3-HD-Achird: male, Chirp 3: HD tier — natural/human-sounding.
   // Free quota: 1,000,000 chars/month, separate from Standard's 4,000,000/month.
-  const res = await fetchWithTimeout(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
+  const ssml = buildSSML(script);
+  let res = await fetchWithTimeout(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      input: { text: script },
+      input: { ssml },
       voice: { languageCode: 'te-IN', name: 'te-IN-Chirp3-HD-Achird' },
       audioConfig: { audioEncoding: 'LINEAR16' }
     })
   });
-  const data = await res.json();
+  let data = await res.json();
+  if (!data.audioContent) {
+    // SSML support for Chirp 3 HD is fairly new — fall back to plain text
+    // rather than failing the whole run if it's ever rejected.
+    log('WARNING: SSML request failed (' + JSON.stringify(data.error || data) + '), falling back to plain text input.');
+    res = await fetchWithTimeout(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text: script },
+        voice: { languageCode: 'te-IN', name: 'te-IN-Chirp3-HD-Achird' },
+        audioConfig: { audioEncoding: 'LINEAR16' }
+      })
+    });
+    data = await res.json();
+  }
   if (!data.audioContent) {
     throw new Error('Google TTS did not return audio: ' + JSON.stringify(data));
   }
@@ -515,19 +546,41 @@ function buildVideo(imagePaths, audioPath, customDurations) {
   // the box's OWN width/height (not the frame) — always use 'iw'/'ih' there.
   // drawtext does not have this problem — its 'w'/'h' correctly mean the frame.
   const filters = [
-    // dark scrims top & bottom so branding/CTA text stays legible over any photo
-    `drawbox=x=0:y=0:w=iw:h=260:color=black@0.55:t=fill`,
-    `drawbox=x=0:y=ih-260:w=iw:h=260:color=black@0.55:t=fill`,
-    // "NEWS" badge, top-left
-    `drawbox=x=40:y=60:w=120:h=44:color=${ACCENT}@0.95:t=fill`,
+    // subtle cinematic color grade + vignette on the raw photos
+    `eq=contrast=1.06:saturation=1.12`,
+    `vignette=PI/6`,
+
+    // 5-band gradient scrims (top & bottom) instead of a flat rectangle —
+    // reads as a smooth fade like native Instagram/YouTube overlays rather
+    // than a hard-edged bar.
+    `drawbox=x=0:y=0:w=iw:h=56:color=black@0.70:t=fill`,
+    `drawbox=x=0:y=56:w=iw:h=56:color=black@0.55:t=fill`,
+    `drawbox=x=0:y=112:w=iw:h=56:color=black@0.40:t=fill`,
+    `drawbox=x=0:y=168:w=iw:h=56:color=black@0.25:t=fill`,
+    `drawbox=x=0:y=224:w=iw:h=56:color=black@0.12:t=fill`,
+    `drawbox=x=0:y=ih-280:w=iw:h=56:color=black@0.12:t=fill`,
+    `drawbox=x=0:y=ih-224:w=iw:h=56:color=black@0.25:t=fill`,
+    `drawbox=x=0:y=ih-168:w=iw:h=56:color=black@0.40:t=fill`,
+    `drawbox=x=0:y=ih-112:w=iw:h=56:color=black@0.55:t=fill`,
+    `drawbox=x=0:y=ih-56:w=iw:h=56:color=black@0.70:t=fill`,
+
+    // "STORY" badge, top-left, with a soft drop shadow behind the box
+    `drawbox=x=43:y=63:w=120:h=44:color=black@0.35:t=fill`,
+    `drawbox=x=40:y=60:w=120:h=44:color=${ACCENT}@0.97:t=fill`,
     `drawtext=fontfile='${fontPathBold}':text='STORY':fontcolor=0x0f1024:fontsize=24:x=40+(120-text_w)/2:y=60+(44-text_h)/2`,
-    // Channel branding, top-center, with a thin accent underline
-    `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=32:x=(w-text_w)/2:y=140`,
-    `drawbox=x=(iw-160)/2:y=192:w=160:h=4:color=${ACCENT}@0.85:t=fill`,
-    // Subscribe CTA styled as a real button (YouTube red), with a small tagline
-    `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.95:t=fill`,
-    `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2`,
-    `drawtext=fontfile='${fontPath}':text='for daily Telugu life stories':fontcolor=white@0.75:fontsize=18:x=(w-text_w)/2:y=h-100`,
+
+    // Channel branding, top-center, with text shadow + a thin accent underline
+    `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=32:x=(w-text_w)/2:y=140:shadowcolor=black@0.6:shadowx=2:shadowy=2`,
+    `drawbox=x=(iw-160)/2:y=192:w=160:h=4:color=${ACCENT}@0.9:t=fill`,
+
+    // Subscribe CTA styled as a real elevated button: soft glow border behind,
+    // drop shadow, bold white text with shadow, small tagline underneath.
+    `drawbox=x=(iw-572)/2:y=ih-196:w=572:h=88:color=${ACCENT}@0.35:t=fill`,
+    `drawbox=x=(iw-566)/2:y=ih-193+6:w=566:h=82:color=black@0.30:t=fill`,
+    `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.97:t=fill`,
+    `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2:shadowcolor=black@0.5:shadowx=1:shadowy=1`,
+    `drawtext=fontfile='${fontPath}':text='for daily Telugu life stories':fontcolor=white@0.8:fontsize=18:x=(w-text_w)/2:y=h-100`,
+
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
     `fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5`
