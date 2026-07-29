@@ -43,13 +43,16 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
 
 const CATEGORIES = ['news', 'moral_story', 'fact', 'parenting'];
 
-// Rotates through content types by day-of-year so the channel isn't only
-// dry news — cycles evenly through all 4 categories over time.
+// Niching down to a single content type consistently outperforms mixing
+// several for subscriber growth — viewers subscribe for "more of the thing
+// they just watched," not a grab-bag. Fixed to moral_story: strong cultural
+// fit for Telugu audiences, no factual-accuracy risk (unlike 'fact'), and
+// its natural length (130-150 words) matches YouTube's 50-60s Shorts
+// retention sweet spot better than a stretched-out short fact would.
+// To bring back daily variety later, just restore the day-of-year rotation
+// through CATEGORIES.
 function pickCategory() {
-  const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 0);
-  const dayOfYear = Math.floor((now - startOfYear) / 86400000);
-  const category = CATEGORIES[dayOfYear % CATEGORIES.length];
+  const category = 'moral_story';
   log(`Today's category: ${category}`);
   return category;
 }
@@ -517,14 +520,14 @@ function buildVideo(imagePaths, audioPath, customDurations) {
     `drawbox=x=0:y=ih-260:w=iw:h=260:color=black@0.55:t=fill`,
     // "NEWS" badge, top-left
     `drawbox=x=40:y=60:w=120:h=44:color=${ACCENT}@0.95:t=fill`,
-    `drawtext=fontfile='${fontPathBold}':text='NEWS':fontcolor=0x0f1024:fontsize=24:x=40+(120-text_w)/2:y=60+(44-text_h)/2`,
+    `drawtext=fontfile='${fontPathBold}':text='STORY':fontcolor=0x0f1024:fontsize=24:x=40+(120-text_w)/2:y=60+(44-text_h)/2`,
     // Channel branding, top-center, with a thin accent underline
     `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=32:x=(w-text_w)/2:y=140`,
     `drawbox=x=(iw-160)/2:y=192:w=160:h=4:color=${ACCENT}@0.85:t=fill`,
     // Subscribe CTA styled as a real button (YouTube red), with a small tagline
     `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.95:t=fill`,
     `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2`,
-    `drawtext=fontfile='${fontPath}':text='for daily Telugu news updates':fontcolor=white@0.75:fontsize=18:x=(w-text_w)/2:y=h-100`,
+    `drawtext=fontfile='${fontPath}':text='for daily Telugu life stories':fontcolor=white@0.75:fontsize=18:x=(w-text_w)/2:y=h-100`,
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
     `fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5`
@@ -667,7 +670,7 @@ async function main() {
   await uploadToYouTube(
     videoPath,
     ytTitle,
-    script + '\n\nPhotos via Pexels (pexels.com).\n\n#TeluguEcho #TeluguNews #Shorts'
+    script + '\n\nPhotos via Pexels (pexels.com).\n\n#TeluguEcho #TeluguStories #Shorts'
   );
   saveState(article, title);
   log('Done!');
