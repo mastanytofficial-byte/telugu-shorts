@@ -63,11 +63,12 @@ function loadState() {
       const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       return {
         usedUrls: state.usedUrls || (state.url ? [state.url] : []),
-        usedTitles: state.usedTitles || []
+        usedTitles: state.usedTitles || [],
+        runCount: state.runCount || 0
       };
     } catch (e) {}
   }
-  return { usedUrls: [], usedTitles: [] };
+  return { usedUrls: [], usedTitles: [], runCount: 0 };
 }
 
 async function fetchNews() {
@@ -145,7 +146,23 @@ function getCommonRules(category) {
 చివర్లో ఖచ్చితంగా ఈ వాక్యం జోడించు: మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.`;
 }
 
-function buildPrompt(category, article, recentTitles) {
+// The model kept defaulting to "help/kindness" regardless of the 6 options
+// listed, because that's its own bias when given a free choice. Rotating
+// deterministically and TELLING it exactly which value to use (instead of
+// leaving it to choose) guarantees real variety across videos.
+const MORAL_VALUES = [
+  'నిజాయితీ (honesty)', 'ఓర్పు (patience)', 'కృషి/పట్టుదల (hard work and persistence)',
+  'క్షమ (forgiveness)', 'ధైర్యం (courage)', 'కృతజ్ఞత (gratitude)',
+  'వినయం (humility)', 'దయ (kindness)', 'సహాయం చేయడం (helping others)', 'నిబద్ధత (commitment/keeping one\'s word)'
+];
+
+function pickMoralValue(runCount) {
+  const value = MORAL_VALUES[runCount % MORAL_VALUES.length];
+  log(`Moral value for run #${runCount}: ${value}`);
+  return value;
+}
+
+function buildPrompt(category, article, recentTitles, runCount) {
   const avoidLine = recentTitles.length
     ? `\n\nఇటీవల ఈ అంశాలు వాడాము, వీటిని పునరావృతం చేయకు, పూర్తిగా కొత్త కోణం/విషయం ఎంచుకో: ${recentTitles.slice(-5).join(' | ')}`
     : '';
@@ -154,13 +171,14 @@ function buildPrompt(category, article, recentTitles) {
   if (category === 'news') {
     topicInstruction = `ఈ వార్తను తీసుకుని, కేవలం పొడి facts లా కాకుండా, అందులో ఉన్న మనుషుల కోణం నుండి, భావోద్వేగంగా, రిలేటబుల్‌గా చెప్పు — వార్త: "${article.title}". ${article.description || ''}\nవార్త నేపథ్యం, ఏమి జరిగింది, ఇది సామాన్య ప్రజలను ఎలా ప్రభావితం చేస్తుందో చెప్పు.`;
   } else if (category === 'moral_story') {
+    const moralValue = pickMoralValue(runCount);
     topicInstruction = `ఒక చిన్న, హృదయాన్ని తాకే నీతి కథ తెలుగులో కొత్తగా రాయి. చాలా ముఖ్యం: ఇది ప్రసిద్ధమైన, అందరికీ ఇప్పటికే తెలిసిన కథ (ఈసప్ కథలు, పంచతంత్రం, బుద్ధుడి కథలు, తెనాలి రామకృష్ణ లాంటివి) అయ్యుండకూడదు — పూర్తిగా కొత్త పాత్రలు/సన్నివేశంతో నువ్వే సృష్టించు.
 
 కథ నిర్మాణం ఖచ్చితంగా ఇలా ఉండాలి:
 1. ఒక పాత్ర, ఒక సమస్య/పరిస్థితి పరిచయం.
-2. ఆ పాత్ర ఏం చేసింది (సానుకూలమైన లక్షణం — నిజాయితీ, దయ, ఓర్పు, కృషి, క్షమ, సహాయం చేయడం — వీటిలో దేనినైనా ప్రదర్శించేలా).
+2. ఆ పాత్ర ఖచ్చితంగా ఈ ఒక్క విలువను ప్రదర్శించాలి — వేరే విలువ కాదు, ఇదే: **${moralValue}**.
 3. ఫలితం — ఆ సానుకూల చర్య వల్ల మంచి ఫలితం రావాలి (ప్రతికూల/అనైతిక చర్య ద్వారా లాభం పొందడం చూపించకూడదు).
-4. కథ చివర్లో, ఒక ప్రత్యేక వాక్యంగా, ఖచ్చితంగా ఇలా మొదలుపెట్టి నీతిని స్పష్టంగా చెప్పాలి: "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." — ఈ నీతి వాక్యం లేకుండా కథ పూర్తి కాదు.
+4. కథ చివర్లో, ఒక ప్రత్యేక వాక్యంగా, ఖచ్చితంగా ఇలా మొదలుపెట్టి నీతిని స్పష్టంగా చెప్పాలి: "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." — ఈ నీతి వాక్యం ${moralValue} గురించే ఉండాలి, ఈ నీతి వాక్యం లేకుండా కథ పూర్తి కాదు.
 
 ఖచ్చితంగా వద్దు (very important — ఈ ఇతివృత్తాలు అస్సలు వాడకు): ఎవరినైనా exploit చేయడం, ఒక వ్యక్తిని బహుమతిలా ఇవ్వడం/మార్పిడి చేయడం, బలవంతపు లేదా లావాదేవీ పెళ్ళిళ్ళు, హింస, మోసం/అబద్ధం ద్వారా లాభం పొందడం, ఇతరులను ఉపయోగించుకోవడం ద్వారా సమస్య పరిష్కారం కావడం. కథ ముగింపులో మంచి విలువలే గెలవాలి, ఏ పాత్ర యొక్క దోపిడీ/నష్టం ద్వారా కాదు.${avoidLine}`;
   } else if (category === 'fact') {
@@ -208,9 +226,9 @@ async function callGroq(prompt) {
   return data.choices[0].message.content.trim();
 }
 
-async function generateContent(category, article, recentTitles) {
+async function generateContent(category, article, recentTitles, runCount) {
   log(`Generating ${category} content via Groq...`);
-  const prompt = buildPrompt(category, article, recentTitles);
+  const prompt = buildPrompt(category, article, recentTitles, runCount);
 
   let raw = await callGroq(prompt);
   let { title, keywords, script } = parseLabeledContent(raw);
@@ -286,22 +304,8 @@ function escapeSSML(text) {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Wraps each sentence in <s> tags so Chirp 3 HD gets an explicit, structural
-// signal about sentence boundaries — a guaranteed pause between sentences
-// instead of leaving pause length up to the model's read of a plain-text
-// period, which is what let a couple of sentences run together with no
-// audible gap.
-function buildSSML(script) {
-  const sentences = splitIntoSentences(script);
-  const wrapped = sentences.map(s => `<s>${escapeSSML(s)}</s>`).join('');
-  return `<speak><p>${wrapped}</p></speak>`;
-}
-
-async function generateAudio(script) {
-  log('Generating audio via Google Cloud TTS...');
-  // te-IN-Chirp3-HD-Achird: male, Chirp 3: HD tier — natural/human-sounding.
-  // Free quota: 1,000,000 chars/month, separate from Standard's 4,000,000/month.
-  const ssml = buildSSML(script);
+async function synthesizeOneSentence(sentence) {
+  const ssml = `<speak><s>${escapeSSML(sentence)}</s></speak>`;
   let res = await fetchWithTimeout(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -313,14 +317,12 @@ async function generateAudio(script) {
   });
   let data = await res.json();
   if (!data.audioContent) {
-    // SSML support for Chirp 3 HD is fairly new — fall back to plain text
-    // rather than failing the whole run if it's ever rejected.
-    log('WARNING: SSML request failed (' + JSON.stringify(data.error || data) + '), falling back to plain text input.');
+    log('WARNING: SSML request failed for a sentence (' + JSON.stringify(data.error || data) + '), falling back to plain text.');
     res = await fetchWithTimeout(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        input: { text: script },
+        input: { text: sentence },
         voice: { languageCode: 'te-IN', name: 'te-IN-Chirp3-HD-Achird' },
         audioConfig: { audioEncoding: 'LINEAR16' }
       })
@@ -328,12 +330,60 @@ async function generateAudio(script) {
     data = await res.json();
   }
   if (!data.audioContent) {
-    throw new Error('Google TTS did not return audio: ' + JSON.stringify(data));
+    throw new Error('Google TTS did not return audio for sentence: ' + JSON.stringify(data));
   }
+  return Buffer.from(data.audioContent, 'base64');
+}
+
+function getAudioFormat(audioPath) {
+  const out = execSync(`ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate,channels -of csv=p=0 "${audioPath}"`).toString().trim();
+  const [sampleRate, channels] = out.split(',').map(Number);
+  return { sampleRate, channels };
+}
+
+// Generates audio for the whole script by synthesizing EACH SENTENCE
+// SEPARATELY and physically splicing in a real silence clip between them.
+// This guarantees an audible gap at every sentence boundary — it doesn't
+// depend on the TTS engine's own interpretation of SSML <s> tags or
+// plain-text periods, which occasionally still ran two sentences together
+// with no perceptible pause. As a bonus, this gives the EXACT duration of
+// each sentence's audio, so per-sentence image timing can use real
+// measured durations instead of a word-count estimate.
+async function generateAudioForScript(sentences) {
+  log(`Generating audio via Google Cloud TTS (${sentences.length} sentences, one call each)...`);
+  const silenceGap = 0.35; // seconds of true silence between sentences
+  const clipPaths = [];
+  const sentenceDurations = [];
+
+  for (let i = 0; i < sentences.length; i++) {
+    const buf = await synthesizeOneSentence(sentences[i]);
+    const p = path.join(WORK_DIR, `sent_audio_${i}.wav`);
+    fs.writeFileSync(p, buf);
+    const dur = getAudioDuration(p);
+    log(`  sentence ${i}: ${dur.toFixed(2)}s of audio`);
+    clipPaths.push(p);
+    sentenceDurations.push(dur);
+  }
+
+  // Match the silence clip's sample rate/channels to the TTS output so the
+  // concat demuxer can stitch everything with -c copy (no re-encode needed).
+  const fmt = getAudioFormat(clipPaths[0]);
+  const channelLayout = fmt.channels === 1 ? 'mono' : 'stereo';
+  const silencePath = path.join(WORK_DIR, 'silence.wav');
+  execSync(`ffmpeg -y -f lavfi -i anullsrc=r=${fmt.sampleRate}:cl=${channelLayout} -t ${silenceGap} -c:a pcm_s16le "${silencePath}"`, { stdio: 'pipe' });
+
+  const listLines = [];
+  for (let i = 0; i < clipPaths.length; i++) {
+    listLines.push(`file '${path.resolve(clipPaths[i])}'`);
+    if (i < clipPaths.length - 1) listLines.push(`file '${path.resolve(silencePath)}'`);
+  }
+  const listPath = path.join(WORK_DIR, 'audio_concat_list.txt');
+  fs.writeFileSync(listPath, listLines.join('\n'), 'utf8');
   const audioPath = path.join(WORK_DIR, 'audio.wav');
-  fs.writeFileSync(audioPath, Buffer.from(data.audioContent, 'base64'));
-  log(`Audio saved to ${audioPath}`);
-  return audioPath;
+  execSync(`ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${audioPath}"`, { stdio: 'inherit' });
+
+  log(`Combined audio saved to ${audioPath} (${getAudioDuration(audioPath).toFixed(2)}s total)`);
+  return { audioPath, sentenceDurations, silenceGap };
 }
 
 function getAudioDuration(audioPath) {
@@ -654,7 +704,7 @@ async function uploadToYouTube(videoPath, title, description) {
 }
 
 function saveState(article, title) {
-  const { usedUrls, usedTitles } = loadState();
+  const { usedUrls, usedTitles, runCount } = loadState();
   let newUrls = usedUrls;
   if (article) {
     newUrls = [...usedUrls, article.url];
@@ -665,6 +715,7 @@ function saveState(article, title) {
   fs.writeFileSync(STATE_FILE, JSON.stringify({
     usedUrls: newUrls,
     usedTitles: newTitles,
+    runCount: runCount + 1,
     lastDate: new Date().toISOString()
   }, null, 2));
 }
@@ -696,56 +747,77 @@ async function main() {
 
   const category = pickCategory();
   const article = category === 'news' ? await fetchNews() : null;
-  const { usedTitles } = loadState();
+  const { usedTitles, runCount } = loadState();
 
-  const { title, script } = await generateContent(category, article, usedTitles);
-  const audioPath = await generateAudio(script);
-  const duration = getAudioDuration(audioPath) + 0.3;
+  const { title, script } = await generateContent(category, article, usedTitles, runCount);
+  const allSentences = splitIntoSentences(script);
+  const { audioPath, sentenceDurations, silenceGap } = await generateAudioForScript(allSentences);
 
-  // Split into sentences and pull the closing CTA sentence out — a stock
-  // photo search for "like share subscribe" wouldn't mean anything, so its
-  // speaking time is folded into the last content sentence's slide instead.
-  let sentences = splitIntoSentences(script);
-  const ctaIndex = sentences.findIndex(s => s.includes('తెలుగు ఎకో ఛానెల్'));
-  let ctaWords = 0;
+  // Fold the gap that follows each sentence (except the last) into that
+  // sentence's own on-screen time, so the image holds through the pause
+  // before the next line — durations still sum exactly to the full audio.
+  let imageDurations = sentenceDurations.map((d, i) => i < sentenceDurations.length - 1 ? d + silenceGap : d);
+  let imageSentences = allSentences.slice();
+
+  // Pull the closing CTA sentence out — a stock/AI photo search for "like
+  // share subscribe" wouldn't mean anything, so its time is folded into the
+  // last content sentence's slide instead.
+  const ctaIndex = imageSentences.findIndex(s => s.includes('తెలుగు ఎకో ఛానెల్'));
   if (ctaIndex !== -1) {
-    ctaWords = sentences[ctaIndex].split(/\s+/).filter(Boolean).length;
-    sentences.splice(ctaIndex, 1);
+    const ctaDur = imageDurations[ctaIndex];
+    imageSentences.splice(ctaIndex, 1);
+    imageDurations.splice(ctaIndex, 1);
+    if (imageDurations.length > 0) {
+      imageDurations[imageDurations.length - 1] += ctaDur;
+    } else {
+      imageSentences = [allSentences[ctaIndex]];
+      imageDurations = [ctaDur];
+    }
   }
-  // Cap slide count so an unusually long script doesn't trigger excessive
-  // Pexels calls / render time — merge any extra sentences into the last slide.
+
+  // Cap distinct images at 6 (Pexels/Pollinations call budget + render
+  // time) — merge any extra trailing sentences' screen time into the last
+  // kept slide. Each sentence's own audio was still generated naturally.
   const MAX_SLIDES = 6;
-  if (sentences.length > MAX_SLIDES) {
-    const merged = sentences.slice(MAX_SLIDES - 1).join(' ');
-    sentences = sentences.slice(0, MAX_SLIDES - 1).concat([merged]);
+  if (imageSentences.length > MAX_SLIDES) {
+    const extraDuration = imageDurations.slice(MAX_SLIDES - 1).reduce((a, b) => a + b, 0);
+    imageSentences = imageSentences.slice(0, MAX_SLIDES - 1).concat([imageSentences[imageSentences.length - 1]]);
+    imageDurations = imageDurations.slice(0, MAX_SLIDES - 1).concat([extraDuration]);
   }
 
-  const wordCounts = sentences.map(s => s.split(/\s+/).filter(Boolean).length);
-  if (wordCounts.length > 0) wordCounts[wordCounts.length - 1] += ctaWords;
-
-  log(`Fetching one content-matched image per sentence (${sentences.length} sentences)...`);
-  const rawImagePaths = await fetchImagesPerSentence(sentences, category);
+  log(`Fetching one content-matched image per sentence (${imageSentences.length} sentences)...`);
+  const rawImagePaths = await fetchImagesPerSentence(imageSentences, category);
 
   // Drop any sentence whose image totally failed, redistributing its share
   // of time to the remaining successful slides so there's no dead/black gap.
   const imagePaths = [];
-  const keptWordCounts = [];
+  const keptDurations = [];
   for (let i = 0; i < rawImagePaths.length; i++) {
     if (rawImagePaths[i]) {
       imagePaths.push(rawImagePaths[i]);
-      keptWordCounts.push(wordCounts[i]);
+      keptDurations.push(imageDurations[i]);
     }
   }
   if (imagePaths.length === 0) {
     log('WARNING: every per-sentence image failed — falling back to one generic image for the whole video.');
     const fallbackPaths = await fetchImagesWithFallback(FALLBACK_KEYWORDS[category], 1, category, 999);
     imagePaths.push(fallbackPaths[0]);
-    keptWordCounts.push(1);
+    keptDurations.push(imageDurations.reduce((a, b) => a + b, 0));
+  } else {
+    // Redistribute any dropped sentences' time proportionally across the survivors.
+    const totalKept = keptDurations.reduce((a, b) => a + b, 0);
+    const totalIntended = imageDurations.reduce((a, b) => a + b, 0);
+    if (totalKept > 0 && totalKept < totalIntended) {
+      const scale = totalIntended / totalKept;
+      for (let i = 0; i < keptDurations.length; i++) keptDurations[i] *= scale;
+    }
   }
-  const keptTotalWords = keptWordCounts.reduce((a, b) => a + b, 0);
-  const durations = keptWordCounts.map(w => duration * (w / keptTotalWords));
+  // buildVideo internally targets getAudioDuration(audioPath) + 0.3 as the
+  // total video length — add that same small buffer to the last slide so
+  // the sum of our durations matches exactly.
+  keptDurations[keptDurations.length - 1] += 0.3;
 
-  const videoPath = buildVideo(imagePaths, audioPath, durations);
+  const videoPath = buildVideo(imagePaths, audioPath, keptDurations);
 
   const ytTitle = article ? article.title : title;
   await uploadToYouTube(
