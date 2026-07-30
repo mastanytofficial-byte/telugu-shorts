@@ -340,47 +340,70 @@ function getAudioFormat(audioPath) {
   return { sampleRate, channels };
 }
 
-// Generates audio for the whole script by synthesizing EACH SENTENCE
-// SEPARATELY and physically splicing in a real silence clip between them.
-// This guarantees an audible gap at every sentence boundary — it doesn't
-// depend on the TTS engine's own interpretation of SSML <s> tags or
-// plain-text periods, which occasionally still ran two sentences together
-// with no perceptible pause. As a bonus, this gives the EXACT duration of
-// each sentence's audio, so per-sentence image timing can use real
-// measured durations instead of a word-count estimate.
+// Generates audio for the whole script by synthesizing each COMMA-SEPARATED
+// CLAUSE separately (not just each sentence) and physically splicing in a
+// real silence clip between every one — a short gap after commas, a longer
+// gap after sentence-ending periods. This guarantees an audible pause at
+// EVERY comma and EVERY sentence boundary — it doesn't depend on the TTS
+// engine's own judgment about plain-text punctuation, which occasionally
+// still ran words together with no perceptible pause at some commas even
+// after sentence boundaries were fixed the same way. Returns the same
+// {audioPath, sentenceDurations, silenceGap} shape as before (durations
+// aggregated back up to one number per original sentence, including its
+// own internal comma gaps) so nothing downstream needs to change.
 async function generateAudioForScript(sentences) {
-  log(`Generating audio via Google Cloud TTS (${sentences.length} sentences, one call each)...`);
-  const silenceGap = 0.35; // seconds of true silence between sentences
-  const clipPaths = [];
+  const commaGap = 0.15;  // shorter pause within a sentence, at a comma
+  const periodGap = 0.35; // longer pause between sentences
+  log(`Generating audio via Google Cloud TTS (${sentences.length} sentences, further split at commas for reliable pausing)...`);
+
+  const clipEntries = []; // { path, gap: 0 | commaGap | periodGap }
   const sentenceDurations = [];
 
-  for (let i = 0; i < sentences.length; i++) {
-    const buf = await synthesizeOneSentence(sentences[i]);
-    const p = path.join(WORK_DIR, `sent_audio_${i}.wav`);
-    fs.writeFileSync(p, buf);
-    const dur = getAudioDuration(p);
-    log(`  sentence ${i}: ${dur.toFixed(2)}s of audio`);
-    clipPaths.push(p);
-    sentenceDurations.push(dur);
+  for (let si = 0; si < sentences.length; si++) {
+    const clauses = sentences[si].split(/,\s*/).map(c => c.trim()).filter(Boolean);
+    let sentenceDur = 0;
+    for (let ci = 0; ci < clauses.length; ci++) {
+      const buf = await synthesizeOneSentence(clauses[ci]);
+      const p = path.join(WORK_DIR, `clip_${si}_${ci}.wav`);
+      fs.writeFileSync(p, buf);
+      const dur = getAudioDuration(p);
+      sentenceDur += dur;
+      const isLastClauseInSentence = ci === clauses.length - 1;
+      const isLastSentence = si === sentences.length - 1;
+      let gap = 0;
+      if (!isLastClauseInSentence) {
+        gap = commaGap;
+        sentenceDur += commaGap; // internal comma gaps count toward this sentence's own screen time
+      } else if (!isLastSentence) {
+        gap = periodGap; // the gap between sentences is folded in by the caller, same as before
+      }
+      log(`  sentence ${si} clause ${ci}: "${clauses[ci].slice(0, 30)}..." ${dur.toFixed(2)}s, gap after: ${gap}s`);
+      clipEntries.push({ path: p, gap });
+    }
+    sentenceDurations.push(sentenceDur);
   }
 
-  // Match the silence clip's sample rate/channels to the TTS output so the
+  // Match the silence clips' sample rate/channels to the TTS output so the
   // concat demuxer can stitch everything with -c copy (no re-encode needed).
-  const fmt = getAudioFormat(clipPaths[0]);
+  const fmt = getAudioFormat(clipEntries[0].path);
   const channelLayout = fmt.channels === 1 ? 'mono' : 'stereo';
-  const silencePath = path.join(WORK_DIR, 'silence.wav');
-  execSync(`ffmpeg -y -f lavfi -i anullsrc=r=${fmt.sampleRate}:cl=${channelLayout} -t ${silenceGap} -c:a pcm_s16le "${silencePath}"`, { stdio: 'pipe' });
+  const commaSilencePath = path.join(WORK_DIR, 'silence_comma.wav');
+  const periodSilencePath = path.join(WORK_DIR, 'silence_period.wav');
+  execSync(`ffmpeg -y -f lavfi -i anullsrc=r=${fmt.sampleRate}:cl=${channelLayout} -t ${commaGap} -c:a pcm_s16le "${commaSilencePath}"`, { stdio: 'pipe' });
+  execSync(`ffmpeg -y -f lavfi -i anullsrc=r=${fmt.sampleRate}:cl=${channelLayout} -t ${periodGap} -c:a pcm_s16le "${periodSilencePath}"`, { stdio: 'pipe' });
 
   const listLines = [];
-  for (let i = 0; i < clipPaths.length; i++) {
-    listLines.push(`file '${path.resolve(clipPaths[i])}'`);
-    if (i < clipPaths.length - 1) listLines.push(`file '${path.resolve(silencePath)}'`);
+  for (const entry of clipEntries) {
+    listLines.push(`file '${path.resolve(entry.path)}'`);
+    if (entry.gap === commaGap) listLines.push(`file '${path.resolve(commaSilencePath)}'`);
+    else if (entry.gap === periodGap) listLines.push(`file '${path.resolve(periodSilencePath)}'`);
   }
   const listPath = path.join(WORK_DIR, 'audio_concat_list.txt');
   fs.writeFileSync(listPath, listLines.join('\n'), 'utf8');
   const audioPath = path.join(WORK_DIR, 'audio.wav');
   execSync(`ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${audioPath}"`, { stdio: 'inherit' });
 
+  const silenceGap = periodGap;
   log(`Combined audio saved to ${audioPath} (${getAudioDuration(audioPath).toFixed(2)}s total)`);
   return { audioPath, sentenceDurations, silenceGap };
 }
