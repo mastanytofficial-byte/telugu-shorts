@@ -445,59 +445,67 @@ function getAudioDuration(audioPath) {
   return parseFloat(out);
 }
 
-async function fetchImages(query, count, startIndex = 0) {
-  log(`Fetching ${count} images from Pexels for: "${query}"...`);
-  const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=portrait`;
+async function fetchImages(query, count, startIndex = 0, excludeIds = new Set()) {
+  const poolSize = Math.max(count, 8); // always search a decent-sized pool for variety
+  const page = 1 + Math.floor(Math.random() * 3); // random page too, for variety across runs
+  log(`Fetching images from Pexels for: "${query}" (pool ${poolSize}, page ${page})...`);
+  const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${poolSize}&page=${page}&orientation=portrait`;
   const res = await fetchWithTimeout(url, { headers: { Authorization: (PEXELS_API_KEY || '').trim() } });
   const data = await res.json();
   if (!data.photos || data.photos.length === 0) {
     throw new Error(`Pexels returned no photos for "${query}": ` + JSON.stringify(data));
   }
+
+  // Shuffle and prefer photos not already used earlier in this same video —
+  // with only a handful of fixed story outlines cycling, the same "top
+  // match" stock photo for a given query was showing up over and over.
+  const shuffled = [...data.photos].sort(() => Math.random() - 0.5);
+  const preferred = shuffled.filter(p => !excludeIds.has(p.id));
+  const orderedCandidates = preferred.length > 0 ? preferred : shuffled;
+
   const imagePaths = [];
-  for (let i = 0; i < data.photos.length; i++) {
-    const src = data.photos[i].src || {};
+  const usedIds = [];
+  for (const photo of orderedCandidates) {
+    if (imagePaths.length >= count) break;
+    const src = photo.src || {};
     const imgUrl = src.large2x || src.large || src.original;
     try {
       const imgRes = await fetchWithTimeout(imgUrl);
       if (!imgRes.ok) {
-        log(`WARNING: image ${i} download failed (HTTP ${imgRes.status}), skipping it.`);
+        log(`WARNING: image download failed (HTTP ${imgRes.status}), trying next candidate.`);
         continue;
       }
       const buf = Buffer.from(await imgRes.arrayBuffer());
       if (buf.length < 5000) {
         // A real photo is essentially never this small — this is almost
         // certainly an error page/placeholder that slipped through, not a
-        // usable image. Including it would give that "slide" a broken or
-        // wildly wrong-duration clip in the final video.
-        log(`WARNING: image ${i} downloaded but is suspiciously small (${buf.length} bytes), skipping it.`);
+        // usable image.
+        log(`WARNING: image suspiciously small (${buf.length} bytes), trying next candidate.`);
         continue;
       }
       const imgPath = path.join(WORK_DIR, `image_${startIndex}_${imagePaths.length}.jpg`);
       fs.writeFileSync(imgPath, buf);
       imagePaths.push(imgPath);
+      usedIds.push(photo.id);
     } catch (e) {
-      log(`WARNING: image ${i} download threw an error (${e.message}), skipping it.`);
+      log(`WARNING: image download threw an error (${e.message}), trying next candidate.`);
     }
   }
   if (imagePaths.length === 0) {
-    throw new Error(`All ${data.photos.length} image downloads failed for "${query}"`);
+    throw new Error(`All image candidates failed to download for "${query}"`);
   }
-  if (imagePaths.length < count) {
-    log(`WARNING: only ${imagePaths.length}/${count} images downloaded successfully — video will use fewer, evenly-longer slides instead of failing.`);
-  } else {
-    log(`Downloaded ${imagePaths.length} images from Pexels.`);
-  }
-  return imagePaths;
+  log(`Downloaded ${imagePaths.length} image(s) from Pexels for "${query}" (ids: ${usedIds.join(', ')}).`);
+  return { paths: imagePaths, ids: usedIds };
 }
 
 // If the specific keyword search comes up empty, fall back to a
 // category-appropriate generic query so the run doesn't fail outright.
-async function fetchImagesWithFallback(query, count, category, startIndex = 0) {
+async function fetchImagesWithFallback(query, count, category, startIndex = 0, excludeIds = new Set()) {
   try {
-    return await fetchImages(query, count, startIndex);
+    return await fetchImages(query, count, startIndex, excludeIds);
   } catch (e) {
     log('WARNING: image search failed for the specific keywords, falling back to a generic query. ' + e.message);
-    return await fetchImages(FALLBACK_KEYWORDS[category] || 'India', count, startIndex);
+    return await fetchImages(FALLBACK_KEYWORDS[category] || 'India', count, startIndex, excludeIds);
   }
 }
 
@@ -585,6 +593,7 @@ async function fetchImagesPerSentence(sentences, category) {
   }
 
   const imagePaths = [];
+  const usedPexelsIds = new Set(); // avoid repeating the same stock photo within this video
   for (let i = 0; i < sentences.length; i++) {
     const query = sentenceKeywords[i] || FALLBACK_KEYWORDS[category];
     log(`Sentence ${i} ("${sentences[i].slice(0, 40)}...") -> image prompt: "${query}"`);
@@ -600,8 +609,9 @@ async function fetchImagesPerSentence(sentences, category) {
     }
 
     try {
-      const paths = await fetchImagesWithFallback(query, 1, category, i);
-      imagePaths.push(paths[0]);
+      const result = await fetchImagesWithFallback(query, 1, category, i, usedPexelsIds);
+      imagePaths.push(result.paths[0]);
+      result.ids.forEach(id => usedPexelsIds.add(id));
     } catch (e) {
       log(`  WARNING: sentence ${i} image totally failed (${e.message}) — this sentence will be skipped visually.`);
       imagePaths.push(null);
@@ -858,8 +868,8 @@ async function main() {
   }
   if (imagePaths.length === 0) {
     log('WARNING: every per-sentence image failed — falling back to one generic image for the whole video.');
-    const fallbackPaths = await fetchImagesWithFallback(FALLBACK_KEYWORDS[category], 1, category, 999);
-    imagePaths.push(fallbackPaths[0]);
+    const fallbackResult = await fetchImagesWithFallback(FALLBACK_KEYWORDS[category], 1, category, 999);
+    imagePaths.push(fallbackResult.paths[0]);
     keptDurations.push(imageDurations.reduce((a, b) => a + b, 0));
   } else {
     // Redistribute any dropped sentences' time proportionally across the survivors.
