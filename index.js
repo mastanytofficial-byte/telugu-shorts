@@ -116,9 +116,9 @@ function ensureSentenceBreaks(text, maxLen = 140) {
 
 const FALLBACK_KEYWORDS = {
   news: 'India news',
-  moral_story: 'wisdom life India',
-  fact: 'knowledge curious facts',
-  parenting: 'family parenting India'
+  moral_story: 'Indian village traditional life',
+  fact: 'India knowledge curious facts',
+  parenting: 'Indian family parenting'
 };
 
 // news/moral_story need more room to actually tell a story (~40-45s);
@@ -486,8 +486,12 @@ async function getSentenceKeywords(sentences) {
 చాలా ముఖ్యమైన నియమం — వాక్యంలోని పదాలను నేరుగా అనువదించకు, బదులుగా ఆ వాక్యానికి సరిపోయే **నిజమైన దృశ్యం (scene)** ఏమిటో ఆలోచించి రాయి. కొన్ని పదాలను direct గా అనువదిస్తే stock photo sites లో పూర్తిగా వేరే అర్థం వచ్చే ఫోటోలు వస్తాయి:
 - "గుండె" (heart) గురించి వైద్యపరంగా మాట్లాడితే "heart" అని రాస్తే stock sites లో romance/couple ఫోటోలు వస్తాయి — బదులుగా "doctor stethoscope checkup" లేదా "healthy heart medical" అని రాయి.
 - భావోద్వేగాలు/నైరూప్య భావనలు (courage, wisdom, love అనే మాటలు మాత్రమే) వాడకు — ఆ భావన కళ్ళకి ఎలా కనిపిస్తుందో ఆ దృశ్యం రాయి (ఉదా. "courage" కి బదులు "person climbing mountain").
-- ఒక దేశం/ప్రదేశం ప్రస్తావిస్తే, ఆ దేశం పేరుని కూడా keyword లో చేర్చు (ఉదా. చైనాలో ఒక క్రీడ గురించి అయితే "China [sport name] athletes" అని రాయి, కేవలం sport పేరు మాత్రమే కాదు).
-- ఎప్పుడూ ఇలా ప్రశ్నించుకో: "ఈ కీవర్డ్ సెర్చ్ చేస్తే వచ్చే ఫోటో నిజంగా ఈ వాక్యం సందర్భానికి సరిపోతుందా?"
+- ఒక దేశం/ప్రదేశం స్పష్టంగా ప్రస్తావిస్తే (ఉదా. చైనా), ఆ దేశం పేరుని keyword లో చేర్చు.
+
+అత్యంత ముఖ్యమైన నియమం — మన ఛానెల్, ఆడియన్స్ పూర్తిగా తెలుగు/భారతీయులు, కాబట్టి images కూడా వారికి సంబంధించినవే కనిపించాలి, Hollywood/పాశ్చాత్య ఫోటోలు కాదు:
+- కథలో మనుషులు ఉంటే (ఏ దేశం స్పష్టంగా చెప్పకపోతే), ఎప్పుడూ keyword లో **"Indian"** పదం తప్పకుండా చేర్చు — ఉదా. "elderly woman smiling" కాదు, **"Indian elderly woman smiling"**; "man walking road" కాదు, **"Indian man walking road"**.
+- గ్రామం/ఇల్లు/ప్రదేశం అయితే **"Indian village"**, **"South Indian traditional home"** లాంటివి వాడు, generic "village" వద్దు.
+- కథ స్పష్టంగా వేరే దేశం గురించి చెప్తేనే (పైన చైనా ఉదాహరణలా) ఆ దేశం పేరు వాడు, లేకపోతే డిఫాల్ట్‌గా ఎప్పుడూ Indian/South Indian నేపథ్యమే వాడు.
 
 వాక్యాలు:
 ${numbered}
