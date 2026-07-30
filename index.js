@@ -519,43 +519,59 @@ function splitIntoSentences(script) {
 
 // Asks Groq for one concrete, visual English keyword phrase per sentence, in
 // a single call (cheap) so each sentence can get its own matching photo.
+function parseNumberedSection(text, sectionHeader, n) {
+  const startIdx = text.indexOf(sectionHeader);
+  const sectionText = startIdx === -1 ? text : text.slice(startIdx + sectionHeader.length);
+  const lines = sectionText.split('\n').map(l => l.trim()).filter(Boolean);
+  const results = [];
+  for (let i = 0; i < n; i++) {
+    const re = new RegExp(`^[\\*\\-\\s]*${i + 1}\\s*[.):]\\s*(.+)`);
+    const line = lines.map(l => l.match(re)).find(Boolean);
+    results.push(line ? line[1].replace(/\*\*/g, '').trim() : null);
+  }
+  return results;
+}
+
+// Returns, per sentence: a short Pexels search keyword AND a much richer,
+// sentence-specific AI-image scene description. AI generation isn't limited
+// to photos that already exist (unlike Pexels search), so a detailed,
+// exact-scene prompt gets meaningfully closer to a true "matches the script
+// exactly" image than a generic 3-5 word keyword ever can.
 async function getSentenceKeywords(sentences) {
   const numbered = sentences.map((s, i) => `${i + 1}. ${s}`).join('\n');
-  const prompt = `కింద ఇచ్చిన ప్రతి వాక్యానికి, ఒక stock-photo వెబ్‌సైట్ (Pexels) లో సెర్చ్ చేసేందుకు ఆంగ్ల keyword phrase (3-5 పదాలు) ఇవ్వు.
+  const prompt = `కింద ఇచ్చిన ప్రతి వాక్యానికి రెండు విషయాలు ఇవ్వు — ఒకటి Pexels stock-photo సెర్చ్ కోసం చిన్న keyword, రెండోది AI image-generation కోసం వివరణాత్మక scene description.
 
-చాలా ముఖ్యమైన నియమం — వాక్యంలోని పదాలను నేరుగా అనువదించకు, బదులుగా ఆ వాక్యానికి సరిపోయే **నిజమైన దృశ్యం (scene)** ఏమిటో ఆలోచించి రాయి. కొన్ని పదాలను direct గా అనువదిస్తే stock photo sites లో పూర్తిగా వేరే అర్థం వచ్చే ఫోటోలు వస్తాయి:
-- "గుండె" (heart) గురించి వైద్యపరంగా మాట్లాడితే "heart" అని రాస్తే stock sites లో romance/couple ఫోటోలు వస్తాయి — బదులుగా "doctor stethoscope checkup" లేదా "healthy heart medical" అని రాయి.
-- భావోద్వేగాలు/నైరూప్య భావనలు (courage, wisdom, love అనే మాటలు మాత్రమే) వాడకు — ఆ భావన కళ్ళకి ఎలా కనిపిస్తుందో ఆ దృశ్యం రాయి (ఉదా. "courage" కి బదులు "person climbing mountain").
-- ఒక దేశం/ప్రదేశం స్పష్టంగా ప్రస్తావిస్తే (ఉదా. చైనా), ఆ దేశం పేరుని keyword లో చేర్చు.
+నియమాలు — రెండింటికీ వర్తిస్తాయి:
+- వాక్యంలోని పదాలను నేరుగా అనువదించకు, ఆ వాక్యానికి సరిపోయే నిజమైన దృశ్యం ఏమిటో ఆలోచించి రాయి. ఉదా. వైద్యపరమైన "గుండె" కి "heart" అని రాస్తే romance ఫోటోలు వస్తాయి — "doctor checking heart with stethoscope" అని రాయి. భావోద్వేగాలు (courage, wisdom) మాటలుగా వాడకు, ఆ భావన కళ్ళకి కనిపించే దృశ్యంగా రాయి.
+- మన ఆడియన్స్ పూర్తిగా భారతీయులు — దేశం స్పష్టంగా చెప్పకపోతే ఎప్పుడూ "Indian"/"South Indian" నేపథ్యమే వాడు (ఉదా. "Indian elderly man", "South Indian village"), Western/Hollywood look వద్దు.
 
-అత్యంత ముఖ్యమైన నియమం — మన ఛానెల్, ఆడియన్స్ పూర్తిగా తెలుగు/భారతీయులు, కాబట్టి images కూడా వారికి సంబంధించినవే కనిపించాలి, Hollywood/పాశ్చాత్య ఫోటోలు కాదు:
-- కథలో మనుషులు ఉంటే (ఏ దేశం స్పష్టంగా చెప్పకపోతే), ఎప్పుడూ keyword లో **"Indian"** పదం తప్పకుండా చేర్చు — ఉదా. "elderly woman smiling" కాదు, **"Indian elderly woman smiling"**; "man walking road" కాదు, **"Indian man walking road"**.
-- గ్రామం/ఇల్లు/ప్రదేశం అయితే **"Indian village"**, **"South Indian traditional home"** లాంటివి వాడు, generic "village" వద్దు.
-- కథ స్పష్టంగా వేరే దేశం గురించి చెప్తేనే (పైన చైనా ఉదాహరణలా) ఆ దేశం పేరు వాడు, లేకపోతే డిఫాల్ట్‌గా ఎప్పుడూ Indian/South Indian నేపథ్యమే వాడు.
+KEYWORDS విభాగం: ప్రతి వాక్యానికి 3-5 పదాల చిన్న keyword phrase (stock-photo సెర్చ్ కోసం).
+
+SCENES విభాగం: ప్రతి వాక్యానికి 15-25 పదాల వివరణాత్మక దృశ్యం (ఆంగ్లంలో) — ఆ వాక్యంలో సరిగ్గా ఏమి జరుగుతోందో (పాత్రలు, action, expression, స్థలం, cultural details) స్పష్టంగా వర్ణించు, ఇది AI image generator కి direct instruction లా ఉండాలి. ఉదా: "An elderly Indian woodcutter kneeling by a riverbank, tears in his eyes, holding an empty hand where his iron axe used to be, worried expression, traditional dhoti, golden afternoon light".
 
 వాక్యాలు:
 ${numbered}
 
-జవాబును ఇదే నంబరింగ్‌తో, ఒక్కో లైన్‌లో ఒకటి చొప్పున ఇవ్వు, మరేమీ ముందు/వెనుక రాయకు:
+జవాబును ఖచ్చితంగా ఈ ఫార్మాట్‌లో ఇవ్వు, ఇదే క్రమంలో:
+
+KEYWORDS:
 1. keyword phrase
 2. keyword phrase
+...
+
+SCENES:
+1. detailed scene description
+2. detailed scene description
 ...`;
 
   const raw = await callGroq(prompt);
-  log(`Raw sentence-keywords response from Groq:\n${raw}`);
-  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-  return sentences.map((_, i) => {
-    // Lenient match: allows leading markdown (*, -, **), then the number,
-    // then '.', ')', or ':' as the separator — real Groq responses have
-    // varied on this and a strict match silently nulled every keyword,
-    // which is what was causing every sentence to fall back to the same
-    // generic category image regardless of what it actually said.
-    const re = new RegExp(`^[\\*\\-\\s]*${i + 1}\\s*[.):]\\s*(.+)`);
-    const line = lines.map(l => l.match(re)).find(Boolean);
-    const keyword = line ? line[1].replace(/\*\*/g, '').trim() : null;
-    log(`  sentence ${i} keyword: ${keyword || '(none parsed — will use category fallback)'}`);
-    return keyword;
+  log(`Raw sentence-keywords/scenes response from Groq:\n${raw}`);
+  const keywords = parseNumberedSection(raw, 'KEYWORDS:', sentences.length);
+  const scenes = parseNumberedSection(raw, 'SCENES:', sentences.length);
+  sentences.forEach((_, i) => {
+    log(`  sentence ${i} keyword: ${keywords[i] || '(none — fallback)'} | scene: ${scenes[i] ? scenes[i].slice(0, 50) + '...' : '(none — will use keyword)'}`);
   });
+  return { keywords, scenes };
 }
 
 // Fetches one image per sentence (own Pexels search each), falling back to
@@ -581,26 +597,32 @@ async function generateAIImage(prompt, savePath) {
   return savePath;
 }
 
-// Fetches one image per sentence: AI-generated first (exact content match),
-// Pexels as the fallback if generation fails, times out, or is rate-limited.
+// Fetches one image per sentence: AI-generated first (using a rich,
+// sentence-exact scene description — its best shot at a true content
+// match), Pexels as the fallback (using the short keyword) if generation
+// fails, times out, or is rate-limited.
 async function fetchImagesPerSentence(sentences, category) {
-  let sentenceKeywords;
+  let keywords, scenes;
   try {
-    sentenceKeywords = await getSentenceKeywords(sentences);
+    const result = await getSentenceKeywords(sentences);
+    keywords = result.keywords;
+    scenes = result.scenes;
   } catch (e) {
     log('WARNING: per-sentence keyword generation failed, all slides will use the generic category query. ' + e.message);
-    sentenceKeywords = sentences.map(() => null);
+    keywords = sentences.map(() => null);
+    scenes = sentences.map(() => null);
   }
 
   const imagePaths = [];
   const usedPexelsIds = new Set(); // avoid repeating the same stock photo within this video
   for (let i = 0; i < sentences.length; i++) {
-    const query = sentenceKeywords[i] || FALLBACK_KEYWORDS[category];
-    log(`Sentence ${i} ("${sentences[i].slice(0, 40)}...") -> image prompt: "${query}"`);
+    const keyword = keywords[i] || FALLBACK_KEYWORDS[category];
+    const scene = scenes[i] || keyword;
+    log(`Sentence ${i} ("${sentences[i].slice(0, 40)}...") -> AI scene: "${scene.slice(0, 60)}..." | Pexels keyword: "${keyword}"`);
 
     const aiPath = path.join(WORK_DIR, `ai_image_${i}.jpg`);
     try {
-      await generateAIImage(query, aiPath);
+      await generateAIImage(scene, aiPath);
       log(`  -> AI-generated image succeeded for sentence ${i}.`);
       imagePaths.push(aiPath);
       continue;
@@ -609,7 +631,7 @@ async function fetchImagesPerSentence(sentences, category) {
     }
 
     try {
-      const result = await fetchImagesWithFallback(query, 1, category, i, usedPexelsIds);
+      const result = await fetchImagesWithFallback(keyword, 1, category, i, usedPexelsIds);
       imagePaths.push(result.paths[0]);
       result.ids.forEach(id => usedPexelsIds.add(id));
     } catch (e) {
