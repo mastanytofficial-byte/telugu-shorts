@@ -949,18 +949,34 @@ function buildVideo(mediaItems, audioPath, customDurations) {
   return outPath;
 }
 
+// YouTube's upload validator is stricter than our own text handling — strip
+// control characters and any unpaired UTF-16 surrogates (a sign of
+// malformed Unicode that can slip out of an LLM) before sending title/
+// description, and enforce YouTube's own length limits as a safety margin.
+function sanitizeForYouTube(text, maxLen) {
+  if (!text) return '';
+  let cleaned = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
+  cleaned = cleaned.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/g, '');
+  return cleaned.slice(0, maxLen).trim();
+}
+
 async function uploadToYouTube(videoPath, title, description) {
   log('Uploading to YouTube...');
   const oauth2Client = new google.auth.OAuth2(YT_CLIENT_ID, YT_CLIENT_SECRET);
   oauth2Client.setCredentials({ refresh_token: YT_REFRESH_TOKEN });
+
+  const safeTitle = sanitizeForYouTube(title, 95);
+  const safeDescription = sanitizeForYouTube(description, 4900); // YouTube's limit is 5000
+  log(`Title (${safeTitle.length} chars): ${safeTitle}`);
+  log(`Description (${safeDescription.length} chars, first 100): ${safeDescription.slice(0, 100)}...`);
 
   const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
   const res = await youtube.videos.insert({
     part: ['snippet', 'status'],
     requestBody: {
       snippet: {
-        title: title.slice(0, 95),
-        description: description,
+        title: safeTitle,
+        description: safeDescription,
         tags: ['telugu', 'news', 'shorts', 'telugu news'],
         categoryId: '25'
       },
