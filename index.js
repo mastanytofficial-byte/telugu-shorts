@@ -260,20 +260,17 @@ async function callGroq(prompt) {
       'Authorization': `Bearer ${GROQ_API_KEY}`
     },
     body: JSON.stringify({
-      // Switched from openai/gpt-oss-120b: as a reasoning-optimized model it
-      // started injecting irrelevant hallucinated details into stories
-      // (weather, injuries, random plot beats not in the given outline).
-      // qwen/qwen3.6-27b — Groq's other recommended llama-3.3-70b
-      // replacement — is a more conventional instruction-tuned model, likely
-      // better suited to faithfully expanding a given narrative outline.
-      model: 'qwen/qwen3.6-27b',
-      // qwen3 models "think out loud" by default, and that raw planning
-      // text (word-count tracking, draft attempts, etc.) was leaking
-      // straight into our script/description output instead of staying
-      // separate. reasoning_effort: 'none' is the one setting that truly
-      // disables this for the qwen3 family (per Groq's docs) rather than
-      // just hiding it while the model still reasons internally.
-      reasoning_effort: 'none',
+      // Back to llama-3.3-70b-versatile. Deprecated by Groq (2026-06-17) but
+      // still serving. Rationale: its known weakness was story LOGIC, which
+      // the STORY_OUTLINES approach now handles for it — and that combination
+      // was never actually tested together, since outlines and the model
+      // switch landed at the same time. Its replacements each brought worse
+      // problems no prompt could fix: gpt-oss-120b leaked reasoning text and
+      // hallucinated plot details; qwen3.6-27b emitted corrupted Telugu
+      // (English fragments spliced mid-word, e.g. "భయంతremover").
+      // If Groq fully removes this model, revisit — gpt-oss-120b is the
+      // documented replacement.
+      model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: prompt }]
     })
   });
@@ -281,9 +278,9 @@ async function callGroq(prompt) {
   if (!data.choices || !data.choices[0]) {
     throw new Error('Groq did not return content: ' + JSON.stringify(data));
   }
-  // Defensive safety net: strip any <think>...</think> block that might
-  // still slip through, so leftover reasoning text never reaches the
-  // parser even if reasoning_effort is ever ignored for some request.
+  // Defensive safety net: strip any <think>...</think> block, in case a
+  // future model swap brings back a reasoning model whose planning text
+  // would otherwise leak straight into the script.
   let content = data.choices[0].message.content.trim();
   content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   return content;
@@ -354,9 +351,18 @@ async function generateContent(category, article, recentTitles, runCount) {
   if (category === 'moral_story') {
     const sentencesForTrim = splitIntoSentences(script);
     const moralIdx = sentencesForTrim.findIndex(s => s.includes('నేర్చుకునేది'));
-    if (moralIdx !== -1 && moralIdx < sentencesForTrim.length - 1) {
-      log(`WARNING: model wrote ${sentencesForTrim.length - 1 - moralIdx} extra sentence(s) after the moral statement — trimming them off.`);
-      script = sentencesForTrim.slice(0, moralIdx + 1).join(' ');
+    if (moralIdx !== -1) {
+      // If the model put a period right after "ఏమిటంటే", the ACTUAL moral is
+      // in the following sentence — keeping only up to moralIdx would chop
+      // the moral off entirely (this happened: "...నేర్చుకునేది ఏమిటంటే."
+      // with nothing after it). So keep one extra sentence in that case.
+      const moralSentence = sentencesForTrim[moralIdx];
+      const afterMarker = moralSentence.split('ఏమిటంటే').slice(1).join('ఏమిటంటే').replace(/[.,\s]/g, '');
+      const keepUpTo = afterMarker.length < 5 ? moralIdx + 1 : moralIdx;
+      if (keepUpTo < sentencesForTrim.length - 1) {
+        log(`WARNING: model wrote ${sentencesForTrim.length - 1 - keepUpTo} extra sentence(s) after the moral statement — trimming them off.`);
+        script = sentencesForTrim.slice(0, keepUpTo + 1).join(' ');
+      }
     }
   }
 
