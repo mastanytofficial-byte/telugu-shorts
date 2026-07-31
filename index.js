@@ -223,7 +223,9 @@ function buildPrompt(category, article, recentTitles, runCount) {
 3. జంతువులు పాత్రలైతే, వాటిని ఎప్పుడూ "అది" అని సూచించు ("అతను"/"ఆమె" వద్దు) — మధ్యలో లింగం మార్చకు.
 4. కేవలం "ఏమి జరిగింది" అని listing చేయడం కాకూడదు — నిజంగా ఒక కథ చెప్తున్నట్టు రాయి: కనీసం ఒక చోట పాత్రల మధ్య మాటలు (dialogue) వాడు, సన్నివేశాన్ని కళ్ళకు కట్టేలా చిన్న వివరణ ఇవ్వు (కథలో ఇప్పటికే ఉన్న అంశాల గురించే).
 5. **Suspense/curiosity పట్టుకుని ఉంచాలి:** "ఒకప్పుడు ఒక ఊళ్ళో..." లాంటి సాధారణ ఆరంభం వద్దు — ఒక ఉద్విగ్నమైన క్షణం/ప్రశ్నతో మొదలుపెట్టు. కథ మధ్యలో ఫలితం ముందే చెప్పకు, చివరి వరకూ ఉత్కంఠ కొనసాగించు.
-6. కథ చివర్లో, ఒక ప్రత్యేక వాక్యంగా, ఖచ్చితంగా ఇలా మొదలుపెట్టి నీతిని స్పష్టంగా చెప్పాలి: "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." — ఈ నీతి వాక్యం **${moralValue}** గురించే ఉండాలి.${avoidLine}`;
+6. కథ చివర్లో, ఒక ప్రత్యేక వాక్యంగా, ఖచ్చితంగా ఇలా మొదలుపెట్టి నీతిని స్పష్టంగా చెప్పాలి: "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." — ఈ నీతి వాక్యం **${moralValue}** గురించే ఉండాలి. **ఈ నీతి వాక్యం తర్వాత మరే ఇతర వాక్యం రాయకు — ఇదే SCRIPT లో చివరి వాక్యం.**
+7. "ఒకవేళ...అయితే" లాంటి conditional వాక్యంతో మొదలుపెడితే, దాన్ని పూర్తి చేయాలి (result భాగంతో సహా) — మధ్యలో ఆపేసి period పెట్టకు.
+8. రాశాక, ప్రతి వాక్యాన్ని జాగ్రత్తగా మళ్ళీ చదివి, సరైన తెలుగు పదాలు/క్రియా రూపాలు వాడావో నిర్ధారించుకో (ఉదా. "దూకాడు" ని "దూచాడు" అని రాయకు; "చెక్కాడు" (అతనే చేశాడు) ని "చెక్కించాడు" (వేరేవాళ్ళతో చేయించాడు) తో కలపకు).${avoidLine}`;
   } else if (category === 'fact') {
     topicInstruction = `ఒక నిజమైన, ఆసక్తికరమైన విషయం (fact) గురించి "మీకు తెలుసా?" స్టైల్‌లో తెలుగులో రాయి. చాలా ముఖ్యం: సాధారణంగా అందరికీ ఇప్పటికే తెలిసిన, ఇంటర్నెట్‌లో ఎక్కడ చూసినా కనిపించే overused facts (ఉదా. "ఆక్టోపస్‌కి మూడు గుండెలు ఉంటాయి" లాంటివి) వాడకు — తక్కువ మందికి తెలిసిన, నిజంగా ఆశ్చర్యపరిచే fact ఎంచుకో. తప్పుడు సమాచారం ఇవ్వకు, నిజమైన, verifiable fact మాత్రమే వాడు.${avoidLine}`;
   } else {
@@ -343,6 +345,18 @@ async function generateContent(category, article, recentTitles, runCount) {
       log('Retry produced a script with the explicit moral statement.');
     } else {
       log('WARNING: retry still missing the moral statement — publishing as-is; please spot-check this video before/after upload.');
+    }
+  }
+
+  // Defensive: for moral_story, drop anything the model wrote AFTER the
+  // required moral statement — it was told not to add more, but
+  // occasionally tacked on an extra (sometimes nonsensical) closing line.
+  if (category === 'moral_story') {
+    const sentencesForTrim = splitIntoSentences(script);
+    const moralIdx = sentencesForTrim.findIndex(s => s.includes('నేర్చుకునేది'));
+    if (moralIdx !== -1 && moralIdx < sentencesForTrim.length - 1) {
+      log(`WARNING: model wrote ${sentencesForTrim.length - 1 - moralIdx} extra sentence(s) after the moral statement — trimming them off.`);
+      script = sentencesForTrim.slice(0, moralIdx + 1).join(' ');
     }
   }
 
