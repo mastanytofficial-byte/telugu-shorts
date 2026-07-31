@@ -246,7 +246,9 @@ async function callGroq(prompt) {
       'Authorization': `Bearer ${GROQ_API_KEY}`
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      // llama-3.3-70b-versatile was deprecated by Groq on 2026-06-17.
+      // openai/gpt-oss-120b is their recommended, stronger replacement.
+      model: 'openai/gpt-oss-120b',
       messages: [{ role: 'user', content: prompt }]
     })
   });
@@ -509,6 +511,56 @@ async function fetchImagesWithFallback(query, count, category, startIndex = 0, e
   }
 }
 
+// Searches Pexels' free stock VIDEO library (not photos) for a clip
+// matching the query. Real footage with real motion (hands, steam, walking,
+// water flowing) reads as far more "professional/accurate" than a Ken-Burns
+// pan/zoom on a still photo — this is the first thing tried for every
+// sentence now, with the AI-image/Pexels-photo chain as fallback.
+async function fetchPexelsVideo(query, startIndex = 0, excludeIds = new Set()) {
+  const poolSize = 8;
+  const page = 1 + Math.floor(Math.random() * 3);
+  log(`Fetching video from Pexels for: "${query}" (pool ${poolSize}, page ${page})...`);
+  const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${poolSize}&page=${page}&orientation=portrait`;
+  const res = await fetchWithTimeout(url, { headers: { Authorization: (PEXELS_API_KEY || '').trim() } });
+  const data = await res.json();
+  if (!data.videos || data.videos.length === 0) {
+    throw new Error(`Pexels returned no videos for "${query}": ` + JSON.stringify(data));
+  }
+
+  const shuffled = [...data.videos].sort(() => Math.random() - 0.5);
+  const preferred = shuffled.filter(v => !excludeIds.has(v.id));
+  const orderedCandidates = preferred.length > 0 ? preferred : shuffled;
+
+  for (const video of orderedCandidates) {
+    // Prefer a portrait file around 720-1080px wide — big enough to look
+    // sharp after our scale/crop, small enough to download quickly.
+    const files = (video.video_files || [])
+      .filter(f => f.file_type === 'video/mp4' && f.height > f.width) // portrait only
+      .sort((a, b) => Math.abs(a.width - 720) - Math.abs(b.width - 720));
+    if (files.length === 0) continue; // this result has no usable portrait file, try next
+    const file = files[0];
+    try {
+      const videoRes = await fetchWithTimeout(file.link, {}, 30000);
+      if (!videoRes.ok) {
+        log(`WARNING: video download failed (HTTP ${videoRes.status}), trying next candidate.`);
+        continue;
+      }
+      const buf = Buffer.from(await videoRes.arrayBuffer());
+      if (buf.length < 20000) {
+        log(`WARNING: video file suspiciously small (${buf.length} bytes), trying next candidate.`);
+        continue;
+      }
+      const videoPath = path.join(WORK_DIR, `pexels_video_${startIndex}.mp4`);
+      fs.writeFileSync(videoPath, buf);
+      log(`Downloaded video (Pexels id ${video.id}, ${video.duration}s, ${file.width}x${file.height}) for "${query}".`);
+      return { path: videoPath, id: video.id };
+    } catch (e) {
+      log(`WARNING: video download threw an error (${e.message}), trying next candidate.`);
+    }
+  }
+  throw new Error(`No usable portrait video file found among candidates for "${query}"`);
+}
+
 // Splits a script into its individual sentences (by period) — used to fetch
 // one image per sentence instead of a handful of generic images for the
 // whole script, so what's on screen actually matches what's being said at
@@ -539,20 +591,25 @@ function parseNumberedSection(text, sectionHeader, n) {
 // exactly" image than a generic 3-5 word keyword ever can.
 async function getSentenceKeywords(sentences) {
   const numbered = sentences.map((s, i) => `${i + 1}. ${s}`).join('\n');
-  const prompt = `కింద ఇచ్చిన ప్రతి వాక్యానికి రెండు విషయాలు ఇవ్వు — ఒకటి Pexels stock-photo సెర్చ్ కోసం చిన్న keyword, రెండోది AI image-generation కోసం వివరణాత్మక scene description.
+  const prompt = `కింద ఇచ్చిన కథ/విషయం కోసం మూడు విషయాలు ఇవ్వు.
 
-నియమాలు — రెండింటికీ వర్తిస్తాయి:
+CHARACTER విభాగం: ఈ కథలో ప్రధాన పాత్ర (ఒకటే పాత్ర, ఎక్కువ ముఖ్యమైనది) యొక్క స్థిరమైన శారీరక వర్ణన ఒక్క లైన్‌లో ఇవ్వు (వయసు, రూపం, దుస్తులు, ప్రత్యేక గుర్తులు — 15-20 పదాలు, ఆంగ్లంలో). ఇదే వర్ణనని ప్రతి scene లోనూ AI image generator కి ఇస్తాం, తద్వారా ఆ పాత్ర అన్ని దృశ్యాల్లోనూ ఒకేలా కనిపిస్తుంది. ఉదా: "elderly Indian man, thin build, white beard, wrinkled face, traditional cream-colored dhoti, kind eyes".
+
+KEYWORDS విభాగం: ప్రతి వాక్యానికి Pexels stock-photo సెర్చ్ కోసం 3-5 పదాల చిన్న keyword phrase.
+
+SCENES విభాగం: ప్రతి వాక్యానికి 15-25 పదాల వివరణాత్మక దృశ్యం (ఆంగ్లంలో) — ఆ వాక్యంలో సరిగ్గా ఏమి జరుగుతోందో (action, expression, స్థలం, cultural details) వర్ణించు. పాత్ర ప్రస్తావన అవసరమైతే CHARACTER వర్ణనలోని అదే పదాలు వాడు (ఉదా. "elderly Indian man" అనే స్థిరంగా వాడు, వేరే వర్ణన కల్పించకు).
+
+నియమాలు — అన్నింటికీ వర్తిస్తాయి:
 - వాక్యంలోని పదాలను నేరుగా అనువదించకు, ఆ వాక్యానికి సరిపోయే నిజమైన దృశ్యం ఏమిటో ఆలోచించి రాయి. ఉదా. వైద్యపరమైన "గుండె" కి "heart" అని రాస్తే romance ఫోటోలు వస్తాయి — "doctor checking heart with stethoscope" అని రాయి. భావోద్వేగాలు (courage, wisdom) మాటలుగా వాడకు, ఆ భావన కళ్ళకి కనిపించే దృశ్యంగా రాయి.
-- మన ఆడియన్స్ పూర్తిగా భారతీయులు — దేశం స్పష్టంగా చెప్పకపోతే ఎప్పుడూ "Indian"/"South Indian" నేపథ్యమే వాడు (ఉదా. "Indian elderly man", "South Indian village"), Western/Hollywood look వద్దు.
-
-KEYWORDS విభాగం: ప్రతి వాక్యానికి 3-5 పదాల చిన్న keyword phrase (stock-photo సెర్చ్ కోసం).
-
-SCENES విభాగం: ప్రతి వాక్యానికి 15-25 పదాల వివరణాత్మక దృశ్యం (ఆంగ్లంలో) — ఆ వాక్యంలో సరిగ్గా ఏమి జరుగుతోందో (పాత్రలు, action, expression, స్థలం, cultural details) స్పష్టంగా వర్ణించు, ఇది AI image generator కి direct instruction లా ఉండాలి. ఉదా: "An elderly Indian woodcutter kneeling by a riverbank, tears in his eyes, holding an empty hand where his iron axe used to be, worried expression, traditional dhoti, golden afternoon light".
+- మన ఆడియన్స్ పూర్తిగా భారతీయులు — దేశం స్పష్టంగా చెప్పకపోతే ఎప్పుడూ "Indian"/"South Indian" నేపథ్యమే వాడు, Western/Hollywood look వద్దు.
 
 వాక్యాలు:
 ${numbered}
 
 జవాబును ఖచ్చితంగా ఈ ఫార్మాట్‌లో ఇవ్వు, ఇదే క్రమంలో:
+
+CHARACTER:
+1. character description
 
 KEYWORDS:
 1. keyword phrase
@@ -566,12 +623,14 @@ SCENES:
 
   const raw = await callGroq(prompt);
   log(`Raw sentence-keywords/scenes response from Groq:\n${raw}`);
+  const character = parseNumberedSection(raw, 'CHARACTER:', 1)[0];
   const keywords = parseNumberedSection(raw, 'KEYWORDS:', sentences.length);
   const scenes = parseNumberedSection(raw, 'SCENES:', sentences.length);
+  log(`  main character: ${character || '(none parsed)'}`);
   sentences.forEach((_, i) => {
     log(`  sentence ${i} keyword: ${keywords[i] || '(none — fallback)'} | scene: ${scenes[i] ? scenes[i].slice(0, 50) + '...' : '(none — will use keyword)'}`);
   });
-  return { keywords, scenes };
+  return { character, keywords, scenes };
 }
 
 // Fetches one image per sentence (own Pexels search each), falling back to
@@ -581,10 +640,14 @@ const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt/';
 // (free, no API key required). This has NO reliability guarantee (can be
 // slow or down), so every call here is immediately backed by a Pexels
 // fallback in fetchImagesPerSentence — never the only path to an image.
-async function generateAIImage(prompt, savePath) {
+// `seed`, when provided, is reused across all scenes featuring the same
+// character — same starting noise pattern nudges the diffusion model
+// toward a more visually similar result each time (not a true character
+// lock, but the closest free lever available).
+async function generateAIImage(prompt, savePath, seed) {
   const styledPrompt = `${prompt}, cinematic photo, high quality, realistic, vertical portrait composition`;
-  const seed = Math.floor(Math.random() * 100000);
-  const url = `${POLLINATIONS_BASE}${encodeURIComponent(styledPrompt)}?width=768&height=1365&nologo=true&seed=${seed}`;
+  const finalSeed = seed !== undefined ? seed : Math.floor(Math.random() * 100000);
+  const url = `${POLLINATIONS_BASE}${encodeURIComponent(styledPrompt)}?width=768&height=1365&nologo=true&seed=${finalSeed}`;
   const res = await fetchWithTimeout(url, {}, 30000);
   if (!res.ok) {
     throw new Error(`Pollinations returned HTTP ${res.status}`);
@@ -597,49 +660,79 @@ async function generateAIImage(prompt, savePath) {
   return savePath;
 }
 
-// Fetches one image per sentence: AI-generated first (using a rich,
-// sentence-exact scene description — its best shot at a true content
-// match), Pexels as the fallback (using the short keyword) if generation
-// fails, times out, or is rate-limited.
+// Fetches one clip per sentence: Pexels VIDEO first (real motion — closest
+// to how professionally-edited reference videos look), then AI-generated
+// image (using a rich, sentence-exact scene description), then Pexels
+// photo, in that order. Returns {path, type: 'video'|'image'} per sentence
+// (or null on total failure) so buildVideo knows whether to loop/trim a
+// real clip or apply a Ken-Burns pan/zoom to a still.
 async function fetchImagesPerSentence(sentences, category) {
-  let keywords, scenes;
+  let character, keywords, scenes;
   try {
     const result = await getSentenceKeywords(sentences);
+    character = result.character;
     keywords = result.keywords;
     scenes = result.scenes;
   } catch (e) {
     log('WARNING: per-sentence keyword generation failed, all slides will use the generic category query. ' + e.message);
+    character = null;
     keywords = sentences.map(() => null);
     scenes = sentences.map(() => null);
   }
 
-  const imagePaths = [];
+  // A simple deterministic hash of the character description, used as the
+  // Pollinations seed for every scene — same starting noise pattern nudges
+  // the model toward a more visually consistent character across scenes.
+  let characterSeed;
+  if (character) {
+    let hash = 0;
+    for (let c = 0; c < character.length; c++) hash = (hash * 31 + character.charCodeAt(c)) >>> 0;
+    characterSeed = hash % 100000;
+    log(`  character seed: ${characterSeed} (for: "${character}")`);
+  }
+
+  const clips = [];
+  const usedVideoIds = new Set();
   const usedPexelsIds = new Set(); // avoid repeating the same stock photo within this video
   for (let i = 0; i < sentences.length; i++) {
     const keyword = keywords[i] || FALLBACK_KEYWORDS[category];
-    const scene = scenes[i] || keyword;
-    log(`Sentence ${i} ("${sentences[i].slice(0, 40)}...") -> AI scene: "${scene.slice(0, 60)}..." | Pexels keyword: "${keyword}"`);
+    const sceneBase = scenes[i] || keyword;
+    const scene = character ? `${character}. ${sceneBase}` : sceneBase;
+    log(`Sentence ${i} ("${sentences[i].slice(0, 40)}...") -> keyword: "${keyword}" | AI scene: "${scene.slice(0, 60)}..."`);
 
-    const aiPath = path.join(WORK_DIR, `ai_image_${i}.jpg`);
+    // 1) Real stock video footage — tried first.
     try {
-      await generateAIImage(scene, aiPath);
-      log(`  -> AI-generated image succeeded for sentence ${i}.`);
-      imagePaths.push(aiPath);
+      const result = await fetchPexelsVideo(keyword, i, usedVideoIds);
+      usedVideoIds.add(result.id);
+      log(`  -> Pexels video succeeded for sentence ${i}.`);
+      clips.push({ path: result.path, type: 'video' });
       continue;
     } catch (e) {
-      log(`  WARNING: AI image generation failed for sentence ${i} (${e.message}), falling back to Pexels.`);
+      log(`  WARNING: Pexels video search failed for sentence ${i} (${e.message}), falling back to AI image.`);
     }
 
+    // 2) AI-generated image (exact-scene prompt, character-consistent).
+    const aiPath = path.join(WORK_DIR, `ai_image_${i}.jpg`);
+    try {
+      await generateAIImage(scene, aiPath, characterSeed);
+      log(`  -> AI-generated image succeeded for sentence ${i}.`);
+      clips.push({ path: aiPath, type: 'image' });
+      continue;
+    } catch (e) {
+      log(`  WARNING: AI image generation failed for sentence ${i} (${e.message}), falling back to Pexels photo.`);
+    }
+
+    // 3) Pexels stock photo — last resort.
     try {
       const result = await fetchImagesWithFallback(keyword, 1, category, i, usedPexelsIds);
-      imagePaths.push(result.paths[0]);
+      clips.push({ path: result.paths[0], type: 'image' });
       result.ids.forEach(id => usedPexelsIds.add(id));
     } catch (e) {
-      log(`  WARNING: sentence ${i} image totally failed (${e.message}) — this sentence will be skipped visually.`);
-      imagePaths.push(null);
+      log(`  WARNING: sentence ${i} media totally failed (${e.message}) — this sentence will be skipped visually.`);
+      clips.push(null);
     }
   }
-  return imagePaths;
+  return clips;
 }
 
 // Renders one still image as a short Ken-Burns (slow zoom) video clip.
@@ -662,7 +755,26 @@ function buildImageClip(imagePath, duration, outPath, zoomIn) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
-function buildVideo(imagePaths, audioPath, customDurations) {
+// Takes a real downloaded video clip and produces an exact-duration segment:
+// scaled/cropped to fill 720x1280, with its own audio stripped (we use our
+// own narration track), looped with -stream_loop if the source clip is
+// shorter than needed and cut to length either way — so a 4s source clip
+// covering an 8s sentence just plays twice seamlessly instead of freezing.
+function buildRealVideoClip(videoPath, duration, outPath) {
+  const fps = 25;
+  const cmd = [
+    'ffmpeg -y',
+    `-stream_loop -1 -i "${videoPath}"`,
+    `-vf "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=${fps}"`,
+    `-t ${duration.toFixed(2)}`,
+    '-an',
+    '-c:v libx264 -pix_fmt yuv420p',
+    `"${outPath}"`
+  ].join(' ');
+  execSync(cmd, { stdio: 'inherit' });
+}
+
+function buildVideo(mediaItems, audioPath, customDurations) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontsDir = path.join(__dirname, 'fonts');
@@ -677,9 +789,9 @@ function buildVideo(imagePaths, audioPath, customDurations) {
   const fd = duration.toFixed(2);
   log(`Audio duration: ${fd}s — video length set to match`);
 
-  const n = imagePaths.length;
+  const n = mediaItems.length;
   if (n === 0) {
-    throw new Error('buildVideo received zero images — refusing to continue (would divide duration by zero).');
+    throw new Error('buildVideo received zero media items — refusing to continue (would divide duration by zero).');
   }
   // customDurations lets each slide match how long its sentence actually
   // takes to say, instead of every slide getting an equal, arbitrary share
@@ -688,17 +800,22 @@ function buildVideo(imagePaths, audioPath, customDurations) {
   let durations = customDurations;
   if (!durations || durations.length !== n) {
     const equal = duration / n;
-    durations = imagePaths.map(() => equal);
+    durations = mediaItems.map(() => equal);
   }
-  log(`Building ${n}-image Ken Burns slideshow, durations: ${durations.map(d => d.toFixed(2)).join('s, ')}s...`);
+  log(`Building ${n}-clip slideshow, durations: ${durations.map(d => d.toFixed(2)).join('s, ')}s...`);
 
-  // Step 1: one Ken-Burns clip per image, alternating zoom-in/zoom-out for variety.
+  // Step 1: one clip per sentence — real video is looped/trimmed to length,
+  // a still image gets a Ken-Burns pan/zoom (alternating in/out for variety).
   const clipPaths = [];
   for (let i = 0; i < n; i++) {
     const clipPath = path.join(WORK_DIR, `clip_${i}.mp4`);
-    buildImageClip(imagePaths[i], durations[i], clipPath, i % 2 === 0);
+    if (mediaItems[i].type === 'video') {
+      buildRealVideoClip(mediaItems[i].path, durations[i], clipPath);
+    } else {
+      buildImageClip(mediaItems[i].path, durations[i], clipPath, i % 2 === 0);
+    }
     const actualDur = getAudioDuration(clipPath); // works for video streams too via ffprobe format=duration
-    log(`  clip_${i}: target ${durations[i].toFixed(2)}s, actual ${actualDur.toFixed(2)}s${Math.abs(actualDur - durations[i]) > 1 ? ' ⚠️ MISMATCH' : ''}`);
+    log(`  clip_${i} (${mediaItems[i].type}): target ${durations[i].toFixed(2)}s, actual ${actualDur.toFixed(2)}s${Math.abs(actualDur - durations[i]) > 1 ? ' ⚠️ MISMATCH' : ''}`);
     clipPaths.push(clipPath);
   }
 
@@ -891,7 +1008,7 @@ async function main() {
   if (imagePaths.length === 0) {
     log('WARNING: every per-sentence image failed — falling back to one generic image for the whole video.');
     const fallbackResult = await fetchImagesWithFallback(FALLBACK_KEYWORDS[category], 1, category, 999);
-    imagePaths.push(fallbackResult.paths[0]);
+    imagePaths.push({ path: fallbackResult.paths[0], type: 'image' });
     keptDurations.push(imageDurations.reduce((a, b) => a + b, 0));
   } else {
     // Redistribute any dropped sentences' time proportionally across the survivors.
