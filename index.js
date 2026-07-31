@@ -265,6 +265,13 @@ async function callGroq(prompt) {
       // replacement — is a more conventional instruction-tuned model, likely
       // better suited to faithfully expanding a given narrative outline.
       model: 'qwen/qwen3.6-27b',
+      // qwen3 models "think out loud" by default, and that raw planning
+      // text (word-count tracking, draft attempts, etc.) was leaking
+      // straight into our script/description output instead of staying
+      // separate. reasoning_effort: 'none' is the one setting that truly
+      // disables this for the qwen3 family (per Groq's docs) rather than
+      // just hiding it while the model still reasons internally.
+      reasoning_effort: 'none',
       messages: [{ role: 'user', content: prompt }]
     })
   });
@@ -272,7 +279,12 @@ async function callGroq(prompt) {
   if (!data.choices || !data.choices[0]) {
     throw new Error('Groq did not return content: ' + JSON.stringify(data));
   }
-  return data.choices[0].message.content.trim();
+  // Defensive safety net: strip any <think>...</think> block that might
+  // still slip through, so leftover reasoning text never reaches the
+  // parser even if reasoning_effort is ever ignored for some request.
+  let content = data.choices[0].message.content.trim();
+  content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  return content;
 }
 
 async function generateContent(category, article, recentTitles, runCount) {
@@ -685,7 +697,7 @@ async function generateAIImage(prompt, savePath, seed) {
   const styledPrompt = `${prompt}, cinematic photo, high quality, realistic, vertical portrait composition`;
   const finalSeed = seed !== undefined ? seed : Math.floor(Math.random() * 100000);
   const url = `${POLLINATIONS_BASE}${encodeURIComponent(styledPrompt)}?width=768&height=1365&nologo=true&seed=${finalSeed}`;
-  const res = await fetchWithTimeout(url, {}, 30000);
+  const res = await fetchWithTimeout(url, {}, 15000);
   if (!res.ok) {
     throw new Error(`Pollinations returned HTTP ${res.status}`);
   }
