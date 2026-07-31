@@ -571,6 +571,18 @@ async function fetchPexelsVideo(query, startIndex = 0, excludeIds = new Set()) {
       }
       const videoPath = path.join(WORK_DIR, `pexels_video_${startIndex}.mp4`);
       fs.writeFileSync(videoPath, buf);
+
+      // Validate it's actually a usable video file now, not later inside
+      // ffmpeg with a cryptic exit code — corrupted/incomplete downloads
+      // can pass the byte-size check above but still not be real video.
+      try {
+        const probe = execSync(`ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "${videoPath}"`).toString().trim();
+        if (probe !== 'video') throw new Error('no video stream found');
+      } catch (e) {
+        log(`WARNING: downloaded file failed ffprobe validation (${e.message}), trying next candidate.`);
+        continue;
+      }
+
       log(`Downloaded video (Pexels id ${video.id}, ${video.duration}s, ${file.width}x${file.height}) for "${query}".`);
       return { path: videoPath, id: video.id };
     } catch (e) {
@@ -821,17 +833,42 @@ function buildVideo(mediaItems, audioPath, customDurations) {
     const equal = duration / n;
     durations = mediaItems.map(() => equal);
   }
+  // Last-line-of-defense validation: replace any NaN/invalid/non-positive
+  // duration with a safe fallback before it can ever reach an ffmpeg
+  // command as literal "-t NaN" text, which fails the whole run.
+  const safeEqualShare = duration / n;
+  durations = durations.map((d, i) => {
+    if (typeof d !== 'number' || !isFinite(d) || d <= 0) {
+      log(`WARNING: duration for slide ${i} was invalid (${d}) — using a safe fallback (${safeEqualShare.toFixed(2)}s) instead.`);
+      return safeEqualShare;
+    }
+    return d;
+  });
   log(`Building ${n}-clip slideshow, durations: ${durations.map(d => d.toFixed(2)).join('s, ')}s...`);
+
+  // Renders a plain color placeholder clip — the last-resort fallback if a
+  // specific slide's video/image processing fails for a reason the earlier
+  // validation didn't catch. Keeps the run from crashing entirely over one
+  // bad slide.
+  function buildPlaceholderClip(duration, outPath) {
+    const fps = 25;
+    execSync(`ffmpeg -y -f lavfi -i "color=c=0x1a1a2e:s=720x1280:d=${duration.toFixed(2)}:r=${fps}" -c:v libx264 -pix_fmt yuv420p "${outPath}"`, { stdio: 'inherit' });
+  }
 
   // Step 1: one clip per sentence — real video is looped/trimmed to length,
   // a still image gets a Ken-Burns pan/zoom (alternating in/out for variety).
   const clipPaths = [];
   for (let i = 0; i < n; i++) {
     const clipPath = path.join(WORK_DIR, `clip_${i}.mp4`);
-    if (mediaItems[i].type === 'video') {
-      buildRealVideoClip(mediaItems[i].path, durations[i], clipPath);
-    } else {
-      buildImageClip(mediaItems[i].path, durations[i], clipPath, i % 2 === 0);
+    try {
+      if (mediaItems[i].type === 'video') {
+        buildRealVideoClip(mediaItems[i].path, durations[i], clipPath);
+      } else {
+        buildImageClip(mediaItems[i].path, durations[i], clipPath, i % 2 === 0);
+      }
+    } catch (e) {
+      log(`WARNING: clip_${i} (${mediaItems[i].type}) failed to build (${e.message}) — using a plain placeholder for this slide instead of failing the whole video.`);
+      buildPlaceholderClip(durations[i], clipPath);
     }
     const actualDur = getAudioDuration(clipPath); // works for video streams too via ffprobe format=duration
     log(`  clip_${i} (${mediaItems[i].type}): target ${durations[i].toFixed(2)}s, actual ${actualDur.toFixed(2)}s${Math.abs(actualDur - durations[i]) > 1 ? ' ⚠️ MISMATCH' : ''}`);
@@ -990,7 +1027,7 @@ async function main() {
   // last content sentence's slide instead.
   const ctaIndex = imageSentences.findIndex(s => s.includes('తెలుగు ఎకో ఛానెల్'));
   if (ctaIndex !== -1) {
-    const ctaDur = imageDurations[ctaIndex];
+    const ctaDur = imageDurations[ctaIndex] || 0;
     imageSentences.splice(ctaIndex, 1);
     imageDurations.splice(ctaIndex, 1);
     if (imageDurations.length > 0) {
