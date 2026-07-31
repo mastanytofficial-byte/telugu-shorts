@@ -132,6 +132,11 @@ const WORD_COUNT_TARGETS = {
 };
 
 // Shared formatting/voice rules appended to every category's prompt.
+// Appended programmatically after generation — never left to the model to
+// retype, since it occasionally introduced typos into this fixed sentence
+// (e.g. "సబ్‌స్రైబ్" missing a syllable) when asked to reproduce it itself.
+const CTA_SENTENCE = 'మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.';
+
 function getCommonRules(category) {
   const { min, max } = WORD_COUNT_TARGETS[category];
   return `
@@ -139,11 +144,16 @@ function getCommonRules(category) {
 
 సహజంగా, మాట్లాడేటట్టు, ఆకర్షణీయంగా రాయి — ఒక వ్యక్తి మరొకరికి ఈ విషయం చెప్తున్నట్టు అనిపించాలి. సాధారణ వాక్యాల్లా రాయి, ప్రతి పూర్తి వాక్యం అయిపోయాక పూర్ణవిరామం (.) పెట్టు.
 
+వ్యాకరణం గురించి — ఇది చాలా ముఖ్యం:
+- ప్రతి వాక్యం పూర్తిగా, సరైన క్రియతో ముగియాలి — "...చేసి," లాంటి అసంపూర్ణ వాక్యాలు (dangling participles) వదిలిపెట్టకు.
+- ఒక పాత్ర కోసం ఎంచుకున్న గౌరవ స్థాయి (అన్నాడు/అన్నారు, చేశాడు/చేశారు) స్క్రిప్ట్ అంతటా ఒకేలా ఉండాలి — మధ్యలో మార్చకు.
+- సాధారణ, తప్పు లేని క్రియా రూపాలు వాడు (ఉదా. "కొట్టుతూ" కాదు "కొడుతూ", "కనబంది" కాదు "కనబడింది").
+
 సంఖ్యలను ఎప్పుడూ అంకెలలో (2000) కాకుండా తెలుగు మాటల్లోనే రాయి (ఉదా. 2000 బదులు "రెండు వేలు" అని రాయి) — లేకపోతే వాయిస్ వాటిని తప్పుగా చదువుతుంది.
 
 కంపెనీ/వ్యక్తుల/brand పేర్లను (ఉదా. Uber, Apple, Google) ఎప్పుడూ ఆంగ్ల స్పెల్లింగ్‌లోనే ఉంచు, తెలుగులోకి మార్చకు.
 
-చివర్లో ఖచ్చితంగా ఈ వాక్యం జోడించు: మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.`;
+చివర్లో "లైక్/షేర్/సబ్‌స్క్రైబ్ చేయండి" లాంటి వాక్యం ఏదీ నువ్వు రాయకు — అది మేము విడిగా జోడిస్తాము. SCRIPT కథ/విషయంతోనే ముగియాలి.`;
 }
 
 // The model kept defaulting to "help/kindness" regardless of the 6 options
@@ -318,7 +328,16 @@ async function generateContent(category, article, recentTitles, runCount) {
     }
   }
 
+  // Defensive: strip any CTA-like ending the model wrote anyway, despite
+  // being told not to — avoids ending up with two CTA lines back to back.
+  const existingSentences = splitIntoSentences(script);
+  if (existingSentences.length > 0 && existingSentences[existingSentences.length - 1].includes('ఛానెల్')) {
+    existingSentences.pop();
+    script = existingSentences.join(' ');
+  }
+
   script = ensureSentenceBreaks(script);
+  script = (script.trim() + ' ' + CTA_SENTENCE).trim();
   log(`Title: ${title}`);
   log(`Keywords: ${keywords}`);
   log(`Script (${script.length} chars): ${script}`);
@@ -386,7 +405,7 @@ function getAudioFormat(audioPath) {
 // aggregated back up to one number per original sentence, including its
 // own internal comma gaps) so nothing downstream needs to change.
 async function generateAudioForScript(sentences) {
-  const commaGap = 0.15;  // shorter pause within a sentence, at a comma
+  const commaGap = 0.08;  // shorter pause within a sentence, at a comma
   const periodGap = 0.35; // longer pause between sentences
   log(`Generating audio via Google Cloud TTS (${sentences.length} sentences, further split at commas for reliable pausing)...`);
 
