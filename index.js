@@ -586,10 +586,25 @@ async function fetchPexelsVideo(query, startIndex = 0, excludeIds = new Set()) {
   for (const video of orderedCandidates) {
     // Prefer a portrait file around 720-1080px wide — big enough to look
     // sharp after our scale/crop, small enough to download quickly.
+    // Pexels' video library is predominantly LANDSCAPE (standard stock
+    // footage convention) — demanding a native portrait file here was
+    // rejecting nearly every candidate, which is why Pexels Video never
+    // actually won over the AI-image fallback in practice. Our own
+    // buildRealVideoClip already scale+crops any source to 720x1280 (the
+    // same center-crop technique real Shorts editors use on landscape
+    // footage), so any orientation works — just prefer a moderate
+    // resolution for a fast download and decent post-crop sharpness.
     const files = (video.video_files || [])
-      .filter(f => f.file_type === 'video/mp4' && f.height > f.width) // portrait only
-      .sort((a, b) => Math.abs(a.width - 720) - Math.abs(b.width - 720));
-    if (files.length === 0) continue; // this result has no usable portrait file, try next
+      .filter(f => f.file_type === 'video/mp4' && f.width && f.height)
+      .sort((a, b) => {
+        // Prefer portrait/square (less content lost to cropping) over
+        // landscape, then within each group prefer resolution near 1080px.
+        const aPortrait = a.height >= a.width ? 0 : 1;
+        const bPortrait = b.height >= b.width ? 0 : 1;
+        if (aPortrait !== bPortrait) return aPortrait - bPortrait;
+        return Math.abs(a.width - 1080) - Math.abs(b.width - 1080);
+      });
+    if (files.length === 0) continue; // this result has no usable mp4 file, try next
     const file = files[0];
     try {
       const videoRes = await fetchWithTimeout(file.link, {}, 30000);
