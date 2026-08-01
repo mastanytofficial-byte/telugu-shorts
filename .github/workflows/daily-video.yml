@@ -38,6 +38,11 @@ jobs:
         timeout-minutes: 3
         run: npm install
 
+      - name: Install Python bridge for experimental HF Space video tier
+        timeout-minutes: 2
+        continue-on-error: true  # optional tier — pipeline works fine without it
+        run: pip install --break-system-packages gradio_client
+
       - name: Generate and upload video
         timeout-minutes: 15
         env:
