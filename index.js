@@ -43,17 +43,20 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
 
 const CATEGORIES = ['news', 'moral_story', 'fact', 'parenting'];
 
-// Niching down to a single content type consistently outperforms mixing
-// several for subscriber growth — viewers subscribe for "more of the thing
-// they just watched," not a grab-bag. Fixed to moral_story: strong cultural
-// fit for Telugu audiences, no factual-accuracy risk (unlike 'fact'), and
-// its natural length (130-150 words) matches YouTube's 50-60s Shorts
-// retention sweet spot better than a stretched-out short fact would.
-// To bring back daily variety later, just restore the day-of-year rotation
-// through CATEGORIES.
-function pickCategory() {
-  const category = 'moral_story';
-  log(`Today's category: ${category}`);
+// "Telugu AI Story Shorts" niche: mystery/horror/emotional/sci-fi twist
+// stories, weighted 40/30/20/10 per the requested content mix. Run-count
+// based (not day-based) so multiple manual test runs on the same day still
+// get variety — same reasoning as pickStoryOutline below.
+const STORY_CATEGORY_ROTATION = [
+  'mystery', 'mystery', 'mystery', 'mystery',
+  'horror', 'horror', 'horror',
+  'emotional', 'emotional',
+  'scifi'
+]; // 10 slots = 40% / 30% / 20% / 10%
+
+function pickCategory(runCount) {
+  const category = STORY_CATEGORY_ROTATION[runCount % STORY_CATEGORY_ROTATION.length];
+  log(`Today's category: ${category} (run #${runCount})`);
   return category;
 }
 
@@ -118,17 +121,27 @@ const FALLBACK_KEYWORDS = {
   news: 'India news',
   moral_story: 'Indian village traditional life',
   fact: 'India knowledge curious facts',
-  parenting: 'Indian family parenting'
+  parenting: 'Indian family parenting',
+  mystery: 'Indian person mysterious night street',
+  horror: 'Indian dark corridor eerie shadow',
+  emotional: 'Indian family emotional moment',
+  scifi: 'futuristic technology Indian city'
 };
 
 // news/moral_story need more room to actually tell a story (~40-45s);
 // fact/parenting work better short and punchy (~20-30s) per YouTube Shorts
 // retention data — longer isn't better for a single quick tip or fact.
+// mystery/horror/emotional/scifi target the requested 25-40s twist-story
+// format — enough room for hook+buildup+twist without dragging.
 const WORD_COUNT_TARGETS = {
   news: { min: 130, max: 150 },
   moral_story: { min: 130, max: 150 },
   fact: { min: 85, max: 95 },
-  parenting: { min: 85, max: 95 }
+  parenting: { min: 85, max: 95 },
+  mystery: { min: 100, max: 130 },
+  horror: { min: 100, max: 130 },
+  emotional: { min: 90, max: 120 },
+  scifi: { min: 90, max: 120 }
 };
 
 // Shared formatting/voice rules appended to every category's prompt.
@@ -198,6 +211,42 @@ function pickMoralValue(runCount) {
   return { value, outline };
 }
 
+// Curated premises for the 4 new story categories — each is a COMPLETE
+// hook-buildup-twist story, same reasoning as STORY_OUTLINES above: asking
+// the model to invent a fresh twist story from scratch produced incoherent
+// results, but expanding an already-complete premise into vivid narration
+// works reliably.
+const MYSTERY_OUTLINES = [
+  'ఒక యువకుడు రోడ్డు మీద పది రూపాయల నోటు కనిపెడతాడు. దాన్ని తీసుకున్న క్షణం నుండి, వరుసగా విచిత్రమైన యాదృచ్ఛిక సంఘటనలు జరుగుతాయి — ఎప్పుడూ ఆలస్యంగా వచ్చే బస్సు సరిగ్గా సమయానికి వస్తుంది, పదేళ్లుగా కలవని పాత స్నేహితుడు అకస్మాత్తుగా ఎదురవుతాడు. రాత్రి ఇంటికి వెళ్తుండగా, ఎవరో తనని గమనిస్తున్నట్టు అనిపిస్తుంది. ఆ నోటుని జాగ్రత్తగా చూస్తే, దాని మీద తన సొంత చేతిరాతలో ఒక చిన్న సందేశం కనిపిస్తుంది: "ఈ రాత్రి ఆ కూడలి దాటకు". అతను ఆ హెచ్చరిక పాటిస్తాడు. మరుసటి రోజు తెలుస్తుంది — సరిగ్గా అదే సమయంలో ఆ కూడలిలో పెద్ద ప్రమాదం జరిగింది.',
+  'ఒక మహిళకి అర్ధరాత్రి ఒక తెలియని నంబర్ నుండి కాల్ వస్తుంది. ఎత్తగానే, అవతలి వైపు నుండి తన సొంత గొంతే వినిపిస్తుంది, భయంతో వణుకుతూ చెప్తుంది: "తలుపు తీయకు, ఎవరు పిలిచినా". ఆమె ఆశ్చర్యంతో ఫోన్ పెట్టేస్తుంది. కొద్ది నిమిషాల తర్వాత, తలుపు మీద మెల్లగా తట్టిన శబ్దం వినిపిస్తుంది. ఆమె లైట్లు ఆర్పేసి మౌనంగా ఉండిపోతుంది. తెల్లవారుజామున, పోలీసులు ఆ వీధిలో ఒక అపరిచితుడు రాత్రి పలు ఇళ్ల తలుపులు తట్టి, తెరిచిన వారికి హాని చేసిన సంగతి చెప్తారు — ఆమె ఇల్లు తప్ప అన్ని ఇళ్లూ ప్రభావితమయ్యాయి.',
+  'ఒక ఉద్యోగి ప్రతిరోజూ లిఫ్ట్‌లో 7వ అంతస్తు బటన్ నొక్కితే, అది తనని ఎప్పుడూ చూడని ఖాళీ అంతస్తుకి తీసుకెళ్తుంది — అతని కార్యాలయం 6వ అంతస్తులోనే ఉంది. ఆసక్తితో ఆ అంతస్తులో దిగి చూస్తే, తన పేరుతో ఉన్న ఖాళీ క్యాబిన్ కనిపిస్తుంది, దాని మీద తను ఇంకా చేరని కొత్త కంపెనీ పేరు రాసి ఉంటుంది. కొన్ని వారాల తర్వాత, అతని ప్రస్తుత కంపెనీ మూతపడుతుంది, అతనికి సరిగ్గా అదే కొత్త కంపెనీ నుండి ఉద్యోగ ఆఫర్ వస్తుంది.'
+];
+
+const HORROR_OUTLINES = [
+  'ఒక రాత్రి కాపలాదారుడు ప్రతిరోజూ అర్ధరాత్రి ఖాళీ కార్యాలయ భవనంలో రౌండ్స్ వేస్తుంటాడు. కొన్ని రోజులుగా, తన అడుగుల శబ్దం వెనుక ఇంకో అడుగుల శబ్దం వినిపిస్తూ ఉంటుంది, అతను ఆగితే అదీ ఆగుతుంది. ఒక రాత్రి ధైర్యం చేసి వెనక్కి తిరిగి చూస్తే, ఖాళీ కారిడార్ మాత్రమే కనిపిస్తుంది. చివరి అంతస్తుకి చేరుకున్నప్పుడు, అద్దంలో తన ప్రతిబింబం తనకన్నా ఒక క్షణం ఆలస్యంగా కదులుతున్నట్టు గమనిస్తాడు. భయంతో బయటకు పరిగెత్తుతాడు. మరుసటి రోజు పాత రికార్డుల్లో తెలుస్తుంది — సరిగ్గా ఒక సంవత్సరం క్రితం, అదే తేదీన, అతని ముందు పనిచేసిన కాపలాదారుడు ఆ భవనంలో అదృశ్యమయ్యాడు, ఇప్పటికీ దొరకలేదు.',
+  'ఒక అమ్మాయికి తను కొనని ఒక పాత పుస్తకంలో, తన సొంత ఫోటో పదే పదే కనిపిస్తుంది — తీసేసినా, మళ్ళీ అదే పేజీలో ప్రత్యక్షమవుతుంది. ఫోటోలో ఆమె తనకి తెలియని ఒక ఇంటి ముందు, వేరే దుస్తుల్లో నిలబడి ఉంటుంది. ఆసక్తితో ఆ ఇంటిని వెతికి కనిపెడుతుంది — నిజంగా అలాంటి ఇల్లు ఉంది, ఖాళీగా, ఏళ్లుగా తాళం వేసి ఉంది. లోపలికి వెళ్ళి చూస్తే, గోడ మీద ఒక పాత క్యాలెండర్ కనిపిస్తుంది, ఆమె పుట్టిన తేదీనే circle చేసి ఉంటుంది — సంవత్సరం మాత్రం ఆమె పుట్టడానికి ఇంకా పదేళ్ళు ముందుది.',
+  'ఒక కుటుంబం కొత్త ఇంట్లోకి మారుతుంది. మొదటి రాత్రే, పిల్లవాడు గోడకి తగిలించిన అద్దంలో ఎవరో నవ్వుతున్నట్టు కనిపిస్తుందని చెప్తాడు, తల్లిదండ్రులు నమ్మరు. కొన్ని రోజుల్లో, ఇంట్లో అందరికీ అదే అనుభవం అవుతుంది — అద్దంలో ప్రతిబింబం ఒక క్షణం ఆలస్యంగా, కొద్దిగా వేరే expression తో కదులుతుంది. ఇంటి పాత యజమాని గురించి ఆరా తీస్తే తెలుస్తుంది — అతను కూడా అదే అద్దాన్ని ఇంట్లో వదిలేసి, ఏ వివరణా ఇవ్వకుండా ఒక్క రాత్రిలో ఇల్లు ఖాళీ చేసి వెళ్లిపోయాడు.'
+];
+
+const EMOTIONAL_OUTLINES = [
+  'ఒక చిన్న అబ్బాయి తన పుట్టినరోజున తండ్రి ఇచ్చిన సాధారణ బహుమతి చూసి నిరాశ చెందుతాడు, స్నేహితులకి వచ్చిన ఖరీదైన బహుమతులతో పోల్చుకుంటాడు. సంవత్సరాలు గడిచాక, తండ్రి పోయాక, అతను తండ్రి పాత వస్తువులు సర్దుతుండగా, ఆ ఏడాది బహుమతి కొనడానికి తండ్రి తన ప్రియమైన చేతి గడియారాన్ని అమ్మేసిన రసీదు కనిపెడతాడు.',
+  'ఒక కూతురు తన వృద్ధాప్య తండ్రి మతిమరుపుతో విసిగిపోయి, అతని పట్ల సహనం కోల్పోతూ ఉంటుంది. ఒకరోజు అతని పాత డైరీలో ఒక పేజీ కనిపెడుతుంది — తను చిన్నప్పుడు ప్రతి రాత్రి ఏడుస్తుంటే, తండ్రి తనకి పాడిన ఒక ప్రత్యేక లాలిపాట గురించి రాసి ఉంటుంది, ఆమెకి అస్సలు గుర్తులేని ఒక జ్ఞాపకం.',
+  'ఒక వృద్ధురాలు ప్రతి ఆదివారం బస్ స్టాప్‌లో కూర్చుని ఎవరి కోసమో వేచి ఉంటుంది, ఎవరూ రారు. పక్కింటి అమ్మాయి కుతూహలంతో అడిగితే, ఆమె చెప్తుంది — 50 ఏళ్ల క్రితం అదే స్టాప్‌లో తన భర్తతో మొదటిసారి కలిసిందని, అతను ఇప్పుడు లేకపోయినా, ఆ క్షణాన్ని గుర్తుచేసుకోవడానికే వస్తానని. కొన్ని వారాల తర్వాత అమ్మాయి ఆమెని కలవదు — ఆమె మనవడు వచ్చి, బామ్మ ప్రశాంతంగా నిద్రలోనే కన్నుమూసిందని, ఆమె చేతిలో ఆ పాత బస్ టికెట్ ఉందని చెప్తాడు.'
+];
+
+const SCIFI_OUTLINES = [
+  '2090వ సంవత్సరంలో, ఒక సంరక్షణ రోబోట్ మంటల్లో చిక్కుకున్న ఒక చిన్న పాపని కాపాడుతుంది. ఆ క్షణంలో, తనలో ఎప్పుడూ అనుభవించని ఒక కొత్త అనుభూతి కలుగుతుంది — భయం లాంటిది, కానీ దానికోసం కాదు, ఆ పాప కోసం. తర్వాత ఇంజనీర్లు దాని సిస్టమ్ చెక్ చేస్తే, అలాంటి emotion feature దానికి install చేయలేదని తెలుస్తుంది.',
+  'ఒక శాస్త్రవేత్త 100 సంవత్సరాల కోసం పాతిపెట్టిన టైమ్ కాప్సూల్‌ని తవ్వి తీస్తాడు, అది ఇంకా 3 సంవత్సరాలు ముందుగానే బయటపడుతుంది. లోపల ఒక లేఖ ఉంటుంది, తన సొంత చేతిరాతలో, తనకి తానే రాసినట్టు — కానీ అతను ఇంకా ఆ లేఖ రాయలేదు.'
+];
+
+function pickStoryOutline(category, runCount) {
+  const banks = { mystery: MYSTERY_OUTLINES, horror: HORROR_OUTLINES, emotional: EMOTIONAL_OUTLINES, scifi: SCIFI_OUTLINES };
+  const bank = banks[category];
+  const outline = bank[runCount % bank.length];
+  log(`Outline for ${category} (run #${runCount}): ${outline.slice(0, 60)}...`);
+  return outline;
+}
+
 function buildPrompt(category, article, recentTitles, runCount) {
   const avoidLine = recentTitles.length
     ? `\n\nఇటీవల ఈ అంశాలు వాడాము, వీటిని పునరావృతం చేయకు, పూర్తిగా కొత్త కోణం/విషయం ఎంచుకో: ${recentTitles.slice(-5).join(' | ')}`
@@ -223,6 +272,26 @@ function buildPrompt(category, article, recentTitles, runCount) {
 8. రాశాక మళ్ళీ చదివి సరైన పదాలు/క్రియారూపాలు వాడావో నిర్ధారించుకో (ఉదా. "దూకాడు"ని "దూచాడు" అనొద్దు; "చెక్కాడు"ని "చెక్కించాడు"తో కలపొద్దు).${avoidLine}`;
   } else if (category === 'fact') {
     topicInstruction = `ఒక నిజమైన, ఆసక్తికరమైన విషయం (fact) గురించి "మీకు తెలుసా?" స్టైల్‌లో తెలుగులో రాయి. చాలా ముఖ్యం: సాధారణంగా అందరికీ ఇప్పటికే తెలిసిన, ఇంటర్నెట్‌లో ఎక్కడ చూసినా కనిపించే overused facts (ఉదా. "ఆక్టోపస్‌కి మూడు గుండెలు ఉంటాయి" లాంటివి) వాడకు — తక్కువ మందికి తెలిసిన, నిజంగా ఆశ్చర్యపరిచే fact ఎంచుకో. తప్పుడు సమాచారం ఇవ్వకు, నిజమైన, verifiable fact మాత్రమే వాడు.${avoidLine}`;
+  } else if (category === 'mystery' || category === 'horror' || category === 'scifi' || category === 'emotional') {
+    const outline = pickStoryOutline(category, runCount);
+    const genreNote = {
+      mystery: 'ఇది ఒక mystery/twist కథ — మొదటి వాక్యంలోనే ఆసక్తి పుట్టించాలి, కానీ చివర్లో వచ్చే twist ని ముందుగానే వెల్లడించకూడదు. చివర్లో twist తర్వాత, ఒక చిన్న lingering ప్రశ్న/ఆలోచనతో ముగించు (పూర్తిగా resolve చేయకు, curiosity మిగలాలి).',
+      horror: `ఇది ఒక suspense/horror కథ — atmosphere, ఉత్కంఠ ద్వారా భయం పుట్టించు, graphic violence/రక్తపాతం/మరణ వివరణలు అస్సలు వాడకు — ఇది eerie/creepy గా ఉండాలి, gore గా కాదు. ఇది పూర్తిగా కల్పితం అని అర్థమయ్యేలా ఉండాలి. చివర్లో twist తర్వాత, ఒక చిన్న lingering వాక్యంతో ముగించు.`,
+      scifi: 'ఇది ఒక sci-fi/"What If" కథ — చివర్లో twist వెల్లడించి, ఆలోచింపజేసే ఒక చిన్న ప్రశ్నతో ముగించు.',
+      emotional: 'ఇది ఒక emotional కథ — చివర్లో ఏమి జరిగిందో వెల్లడించి, ఒక చిన్న reflective వాక్యంతో ("ఈ క్షణం మనకి గుర్తుచేసేది ఏమిటంటే..." వంటిది) ముగించు.'
+    }[category];
+    topicInstruction = `కింద ఇచ్చిన కథను తెలుగులో వివరణాత్మకంగా, ఉత్కంఠభరితంగా చెప్పు. ఇది పూర్తి కథ — మార్చకు, కొత్తగా కల్పించకు, కేవలం విస్తరించి చెప్పు:
+
+కథ: ${outline}
+
+నియమాలు:
+1. పాత్రలు/సంఘటనలు/క్రమం పైన ఉన్నట్టే ఉంచు (పేర్లు తెలుగులో అనుకూలంగా పెట్టొచ్చు) — పైన లేని కొత్త అంశాలు జోడించకు.
+2. మొదటి 1-2 వాక్యాల్లోనే బలమైన hook ఉండాలి — twist ముందే చెప్పకు, చివరి వరకూ ఉత్కంఠ కొనసాగించు.
+3. ${genreNote}
+4. Listing లా కాకుండా కథలా రాయి — dialogue వాడు, స్పష్టమైన వివరణ ఇవ్వు.
+5. జంతువులను ఎప్పుడూ "అది" అని సూచించు, మధ్యలో లింగం మార్చకు.
+6. Conditional వాక్యం మొదలుపెడితే పూర్తి చేయి, మధ్యలో ఆపకు.
+7. రాశాక మళ్ళీ చదివి సరైన పదాలు/క్రియారూపాలు వాడావో నిర్ధారించుకో.${avoidLine}`;
   } else {
     topicInstruction = `పిల్లల పెంపకం, కుటుంబ సంబంధాలు, తల్లిదండ్రుల-పిల్లల బంధం గురించి ఒక చిన్న, ఆచరణాత్మకమైన, హృదయాన్ని తాకే సలహా లేదా పాఠం తెలుగులో రాయి. సాధారణంగా అందరూ చెప్పే generic సలహాలు (ఉదా. "పిల్లలతో ఎక్కువ సమయం గడపండి") కాకుండా, ఒక నిర్దిష్టమైన సన్నివేశం/ఉదాహరణతో చెప్పు.${avoidLine}`;
   }
@@ -1001,7 +1070,7 @@ function buildVideo(mediaItems, audioPath, customDurations) {
     `drawbox=x=(iw-566)/2:y=ih-193+6:w=566:h=82:color=black@0.30:t=fill`,
     `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.97:t=fill`,
     `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2:shadowcolor=black@0.5:shadowx=1:shadowy=1`,
-    `drawtext=fontfile='${fontPath}':text='for daily Telugu life stories':fontcolor=white@0.8:fontsize=18:x=(w-text_w)/2:y=h-100`,
+    `drawtext=fontfile='${fontPath}':text='for daily Telugu story shorts':fontcolor=white@0.8:fontsize=18:x=(w-text_w)/2:y=h-100`,
 
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
@@ -1105,9 +1174,9 @@ async function main() {
   checkSecret('YT_CLIENT_SECRET', YT_CLIENT_SECRET);
   checkSecret('YT_REFRESH_TOKEN', YT_REFRESH_TOKEN);
 
-  const category = pickCategory();
-  const article = category === 'news' ? await fetchNews() : null;
   const { usedTitles, runCount } = loadState();
+  const category = pickCategory(runCount);
+  const article = category === 'news' ? await fetchNews() : null;
 
   const { title, script } = await generateContent(category, article, usedTitles, runCount);
   const allSentences = splitIntoSentences(script);
