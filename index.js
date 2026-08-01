@@ -739,6 +739,24 @@ async function generateAIImage(prompt, savePath, seed) {
   return savePath;
 }
 
+// EXPERIMENTAL, best-effort: generates real (if brief) AI video via a
+// community/vendor-hosted Hugging Face Space (see hf_video_gen.py), for
+// scenes Pexels Video couldn't match with real footage — fantastical/
+// mythological moments that will never exist in a stock library. No SLA,
+// no verified API signature (untestable without live access), bounded
+// timeout so a slow/queued Space can't eat the run's time budget. Any
+// failure here is expected and normal — it just means this one sentence
+// falls through to the AI-image tier instead, same as always.
+function generateHFSpaceVideo(prompt, savePath, timeoutMs = 40000) {
+  const scriptPath = path.join(__dirname, 'hf_video_gen.py');
+  const cmd = `python3 "${scriptPath}" ${JSON.stringify(prompt)} "${savePath}"`;
+  const output = execSync(cmd, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
+  if (!output || !fs.existsSync(savePath)) {
+    throw new Error(`hf_video_gen.py did not produce a usable output file (stdout: ${output})`);
+  }
+  return savePath;
+}
+
 // Fetches one clip per sentence: Pexels VIDEO first (real motion — closest
 // to how professionally-edited reference videos look), then AI-generated
 // image (using a rich, sentence-exact scene description), then Pexels
@@ -787,7 +805,22 @@ async function fetchImagesPerSentence(sentences, category) {
       clips.push({ path: result.path, type: 'video' });
       continue;
     } catch (e) {
-      log(`  WARNING: Pexels video search failed for sentence ${i} (${e.message}), falling back to AI image.`);
+      log(`  WARNING: Pexels video search failed for sentence ${i} (${e.message}), trying experimental AI video.`);
+    }
+
+    // 1.5) EXPERIMENTAL: AI-generated video via a Hugging Face Space — best
+    // shot at real motion for scenes that no stock library will ever have
+    // (mythological/fantastical moments). No SLA; expected to fail often.
+    const hfVideoPath = path.join(WORK_DIR, `hf_video_${i}.mp4`);
+    try {
+      generateHFSpaceVideo(scene, hfVideoPath);
+      const probe = execSync(`ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "${hfVideoPath}"`).toString().trim();
+      if (probe !== 'video') throw new Error('no video stream in output file');
+      log(`  -> Experimental HF Space video succeeded for sentence ${i}.`);
+      clips.push({ path: hfVideoPath, type: 'video' });
+      continue;
+    } catch (e) {
+      log(`  (expected, often fails) HF Space video generation failed for sentence ${i} (${e.message}), falling back to AI image.`);
     }
 
     // 2) AI-generated image (exact-scene prompt, character-consistent).
