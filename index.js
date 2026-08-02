@@ -43,19 +43,12 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
 
 const CATEGORIES = ['news', 'moral_story', 'fact', 'parenting'];
 
-// "Telugu AI Story Shorts" niche: mystery/horror/emotional/sci-fi twist
-// stories, weighted 40/30/20/10 per the requested content mix. Run-count
-// based (not day-based) so multiple manual test runs on the same day still
-// get variety — same reasoning as pickStoryOutline below.
-const STORY_CATEGORY_ROTATION = [
-  'mystery', 'mystery', 'mystery', 'mystery',
-  'horror', 'horror', 'horror',
-  'emotional', 'emotional',
-  'scifi'
-]; // 10 slots = 40% / 30% / 20% / 10%
-
+// Replaced by user directive: full switch to "Telugu Motivational/
+// Self-Respect Shorts" — direct-address inspirational monologue, matching
+// the reference videos provided. Single category (like moral_story was),
+// rotating through MOTIVATIONAL_THEMES by run count instead of genre.
 function pickCategory(runCount) {
-  const category = STORY_CATEGORY_ROTATION[runCount % STORY_CATEGORY_ROTATION.length];
+  const category = 'motivational';
   log(`Today's category: ${category} (run #${runCount})`);
   return category;
 }
@@ -125,7 +118,8 @@ const FALLBACK_KEYWORDS = {
   mystery: 'Indian person mysterious night street',
   horror: 'Indian dark corridor eerie shadow',
   emotional: 'Indian family emotional moment',
-  scifi: 'futuristic technology Indian city'
+  scifi: 'futuristic technology Indian city',
+  motivational: 'Indian person alone sunrise contemplative'
 };
 
 // news/moral_story need more room to actually tell a story (~40-45s);
@@ -141,7 +135,8 @@ const WORD_COUNT_TARGETS = {
   mystery: { min: 100, max: 130 },
   horror: { min: 100, max: 130 },
   emotional: { min: 90, max: 120 },
-  scifi: { min: 90, max: 120 }
+  scifi: { min: 90, max: 120 },
+  motivational: { min: 110, max: 140 }
 };
 
 // Shared formatting/voice rules appended to every category's prompt.
@@ -247,6 +242,29 @@ function pickStoryOutline(category, runCount) {
   return outline;
 }
 
+// Specific motivational/self-respect angles — direct-address inspirational
+// monologue, matching the reference videos (@mileswithprash-style Telugu
+// motivation content). Deliberately specific (not "work hard, succeed")
+// to avoid generic, overused advice.
+const MOTIVATIONAL_THEMES = [
+  'నిన్ను విలువ ఇవ్వని వాళ్ళ కోసం ఏడవడం మానేయాలి — వాళ్ళ దృష్టిలో నీ విలువ లేకపోతే, అది నీ లోపం కాదు, వాళ్ళ చూపు లోపమే.',
+  'నీ కృషిని ఎవరూ గమనించకపోయినా, గుర్తించకపోయినా — నువ్వు ఆగకూడదు. గుర్తింపు కోసం కాదు, నీ కోసం చేయాలి.',
+  'మౌనంగా ఉండటం బలహీనత కాదు — ప్రతిదానికీ సమాధానం చెప్పాల్సిన అవసరం లేదని తెలుసుకోవడమే అసలైన శక్తి.',
+  'ఇతరులతో నిన్ను పోల్చుకోవడం మానేయాలి — ప్రతి ఒక్కరి ప్రయాణం వేరు, నీ వేగం నీదే.',
+  'నీ బాధని అర్థం చేసుకోవడానికి ఎవరైనా రావాలని వేచి ఉండకు — ఒంటరిగానే నిన్ను నువ్వు నయం చేసుకోగల శక్తి నీలో ఉంది.',
+  'కష్టాలు నిన్ను విరగ్గొట్టడానికి రావు, బలంగా మార్చడానికే వస్తాయి — ఇది వెనక్కి తిరిగి చూస్తేనే అర్థమవుతుంది.',
+  'అందరికీ నచ్చాలని ప్రయత్నించడం మానేయాలి — నిజాయితీగా ఉండటం వల్ల కొందరు దూరమైనా పర్వాలేదు.',
+  'హద్దులు (boundaries) పెట్టుకోవడం స్వార్థం కాదు — నీ శాంతిని కాపాడుకోవడం కోసం అది అవసరం.',
+  'నీ గతం నిన్ను నిర్వచించదు — ఈ క్షణంలో నువ్వు తీసుకునే అడుగే నీ భవిష్యత్తుని నిర్వచిస్తుంది.',
+  'నీ శాంతిని దెబ్బతీసే మనుషుల నుండి దూరంగా ఉండటం తప్పు కాదు — అది నిన్ను నువ్వు ప్రేమించుకోవడమే.'
+];
+
+function pickMotivationalTheme(runCount) {
+  const theme = MOTIVATIONAL_THEMES[runCount % MOTIVATIONAL_THEMES.length];
+  log(`Motivational theme for run #${runCount}: ${theme.slice(0, 50)}...`);
+  return theme;
+}
+
 function buildPrompt(category, article, recentTitles, runCount) {
   const avoidLine = recentTitles.length
     ? `\n\nఇటీవల ఈ అంశాలు వాడాము, వీటిని పునరావృతం చేయకు, పూర్తిగా కొత్త కోణం/విషయం ఎంచుకో: ${recentTitles.slice(-5).join(' | ')}`
@@ -292,6 +310,23 @@ function buildPrompt(category, article, recentTitles, runCount) {
 5. జంతువులను ఎప్పుడూ "అది" అని సూచించు, మధ్యలో లింగం మార్చకు.
 6. Conditional వాక్యం మొదలుపెడితే పూర్తి చేయి, మధ్యలో ఆపకు.
 7. రాశాక మళ్ళీ చదివి సరైన పదాలు/క్రియారూపాలు వాడావో నిర్ధారించుకో.${avoidLine}`;
+  } else if (category === 'motivational') {
+    const theme = pickMotivationalTheme(runCount);
+    topicInstruction = `కింద ఇచ్చిన ఆలోచనని ఆధారంగా చేసుకుని, ఒక motivational/self-respect Telugu Shorts స్క్రిప్ట్ రాయి — నేరుగా వినేవారిని ఉద్దేశించి ("నువ్వు" అని) మాట్లాడుతున్నట్టు:
+
+ఆలోచన: ${theme}
+
+నిర్మాణం:
+1. **Hook (మొదటి వాక్యం):** వినేవారికి బాధ కలిగించే/relatable ఒక పరిస్థితిని ప్రశ్నగా లేదా స్టేట్‌మెంట్‌గా లేవనెత్తు — వెంటనే "ఇది నా గురించే" అనిపించాలి.
+2. **బాధని అంగీకరించు:** ఆ బాధ/కష్టం నిజమైనదని, వినేవారిని కించపరచకుండా, empathy తో చెప్పు.
+3. **Reframe/insight:** పైన ఇచ్చిన ఆలోచననే విస్తరించి, కొత్త దృక్కోణం ఇవ్వు.
+4. **శక్తివంతమైన ముగింపు వాక్యం:** గుర్తుంచుకోదగ్గ, quotable, empowering చివరి వాక్యంతో ముగించు.
+
+నియమాలు:
+- నేరుగా "నువ్వు"/"నీ" అని address చేయి, మూడో వ్యక్తిలో కథలా చెప్పకు.
+- సాధారణ, అందరూ చెప్పే cliché మాటలు ("కష్టపడితే ఫలితం వస్తుంది" వంటివి) వాడకు — పైన ఇచ్చిన ఆలోచననే నిర్దిష్టంగా, కొత్తగా చెప్పు.
+- ఏ ఒక్క వ్యక్తినో, సంఘటననో ప్రస్తావించకు — ఇది సాధారణంగా అందరికీ వర్తించేలా ఉండాలి.
+- భావోద్వేగంగా, cinematic గా, కానీ నిజాయితీగా అనిపించేలా రాయి — అతి నాటకీయత వద్దు.${avoidLine}`;
   } else {
     topicInstruction = `పిల్లల పెంపకం, కుటుంబ సంబంధాలు, తల్లిదండ్రుల-పిల్లల బంధం గురించి ఒక చిన్న, ఆచరణాత్మకమైన, హృదయాన్ని తాకే సలహా లేదా పాఠం తెలుగులో రాయి. సాధారణంగా అందరూ చెప్పే generic సలహాలు (ఉదా. "పిల్లలతో ఎక్కువ సమయం గడపండి") కాకుండా, ఒక నిర్దిష్టమైన సన్నివేశం/ఉదాహరణతో చెప్పు.${avoidLine}`;
   }
@@ -1056,9 +1091,9 @@ function buildVideo(mediaItems, audioPath, customDurations) {
     `drawbox=x=0:y=ih-56:w=iw:h=56:color=black@0.70:t=fill`,
 
     // "STORY" badge, top-left, with a soft drop shadow behind the box
-    `drawbox=x=43:y=63:w=120:h=44:color=black@0.35:t=fill`,
-    `drawbox=x=40:y=60:w=120:h=44:color=${ACCENT}@0.97:t=fill`,
-    `drawtext=fontfile='${fontPathBold}':text='STORY':fontcolor=0x0f1024:fontsize=24:x=40+(120-text_w)/2:y=60+(44-text_h)/2`,
+    `drawbox=x=43:y=63:w=165:h=44:color=black@0.35:t=fill`,
+    `drawbox=x=40:y=60:w=165:h=44:color=${ACCENT}@0.97:t=fill`,
+    `drawtext=fontfile='${fontPathBold}':text='MOTIVATION':fontcolor=0x0f1024:fontsize=20:x=40+(165-text_w)/2:y=60+(44-text_h)/2`,
 
     // Channel branding, top-center, with text shadow + a thin accent underline
     `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=32:x=(w-text_w)/2:y=140:shadowcolor=black@0.6:shadowx=2:shadowy=2`,
@@ -1070,7 +1105,7 @@ function buildVideo(mediaItems, audioPath, customDurations) {
     `drawbox=x=(iw-566)/2:y=ih-193+6:w=566:h=82:color=black@0.30:t=fill`,
     `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.97:t=fill`,
     `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2:shadowcolor=black@0.5:shadowx=1:shadowy=1`,
-    `drawtext=fontfile='${fontPath}':text='for daily Telugu story shorts':fontcolor=white@0.8:fontsize=18:x=(w-text_w)/2:y=h-100`,
+    `drawtext=fontfile='${fontPath}':text='daily Telugu motivation & self-respect':fontcolor=white@0.8:fontsize=17:x=(w-text_w)/2:y=h-100`,
 
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
