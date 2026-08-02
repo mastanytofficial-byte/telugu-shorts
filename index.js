@@ -47,9 +47,23 @@ const CATEGORIES = ['news', 'moral_story', 'fact', 'parenting'];
 // Self-Respect Shorts" — direct-address inspirational monologue, matching
 // the reference videos provided. Single category (like moral_story was),
 // rotating through MOTIVATIONAL_THEMES by run count instead of genre.
+// Expanded per user directive: "Fully Automated AI YouTube Shorts
+// Generator" feature set — 6 personal-growth sub-genres, rotating evenly.
+const PERSONAL_GROWTH_CATEGORIES = ['self_respect', 'motivation', 'mindset', 'success', 'relationship', 'life_lesson'];
+
+// User's final direction: 70% mini-story+lesson format ("Option B" — better
+// retention, and concrete story scenes match Pexels/AI-image search far
+// better than abstract motivational statements do), 30% direct-address
+// personal-growth monologue ("Option A"). Reuses the 'emotional' branch
+// (mini-story + reflection, now with 7 outlines) for the story slots.
+const CONTENT_FORMAT_ROTATION = ['story', 'story', 'story', 'story', 'story', 'story', 'story', 'direct', 'direct', 'direct']; // 70/30
+
 function pickCategory(runCount) {
-  const category = 'motivational';
-  log(`Today's category: ${category} (run #${runCount})`);
+  const format = CONTENT_FORMAT_ROTATION[runCount % CONTENT_FORMAT_ROTATION.length];
+  const category = format === 'story'
+    ? 'emotional'
+    : PERSONAL_GROWTH_CATEGORIES[runCount % PERSONAL_GROWTH_CATEGORIES.length];
+  log(`Today's category: ${category} (format: ${format}, run #${runCount})`);
   return category;
 }
 
@@ -119,7 +133,12 @@ const FALLBACK_KEYWORDS = {
   horror: 'Indian dark corridor eerie shadow',
   emotional: 'Indian family emotional moment',
   scifi: 'futuristic technology Indian city',
-  motivational: 'Indian person alone sunrise contemplative'
+  self_respect: 'Indian person alone sunrise contemplative',
+  motivation: 'Indian person climbing mountain determined',
+  mindset: 'Indian person thinking window reflection',
+  success: 'Indian person achievement celebration quiet',
+  relationship: 'Indian people connection distance emotional',
+  life_lesson: 'Indian person walking path peaceful'
 };
 
 // news/moral_story need more room to actually tell a story (~40-45s);
@@ -136,7 +155,12 @@ const WORD_COUNT_TARGETS = {
   horror: { min: 100, max: 130 },
   emotional: { min: 90, max: 120 },
   scifi: { min: 90, max: 120 },
-  motivational: { min: 110, max: 140 }
+  self_respect: { min: 110, max: 140 },
+  motivation: { min: 110, max: 140 },
+  mindset: { min: 110, max: 140 },
+  success: { min: 110, max: 140 },
+  relationship: { min: 110, max: 140 },
+  life_lesson: { min: 110, max: 140 }
 };
 
 // Shared formatting/voice rules appended to every category's prompt.
@@ -226,7 +250,11 @@ const HORROR_OUTLINES = [
 const EMOTIONAL_OUTLINES = [
   'ఒక చిన్న అబ్బాయి తన పుట్టినరోజున తండ్రి ఇచ్చిన సాధారణ బహుమతి చూసి నిరాశ చెందుతాడు, స్నేహితులకి వచ్చిన ఖరీదైన బహుమతులతో పోల్చుకుంటాడు. సంవత్సరాలు గడిచాక, తండ్రి పోయాక, అతను తండ్రి పాత వస్తువులు సర్దుతుండగా, ఆ ఏడాది బహుమతి కొనడానికి తండ్రి తన ప్రియమైన చేతి గడియారాన్ని అమ్మేసిన రసీదు కనిపెడతాడు.',
   'ఒక కూతురు తన వృద్ధాప్య తండ్రి మతిమరుపుతో విసిగిపోయి, అతని పట్ల సహనం కోల్పోతూ ఉంటుంది. ఒకరోజు అతని పాత డైరీలో ఒక పేజీ కనిపెడుతుంది — తను చిన్నప్పుడు ప్రతి రాత్రి ఏడుస్తుంటే, తండ్రి తనకి పాడిన ఒక ప్రత్యేక లాలిపాట గురించి రాసి ఉంటుంది, ఆమెకి అస్సలు గుర్తులేని ఒక జ్ఞాపకం.',
-  'ఒక వృద్ధురాలు ప్రతి ఆదివారం బస్ స్టాప్‌లో కూర్చుని ఎవరి కోసమో వేచి ఉంటుంది, ఎవరూ రారు. పక్కింటి అమ్మాయి కుతూహలంతో అడిగితే, ఆమె చెప్తుంది — 50 ఏళ్ల క్రితం అదే స్టాప్‌లో తన భర్తతో మొదటిసారి కలిసిందని, అతను ఇప్పుడు లేకపోయినా, ఆ క్షణాన్ని గుర్తుచేసుకోవడానికే వస్తానని. కొన్ని వారాల తర్వాత అమ్మాయి ఆమెని కలవదు — ఆమె మనవడు వచ్చి, బామ్మ ప్రశాంతంగా నిద్రలోనే కన్నుమూసిందని, ఆమె చేతిలో ఆ పాత బస్ టికెట్ ఉందని చెప్తాడు.'
+  'ఒక వృద్ధురాలు ప్రతి ఆదివారం బస్ స్టాప్‌లో కూర్చుని ఎవరి కోసమో వేచి ఉంటుంది, ఎవరూ రారు. పక్కింటి అమ్మాయి కుతూహలంతో అడిగితే, ఆమె చెప్తుంది — 50 ఏళ్ల క్రితం అదే స్టాప్‌లో తన భర్తతో మొదటిసారి కలిసిందని, అతను ఇప్పుడు లేకపోయినా, ఆ క్షణాన్ని గుర్తుచేసుకోవడానికే వస్తానని. కొన్ని వారాల తర్వాత అమ్మాయి ఆమెని కలవదు — ఆమె మనవడు వచ్చి, బామ్మ ప్రశాంతంగా నిద్రలోనే కన్నుమూసిందని, ఆమె చేతిలో ఆ పాత బస్ టికెట్ ఉందని చెప్తాడు.',
+  'ఒక అమ్మాయి తన స్నేహితుల బృందంలో ఎప్పుడూ జోకుల్లో target అవుతూ, నవ్వుతూ భరిస్తూ ఉంటుంది. ఒకరోజు ధైర్యం చేసి, "ఇది నాకు బాధ కలిగిస్తోంది" అని స్పష్టంగా చెప్తుంది. కొందరు స్నేహితులు ఆశ్చర్యపోతారు, ఒకరిద్దరు దూరమవుతారు — కానీ మిగిలిన నిజమైన స్నేహితులు ఆమెని అంతకుముందు కన్నా ఎక్కువగా గౌరవించడం మొదలుపెడతారు.',
+  'ఒక వ్యాపారి తన దుకాణం మంటల్లో పూర్తిగా కాలిపోగా చూస్తాడు, సర్వం కోల్పోయానని కుప్పకూలిపోతాడు. అతని చిన్న కొడుకు వచ్చి, "నాన్నా, మనం ఇప్పుడు మళ్ళీ మొదలుపెట్టొచ్చు, ఖాళీ స్థలం ఉంది కదా" అంటాడు. మరుసటి రోజు నుండి వ్యాపారి కొత్త ఆలోచనలతో మళ్ళీ కట్టడం మొదలుపెడతాడు, రెండేళ్లలో అంతకుముందు కన్నా పెద్ద దుకాణం కడతాడు.',
+  'ఒక చిత్రకారుడు తన painting లు సంవత్సరాల తరబడి అమ్మలేక నిరుత్సాహపడతాడు. అతని గురువు ఒక్క మాట అంటాడు: "నువ్వు అమ్మకాల కోసం కాదు, నీ ఆత్మ కోసం గీయాలి." చిత్రకారుడు డబ్బు ఆలోచన మానేసి, తనకి నచ్చినట్టు గీయడం మొదలుపెడతాడు. కొన్నేళ్ల తర్వాత, అదే నిజాయితీ అతని పనిని ప్రత్యేకంగా నిలబెడుతుంది, గుర్తింపు వస్తుంది.',
+  'ఇద్దరు తోబుట్టువులు ఆస్తి విషయంలో సంవత్సరాలుగా మాట్లాడుకోరు. తండ్రి చనిపోయే ముందు, ఇద్దరినీ పిలిచి ఒక్కొక్కరికి ఒక్కో అర్ధభాగం ఉన్న పాత ఫోటో ఇస్తాడు — రెండు భాగాలు కలిపితేనే పూర్తి చిత్రం కనిపిస్తుంది. అది తండ్రి, ఇద్దరి పిల్లల ఫోటో అని అర్థమవుతుంది. ఆ క్షణంలో వాళ్ళ మధ్య గోడ కరిగిపోతుంది.'
 ];
 
 const SCIFI_OUTLINES = [
@@ -242,11 +270,11 @@ function pickStoryOutline(category, runCount) {
   return outline;
 }
 
-// Specific motivational/self-respect angles — direct-address inspirational
-// monologue, matching the reference videos (@mileswithprash-style Telugu
-// motivation content). Deliberately specific (not "work hard, succeed")
-// to avoid generic, overused advice.
-const MOTIVATIONAL_THEMES = [
+// Specific personal-growth angles per sub-category — direct-address
+// inspirational monologue, matching the reference videos (@mileswithprash-
+// style Telugu motivation content). Deliberately specific (not "work hard,
+// succeed") to avoid generic, overused advice.
+const SELF_RESPECT_THEMES = [
   'నిన్ను విలువ ఇవ్వని వాళ్ళ కోసం ఏడవడం మానేయాలి — వాళ్ళ దృష్టిలో నీ విలువ లేకపోతే, అది నీ లోపం కాదు, వాళ్ళ చూపు లోపమే.',
   'నీ కృషిని ఎవరూ గమనించకపోయినా, గుర్తించకపోయినా — నువ్వు ఆగకూడదు. గుర్తింపు కోసం కాదు, నీ కోసం చేయాలి.',
   'మౌనంగా ఉండటం బలహీనత కాదు — ప్రతిదానికీ సమాధానం చెప్పాల్సిన అవసరం లేదని తెలుసుకోవడమే అసలైన శక్తి.',
@@ -259,9 +287,54 @@ const MOTIVATIONAL_THEMES = [
   'నీ శాంతిని దెబ్బతీసే మనుషుల నుండి దూరంగా ఉండటం తప్పు కాదు — అది నిన్ను నువ్వు ప్రేమించుకోవడమే.'
 ];
 
-function pickMotivationalTheme(runCount) {
-  const theme = MOTIVATIONAL_THEMES[runCount % MOTIVATIONAL_THEMES.length];
-  log(`Motivational theme for run #${runCount}: ${theme.slice(0, 50)}...`);
+const MOTIVATION_THEMES = [
+  'ప్రతిరోజూ ఒక్క శాతం మెరుగవ్వడం చిన్నదిగా అనిపించొచ్చు, కానీ నెలల తర్వాత అదే పెద్ద మార్పు తెస్తుంది.',
+  'నీ లక్ష్యం కష్టంగా అనిపించినప్పుడు, అది సాధించలేనిది అని కాదు — ఇంకా దగ్గరకు చేరలేదని మాత్రమే అర్థం.',
+  'ఓడిపోవడం ఆగిపోవడానికి కారణం కాదు — ఏం మార్చాలో నేర్చుకోవడానికి ఒక అవకాశం.',
+  'నువ్వు అలసిపోయిన ప్రతిసారీ ఆగిపోతే, గమ్యం ఎప్పటికీ దూరంగానే ఉంటుంది — అలసటతోనే నడవడం నేర్చుకోవాలి.'
+];
+
+const MINDSET_THEMES = [
+  'ఒక పరిస్థితి నిన్ను ఎలా ప్రభావితం చేస్తుందో నిర్ణయించేది ఆ పరిస్థితి కాదు, దానికి నువ్వు స్పందించే విధానం.',
+  'నీ ఆలోచనలే నీ realityని నిర్మిస్తాయి — ప్రతికూలంగా ఆలోచిస్తే, ప్రతికూలతే కనిపిస్తుంది.',
+  'అసంపూర్ణతను అంగీకరించడమే నిజమైన ఎదుగుదలకు మొదటి అడుగు.',
+  'సమస్యల్లో అవకాశాలు వెతకడమే విజేతలను మిగతా వారి నుండి వేరు చేస్తుంది.'
+];
+
+const SUCCESS_THEMES = [
+  'విజయం అంటే ఒక్కసారి పైకి ఎగరడం కాదు — పడిన ప్రతిసారీ మళ్ళీ లేవడం.',
+  'నిశ్శబ్దంగా, స్థిరంగా పనిచేసేవారే చివరికి అందరికన్నా ముందుంటారు.',
+  'ఇతరుల విజయాలతో నిన్ను పోల్చుకోవడం మానేయాలి — నీ timeline నీది.',
+  'నిజమైన విజయం ఎవరికి చూపించడానికో కాదు — నీకు నువ్వు ఇచ్చుకునే సంతృప్తి.'
+];
+
+const RELATIONSHIP_THEMES = [
+  'నిన్ను గౌరవించని సంబంధాన్ని కాపాడుకోవడానికి నీ శాంతిని త్యాగం చేయకు.',
+  'ప్రతి సంబంధంలో ప్రేమ ఒక్కటే చాలదు — గౌరవం, నమ్మకం కూడా ఉండాలి.',
+  'దూరమైపోయే వాళ్ళను ఆపడానికి ప్రయత్నించడం మానేయాలి — నిజంగా విలువైన వాళ్ళు వాళ్ళంతట వాళ్ళే ఉండిపోతారు.',
+  'ఒంటరితనం కొన్నిసార్లు తప్పు సంబంధాల కన్నా మేలు.'
+];
+
+const LIFE_LESSON_THEMES = [
+  'ప్రతిదీ శాశ్వతం కాదు — మంచి క్షణాలైనా, చెడు క్షణాలైనా అదే నిజం, రెండిటినీ తేలిగ్గా తీసుకోవడం నేర్చుకోవాలి.',
+  'నిన్న జరిగింది మార్చలేవు, కానీ ఈరోజు ఏం చేస్తావో అది మార్చగలవు.',
+  'అన్నిటినీ నియంత్రించలేమని అంగీకరించడమే నిజమైన శాంతికి దారి.',
+  'నీ సమయాన్ని దేనికి ఇస్తున్నావో అదే నీ జీవితాన్ని నిర్వచిస్తుంది.'
+];
+
+const PERSONAL_GROWTH_THEME_BANKS = {
+  self_respect: SELF_RESPECT_THEMES,
+  motivation: MOTIVATION_THEMES,
+  mindset: MINDSET_THEMES,
+  success: SUCCESS_THEMES,
+  relationship: RELATIONSHIP_THEMES,
+  life_lesson: LIFE_LESSON_THEMES
+};
+
+function pickMotivationalTheme(category, runCount) {
+  const bank = PERSONAL_GROWTH_THEME_BANKS[category];
+  const theme = bank[runCount % bank.length];
+  log(`${category} theme for run #${runCount}: ${theme.slice(0, 50)}...`);
   return theme;
 }
 
@@ -310,9 +383,13 @@ function buildPrompt(category, article, recentTitles, runCount) {
 5. జంతువులను ఎప్పుడూ "అది" అని సూచించు, మధ్యలో లింగం మార్చకు.
 6. Conditional వాక్యం మొదలుపెడితే పూర్తి చేయి, మధ్యలో ఆపకు.
 7. రాశాక మళ్ళీ చదివి సరైన పదాలు/క్రియారూపాలు వాడావో నిర్ధారించుకో.${avoidLine}`;
-  } else if (category === 'motivational') {
-    const theme = pickMotivationalTheme(runCount);
-    topicInstruction = `కింద ఇచ్చిన ఆలోచనని ఆధారంగా చేసుకుని, ఒక motivational/self-respect Telugu Shorts స్క్రిప్ట్ రాయి — నేరుగా వినేవారిని ఉద్దేశించి ("నువ్వు" అని) మాట్లాడుతున్నట్టు:
+  } else if (Object.keys(PERSONAL_GROWTH_THEME_BANKS).includes(category)) {
+    const theme = pickMotivationalTheme(category, runCount);
+    const categoryLabel = {
+      self_respect: 'self-respect', motivation: 'motivation', mindset: 'mindset',
+      success: 'success', relationship: 'relationship lesson', life_lesson: 'life lesson'
+    }[category];
+    topicInstruction = `కింద ఇచ్చిన ఆలోచనని ఆధారంగా చేసుకుని, ఒక ${categoryLabel} Telugu Shorts స్క్రిప్ట్ రాయి — నేరుగా వినేవారిని ఉద్దేశించి ("నువ్వు" అని) మాట్లాడుతున్నట్టు:
 
 ఆలోచన: ${theme}
 
@@ -990,7 +1067,76 @@ function buildRealVideoClip(videoPath, duration, outPath) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
-function buildVideo(mediaItems, audioPath, customDurations) {
+// libass looks up fonts by their EMBEDDED family name, not the filename —
+// detect it at runtime with fc-scan so the subtitles filter references the
+// font correctly regardless of what the .ttf file happens to be named.
+function getFontFamilyName(fontPath, fallback) {
+  try {
+    const name = execSync(`fc-scan --format "%{family}\n" "${fontPath}"`).toString().trim().split('\n')[0];
+    return name || fallback;
+  } catch (e) {
+    log(`WARNING: fc-scan failed for ${fontPath} (${e.message}), using fallback family name "${fallback}".`);
+    return fallback;
+  }
+}
+
+// Wraps Telugu text at a max character count per line so subtitle lines fit
+// the video width at a readable font size.
+function wrapText(text, maxCharsPerLine) {
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? current + ' ' + word : word;
+    if (candidate.length > maxCharsPerLine && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function assTimestamp(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const cs = Math.round((seconds - Math.floor(seconds)) * 100);
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
+}
+
+// Writes an ASS subtitle file with one cue per sentence, timed to match each
+// slide's exact on-screen duration (same durations buildVideo uses for the
+// background media) — so the caption always matches what's being narrated
+// at that moment. BorderStyle 3 gives an opaque box behind the text so it
+// stays legible over any background photo/video.
+function writeSubtitlesAss(sentences, durations, fontFamily, outPath) {
+  const header = `[Script Info]
+ScriptType: v4.00+
+PlayResX: 720
+PlayResY: 1280
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Caption,${fontFamily},44,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,3,0,2,2,60,60,300,1
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+  let cursor = 0;
+  const lines = [header];
+  for (let i = 0; i < sentences.length; i++) {
+    const start = cursor;
+    const end = cursor + durations[i];
+    cursor = end;
+    const wrapped = wrapText(sentences[i], 24).join('\\N');
+    const safeText = wrapped.replace(/[{}]/g, '');
+    lines.push(`Dialogue: 0,${assTimestamp(start)},${assTimestamp(end)},Caption,,0,0,0,,${safeText}`);
+  }
+  fs.writeFileSync(outPath, lines.join('\n'), 'utf8');
+}
+
+function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontsDir = path.join(__dirname, 'fonts');
@@ -1067,6 +1213,19 @@ function buildVideo(mediaItems, audioPath, customDurations) {
   execSync(`ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${bgPath}"`, { stdio: 'inherit' });
   log(`  background.mp4 total duration: ${getAudioDuration(bgPath).toFixed(2)}s (expected ~${fd}s)`);
 
+  // Generate the Telugu subtitle track — one cue per sentence, exactly
+  // timed to match its slide's on-screen duration.
+  let subtitlesFilter = '';
+  if (sentenceTexts && sentenceTexts.length === n) {
+    const fontFamily = getFontFamilyName(fontPath, 'NotoSansTelugu');
+    const assPath = path.join(WORK_DIR, 'captions.ass');
+    writeSubtitlesAss(sentenceTexts, durations, fontFamily, assPath);
+    log(`  Subtitle font family detected: "${fontFamily}"`);
+    subtitlesFilter = `,subtitles='${assPath}':fontsdir='${fontsDir}'`;
+  } else {
+    log('  WARNING: sentenceTexts missing or length mismatch — skipping subtitles for this video.');
+  }
+
   // Step 3: overlay branding/CTA + scrims (for legibility over photos), mux audio.
   // NOTE on drawbox positioning: inside drawbox, 'w'/'h' in x/y expressions mean
   // the box's OWN width/height (not the frame) — always use 'iw'/'ih' there.
@@ -1110,7 +1269,7 @@ function buildVideo(mediaItems, audioPath, customDurations) {
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
     `fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5`
-  ].join(',');
+  ].join(',') + subtitlesFilter;
 
   const cmd = [
     'ffmpeg -y',
@@ -1126,6 +1285,40 @@ function buildVideo(mediaItems, audioPath, customDurations) {
   execSync(cmd, { stdio: 'inherit' });
   log(`Video saved to ${outPath}`);
   return outPath;
+}
+
+const CATEGORY_HASHTAGS = {
+  self_respect: '#SelfRespect #SelfWorth #SelfLove',
+  motivation: '#Motivation #NeverGiveUp #MotivationalVideo',
+  mindset: '#Mindset #PositiveMindset #GrowthMindset',
+  success: '#Success #SuccessMindset #Achievement',
+  relationship: '#Relationships #RelationshipAdvice #Reality',
+  life_lesson: '#LifeLessons #LifeQuotes #Wisdom',
+  emotional: '#EmotionalStory #LifeLessons #TeluguStory'
+};
+
+// Builds an emoji-structured description matching the reference format
+// (hook body, reassurance, like/share CTA, subscribe CTA, pull-quote,
+// hashtags) — built programmatically from the actual script rather than
+// asked of the model, so formatting is reliable and consistent every time.
+function buildDescription(script, category) {
+  const withoutCTA = script.replace(CTA_SENTENCE, '').trim();
+  const sentences = splitIntoSentences(withoutCTA);
+  const closingLine = sentences.length > 0 ? sentences[sentences.length - 1] : withoutCTA;
+  const bodyText = sentences.length > 1 ? sentences.slice(0, -1).join(' ') : withoutCTA;
+  const categoryTags = CATEGORY_HASHTAGS[category] || '';
+
+  return `💙 ${bodyText}
+
+🌱 ఈ వీడియో నీలోని ఆత్మవిశ్వాసాన్ని, ఆత్మగౌరవాన్ని మళ్లీ గుర్తు చేస్తుంది.
+
+🙏 వీడియో నచ్చితే 👍 Like, 💬 Comment, 📤 Share చేయండి.
+
+🔔 ఇలాంటి హృదయాన్ని తాకే తెలుగు వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ను ❤️ Subscribe చేసి 🔔 Bell Icon ని Press చేయడం మర్చిపోవద్దు.
+
+💖 గుర్తుంచుకోండి: "${closingLine}" 💎
+
+#Shorts #YTShorts #TeluguShorts #TeluguMotivation ${categoryTags} #ViralShorts #TrendingShorts #TeluguEcho`;
 }
 
 // YouTube's upload validator is stricter than our own text handling — strip
@@ -1256,10 +1449,12 @@ async function main() {
   // of time to the remaining successful slides so there's no dead/black gap.
   const imagePaths = [];
   const keptDurations = [];
+  const keptSentences = [];
   for (let i = 0; i < rawImagePaths.length; i++) {
     if (rawImagePaths[i]) {
       imagePaths.push(rawImagePaths[i]);
       keptDurations.push(imageDurations[i]);
+      keptSentences.push(imageSentences[i]);
     }
   }
   if (imagePaths.length === 0) {
@@ -1267,6 +1462,7 @@ async function main() {
     const fallbackResult = await fetchImagesWithFallback(FALLBACK_KEYWORDS[category], 1, category, 999);
     imagePaths.push({ path: fallbackResult.paths[0], type: 'image' });
     keptDurations.push(imageDurations.reduce((a, b) => a + b, 0));
+    keptSentences.push(imageSentences.join(' '));
   } else {
     // Redistribute any dropped sentences' time proportionally across the survivors.
     const totalKept = keptDurations.reduce((a, b) => a + b, 0);
@@ -1281,13 +1477,13 @@ async function main() {
   // the sum of our durations matches exactly.
   keptDurations[keptDurations.length - 1] += 0.3;
 
-  const videoPath = buildVideo(imagePaths, audioPath, keptDurations);
+  const videoPath = buildVideo(imagePaths, audioPath, keptDurations, keptSentences);
 
   const ytTitle = article ? article.title : title;
   await uploadToYouTube(
     videoPath,
     ytTitle,
-    script + '\n\nPhotos via Pexels (pexels.com).\n\n#TeluguEcho #TeluguStories #Shorts'
+    buildDescription(script, category)
   );
   saveState(article, title);
   log('Done!');
