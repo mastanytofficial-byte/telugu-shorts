@@ -51,19 +51,13 @@ const CATEGORIES = ['news', 'moral_story', 'fact', 'parenting'];
 // Generator" feature set — 6 personal-growth sub-genres, rotating evenly.
 const PERSONAL_GROWTH_CATEGORIES = ['self_respect', 'motivation', 'mindset', 'success', 'relationship', 'life_lesson'];
 
-// User's final direction: 70% mini-story+lesson format ("Option B" — better
-// retention, and concrete story scenes match Pexels/AI-image search far
-// better than abstract motivational statements do), 30% direct-address
-// personal-growth monologue ("Option A"). Reuses the 'emotional' branch
-// (mini-story + reflection, now with 7 outlines) for the story slots.
-const CONTENT_FORMAT_ROTATION = ['story', 'story', 'story', 'story', 'story', 'story', 'story', 'direct', 'direct', 'direct']; // 70/30
-
+// Reverted per explicit user decision: 100% pure direct-address
+// motivational speech — no mini-stories. The 70/30 story/direct split
+// (and the 'emotional' story-format branch) is left dormant in the code
+// in case story format is ever wanted back.
 function pickCategory(runCount) {
-  const format = CONTENT_FORMAT_ROTATION[runCount % CONTENT_FORMAT_ROTATION.length];
-  const category = format === 'story'
-    ? 'emotional'
-    : PERSONAL_GROWTH_CATEGORIES[runCount % PERSONAL_GROWTH_CATEGORIES.length];
-  log(`Today's category: ${category} (format: ${format}, run #${runCount})`);
+  const category = PERSONAL_GROWTH_CATEGORIES[runCount % PERSONAL_GROWTH_CATEGORIES.length];
+  log(`Today's category: ${category} (run #${runCount})`);
   return category;
 }
 
@@ -291,35 +285,55 @@ const MOTIVATION_THEMES = [
   'ప్రతిరోజూ ఒక్క శాతం మెరుగవ్వడం చిన్నదిగా అనిపించొచ్చు, కానీ నెలల తర్వాత అదే పెద్ద మార్పు తెస్తుంది.',
   'నీ లక్ష్యం కష్టంగా అనిపించినప్పుడు, అది సాధించలేనిది అని కాదు — ఇంకా దగ్గరకు చేరలేదని మాత్రమే అర్థం.',
   'ఓడిపోవడం ఆగిపోవడానికి కారణం కాదు — ఏం మార్చాలో నేర్చుకోవడానికి ఒక అవకాశం.',
-  'నువ్వు అలసిపోయిన ప్రతిసారీ ఆగిపోతే, గమ్యం ఎప్పటికీ దూరంగానే ఉంటుంది — అలసటతోనే నడవడం నేర్చుకోవాలి.'
+  'నువ్వు అలసిపోయిన ప్రతిసారీ ఆగిపోతే, గమ్యం ఎప్పటికీ దూరంగానే ఉంటుంది — అలసటతోనే నడవడం నేర్చుకోవాలి.',
+  'నువ్వు మొదలుపెట్టిన ప్రతి పని పూర్తి చేయాల్సిన అవసరం లేదు అనుకుంటే, ఏదీ పూర్తవ్వదు — నిబద్ధతే విజయానికి పునాది.',
+  'పెద్ద మార్పు ఒక్కరోజులో రాదు, కానీ ప్రతిరోజూ చిన్న అడుగు వేయకపోతే అది ఎప్పటికీ రాదు.',
+  'నీకు ఇష్టం లేని రోజుల్లో కూడా ముందుకు వెళ్ళగలగడమే నిజమైన క్రమశిక్షణ.',
+  'నీ కల నిన్ను భయపెట్టకపోతే, అది తగినంత పెద్దది కాదు.'
 ];
 
 const MINDSET_THEMES = [
   'ఒక పరిస్థితి నిన్ను ఎలా ప్రభావితం చేస్తుందో నిర్ణయించేది ఆ పరిస్థితి కాదు, దానికి నువ్వు స్పందించే విధానం.',
   'నీ ఆలోచనలే నీ realityని నిర్మిస్తాయి — ప్రతికూలంగా ఆలోచిస్తే, ప్రతికూలతే కనిపిస్తుంది.',
   'అసంపూర్ణతను అంగీకరించడమే నిజమైన ఎదుగుదలకు మొదటి అడుగు.',
-  'సమస్యల్లో అవకాశాలు వెతకడమే విజేతలను మిగతా వారి నుండి వేరు చేస్తుంది.'
+  'సమస్యల్లో అవకాశాలు వెతకడమే విజేతలను మిగతా వారి నుండి వేరు చేస్తుంది.',
+  'నీకు జరిగింది మార్చలేవు, కానీ దానికి నువ్వు ఇచ్చే అర్థాన్ని మార్చగలవు.',
+  'ప్రతి ఎదురుదెబ్బ ఒక ముగింపు కాదు — ఇది ఒక కొత్త దిశ చూపే మలుపు కావొచ్చు.',
+  'నీ మనసులో నువ్వు ఓడిపోయానని అనుకుంటే, బయట గెలిచినా ఫలితం ఉండదు.',
+  'సౌకర్యవంతమైన స్థితిలో (comfort zone) ఎదుగుదల ఉండదు.'
 ];
 
 const SUCCESS_THEMES = [
   'విజయం అంటే ఒక్కసారి పైకి ఎగరడం కాదు — పడిన ప్రతిసారీ మళ్ళీ లేవడం.',
   'నిశ్శబ్దంగా, స్థిరంగా పనిచేసేవారే చివరికి అందరికన్నా ముందుంటారు.',
   'ఇతరుల విజయాలతో నిన్ను పోల్చుకోవడం మానేయాలి — నీ timeline నీది.',
-  'నిజమైన విజయం ఎవరికి చూపించడానికో కాదు — నీకు నువ్వు ఇచ్చుకునే సంతృప్తి.'
+  'నిజమైన విజయం ఎవరికి చూపించడానికో కాదు — నీకు నువ్వు ఇచ్చుకునే సంతృప్తి.',
+  'విజయం అంటే ఎప్పుడూ పడకపోవడం కాదు — పడినప్పుడల్లా లేవడమే.',
+  'నువ్వు వెళ్ళే వేగం ముఖ్యం కాదు, ఆగకుండా ఉండటమే ముఖ్యం.',
+  'ఇతరులు నీ ప్రయత్నాన్ని చూడకపోవచ్చు, కానీ ఫలితం వచ్చినప్పుడు అందరూ చూస్తారు.',
+  'పెద్ద కల కోసం చిన్న త్యాగాలు చేయడమే విజేతల లక్షణం.'
 ];
 
 const RELATIONSHIP_THEMES = [
   'నిన్ను గౌరవించని సంబంధాన్ని కాపాడుకోవడానికి నీ శాంతిని త్యాగం చేయకు.',
   'ప్రతి సంబంధంలో ప్రేమ ఒక్కటే చాలదు — గౌరవం, నమ్మకం కూడా ఉండాలి.',
   'దూరమైపోయే వాళ్ళను ఆపడానికి ప్రయత్నించడం మానేయాలి — నిజంగా విలువైన వాళ్ళు వాళ్ళంతట వాళ్ళే ఉండిపోతారు.',
-  'ఒంటరితనం కొన్నిసార్లు తప్పు సంబంధాల కన్నా మేలు.'
+  'ఒంటరితనం కొన్నిసార్లు తప్పు సంబంధాల కన్నా మేలు.',
+  'నిన్ను మార్చాలని ప్రయత్నించే సంబంధం, నిన్ను ప్రేమించే సంబంధం కాదు.',
+  'కొన్ని బంధాలు ఒక కాలానికే ఉంటాయి — అది శాశ్వతం కాకపోవడం వైఫల్యం కాదు.',
+  'నీ గురించి మాట్లాడేవాళ్ళ కన్నా, నీతో మాట్లాడేవాళ్ళకే విలువ ఇవ్వు.',
+  'క్షమించడం అంటే మర్చిపోవడం కాదు — నీ శాంతి కోసం వదిలేయడం.'
 ];
 
 const LIFE_LESSON_THEMES = [
   'ప్రతిదీ శాశ్వతం కాదు — మంచి క్షణాలైనా, చెడు క్షణాలైనా అదే నిజం, రెండిటినీ తేలిగ్గా తీసుకోవడం నేర్చుకోవాలి.',
   'నిన్న జరిగింది మార్చలేవు, కానీ ఈరోజు ఏం చేస్తావో అది మార్చగలవు.',
   'అన్నిటినీ నియంత్రించలేమని అంగీకరించడమే నిజమైన శాంతికి దారి.',
-  'నీ సమయాన్ని దేనికి ఇస్తున్నావో అదే నీ జీవితాన్ని నిర్వచిస్తుంది.'
+  'నీ సమయాన్ని దేనికి ఇస్తున్నావో అదే నీ జీవితాన్ని నిర్వచిస్తుంది.',
+  'అన్నీ ఒకేసారి సాధించాలని ప్రయత్నిస్తే, ఏదీ సరిగ్గా సాధించలేవు.',
+  'నీకు ఏది ముఖ్యమో దానికే నీ సమయం ఇవ్వు, మిగతా వాటికి కాదు.',
+  'జీవితం న్యాయంగా ఉండాలని ఆశించడం మానేస్తే, అది ఇచ్చేదాన్ని బాగా ఆస్వాదించగలవు.',
+  'ప్రతి ముగింపు ఒక కొత్త ఆరంభానికి దారి తీస్తుంది.'
 ];
 
 const PERSONAL_GROWTH_THEME_BANKS = {
@@ -404,7 +418,8 @@ function buildPrompt(category, article, recentTitles, runCount) {
 - Tone తీవ్రంగా, punchy గా ఉండాలి — కానీ వినేవారిని ఎప్పుడూ కించపరచకూడదు, అవమానించకూడదు. వారిని **పైకి లేపేలా** (empowering) ఉండాలి, ఎప్పటికీ కిందకి తొక్కేలా (shaming/negative) కాదు.
 - సాధారణ, అందరూ చెప్పే cliché మాటలు వాడకు — పైన ఇచ్చిన ఆలోచననే నిర్దిష్టంగా, తీవ్రంగా చెప్పు.
 - ఏ ఒక్క వ్యక్తినో, సంఘటననో ప్రస్తావించకు — ఇది సాధారణంగా అందరికీ వర్తించేలా ఉండాలి.
-- ఖచ్చితంగా తెలుగు లిపిలోనే రాయి — Romanized Telugu (ఆంగ్ల అక్షరాల్లో తెలుగు) ఎప్పుడూ వాడకు.${avoidLine}`;
+- ఖచ్చితంగా తెలుగు లిపిలోనే రాయి — Romanized Telugu (ఆంగ్ల అక్షరాల్లో తెలుగు) ఎప్పుడూ వాడకు.
+- **ఇది ముఖ్యం:** పైన ఇచ్చిన ఆలోచన మునుపటి వీడియోల్లో కూడా వాడి ఉండొచ్చు — కానీ ప్రతిసారీ **పూర్తిగా కొత్త పదాలు, కొత్త ఉదాహరణలు, కొత్త వాక్య నిర్మాణం** వాడాలి. మునుపటి script లోని వాక్యాలు/పదబంధాలు అలాగే మళ్ళీ వాడకు — ఇదే ఆలోచనని పూర్తిగా వేరే కోణం నుండి, వేరే మాటల్లో చెప్పు.${avoidLine}`;
   } else {
     topicInstruction = `పిల్లల పెంపకం, కుటుంబ సంబంధాలు, తల్లిదండ్రుల-పిల్లల బంధం గురించి ఒక చిన్న, ఆచరణాత్మకమైన, హృదయాన్ని తాకే సలహా లేదా పాఠం తెలుగులో రాయి. సాధారణంగా అందరూ చెప్పే generic సలహాలు (ఉదా. "పిల్లలతో ఎక్కువ సమయం గడపండి") కాకుండా, ఒక నిర్దిష్టమైన సన్నివేశం/ఉదాహరణతో చెప్పు.${avoidLine}`;
   }
@@ -1214,18 +1229,11 @@ function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
   execSync(`ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${bgPath}"`, { stdio: 'inherit' });
   log(`  background.mp4 total duration: ${getAudioDuration(bgPath).toFixed(2)}s (expected ~${fd}s)`);
 
-  // Generate the Telugu subtitle track — one cue per sentence, exactly
-  // timed to match its slide's on-screen duration.
-  let subtitlesFilter = '';
-  if (sentenceTexts && sentenceTexts.length === n) {
-    const fontFamily = getFontFamilyName(fontPath, 'NotoSansTelugu');
-    const assPath = path.join(WORK_DIR, 'captions.ass');
-    writeSubtitlesAss(sentenceTexts, durations, fontFamily, assPath);
-    log(`  Subtitle font family detected: "${fontFamily}"`);
-    subtitlesFilter = `,subtitles='${assPath}':fontsdir='${fontsDir}'`;
-  } else {
-    log('  WARNING: sentenceTexts missing or length mismatch — skipping subtitles for this video.');
-  }
+  // On-screen Telugu subtitles were tried and then explicitly turned back
+  // off by user decision — no text on screen at all now. Left as a no-op
+  // (the generation utilities above are still defined) so this is a
+  // one-line flip to re-enable later if ever wanted again.
+  const subtitlesFilter = '';
 
   // Step 3: overlay branding/CTA + scrims (for legibility over photos), mux audio.
   // NOTE on drawbox positioning: inside drawbox, 'w'/'h' in x/y expressions mean
