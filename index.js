@@ -19,6 +19,13 @@ const YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
 const STATE_FILE = path.join(__dirname, 'last-article.json');
 const WORK_DIR = path.join(__dirname, 'work');
 
+// EDIT THESE TWO to your actual channel name/handle — used in the on-screen
+// branding overlay, the video description, and the CTA sentence appended to
+// every script. (Kept as the pre-existing "TELUGU ECHO" name so nothing
+// breaks if left unchanged — just replace with your real channel identity.)
+const CHANNEL_NAME = 'Infinite Voice';
+const CHANNEL_HANDLE = '@Infinite_Voice_Telugu';
+
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
@@ -50,12 +57,19 @@ const CATEGORIES = ['news', 'moral_story', 'fact', 'parenting'];
 // rotating through MOTIVATIONAL_THEMES by run count instead of genre.
 // Expanded per user directive: "Fully Automated AI YouTube Shorts
 // Generator" feature set — 6 personal-growth sub-genres, rotating evenly.
-const PERSONAL_GROWTH_CATEGORIES = ['self_respect', 'motivation', 'mindset', 'success', 'relationship', 'life_lesson'];
+const PERSONAL_GROWTH_CATEGORIES = ['sad_love'];
 
 // Reverted per explicit user decision: 100% pure direct-address
 // motivational speech — no mini-stories. The 70/30 story/direct split
 // (and the 'emotional' story-format branch) is left dormant in the code
 // in case story format is ever wanted back.
+//
+// Changed per new user directive: channel niche switched to Telugu
+// sad/emotional love quotes (matching reference videos — short, poetic,
+// direct-address lines about loneliness, heartbreak, healing, being let
+// down by people). PERSONAL_GROWTH_CATEGORIES narrowed to a single entry
+// so every run uses this niche; the old self_respect/motivation/etc. banks
+// are left dormant below in case the mixed-niche format is ever wanted back.
 function pickCategory(runCount) {
   const category = PERSONAL_GROWTH_CATEGORIES[runCount % PERSONAL_GROWTH_CATEGORIES.length];
   log(`Today's category: ${category} (run #${runCount})`);
@@ -133,7 +147,8 @@ const FALLBACK_KEYWORDS = {
   mindset: 'Indian person thinking window reflection',
   success: 'Indian person achievement celebration quiet',
   relationship: 'Indian people connection distance emotional',
-  life_lesson: 'Indian person walking path peaceful'
+  life_lesson: 'Indian person walking path peaceful',
+  sad_love: 'lonely night park bench silhouette misty'
 };
 
 // news/moral_story need more room to actually tell a story (~40-45s);
@@ -155,14 +170,17 @@ const WORD_COUNT_TARGETS = {
   mindset: { min: 110, max: 140 },
   success: { min: 110, max: 140 },
   relationship: { min: 110, max: 140 },
-  life_lesson: { min: 110, max: 140 }
+  life_lesson: { min: 110, max: 140 },
+  // Shorter and more poetic than the tough-love banks — reference videos
+  // run ~30-50s of a handful of short, weighty lines, not a long speech.
+  sad_love: { min: 70, max: 100 }
 };
 
 // Shared formatting/voice rules appended to every category's prompt.
 // Appended programmatically after generation — never left to the model to
 // retype, since it occasionally introduced typos into this fixed sentence
 // (e.g. "సబ్‌స్రైబ్" missing a syllable) when asked to reproduce it itself.
-const CTA_SENTENCE = 'మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.';
+const CTA_SENTENCE = `మరిన్ని ఇలాంటి వీడియోల కోసం ${CHANNEL_NAME} ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.`;
 
 function getCommonRules(category) {
   const { min, max } = WORD_COUNT_TARGETS[category];
@@ -337,13 +355,39 @@ const LIFE_LESSON_THEMES = [
   'ప్రతి ముగింపు ఒక కొత్త ఆరంభానికి దారి తీస్తుంది.'
 ];
 
+// New niche (per user directive): Telugu sad/emotional love quotes —
+// matching the reference videos style (@mileswithprash-style short,
+// vulnerable, direct-address lines about loneliness, being let down by
+// people, quiet healing, missing someone, memories). Tone is soft and
+// reflective, NOT the tough-love/punchy tone used by the dormant
+// self_respect/motivation banks above.
+const SAD_LOVE_THEMES = [
+  'మన జీవితంలో అందరూ మనతో శాశ్వతంగా ఉంటారని అనుకుంటాం, కానీ కొందరు మౌనంగానే దూరమైపోతారు — ఆ శూన్యం గుండెని బరువుగా చేస్తుంది.',
+  'కొందరు మనుషులు మనకి ఒక మెడిసిన్ లాంటివాళ్ళు — వాళ్ళు పెద్ద పెద్ద సొల్యూషన్స్ ఇవ్వకపోయినా, వాళ్ళ దగ్గర ఉంటే చాలా ప్రశాంతంగా అనిపిస్తుంది.',
+  'ఒక్కసారి నమ్మకం విరిగిపోయాక, ఎంత క్షమించినా, ఆ పాత అనుబంధంలో ఉన్న సహజత్వం మాత్రం ఎప్పటికీ తిరిగి రాదు.',
+  'రాత్రి నిద్ర పట్టనప్పుడు, ఒకప్పుడు నీతో గంటల తరబడి మాట్లాడిన మనిషి ఇప్పుడు మెసేజ్‌కి కూడా రిప్లై ఇవ్వడం లేదని గుర్తొస్తుంది.',
+  'ఎవరైనా నిన్ను వదిలి వెళ్ళిపోయినప్పుడు, నీలో ఏదో తప్పు ఉందని కాదు అర్థం — వాళ్ళు నిన్ను నిలబెట్టుకోవడానికి సరిపడా ప్రయత్నం చేయలేదని మాత్రమే అర్థం.',
+  'ఒంటరిగా ఉన్న ప్రతి రాత్రి బాధగా అనిపించదు — కొన్నిసార్లు అదే మనకి మనం మాట్లాడుకోవడానికి దొరికే ఏకైక సమయం.',
+  'ప్రేమించడం తప్పు కాదు, కానీ నిన్ను నువ్వు మర్చిపోయేంతగా ఇంకొకరి కోసం అలిసిపోవడం మాత్రం సరైనది కాదు.',
+  'కొన్ని జ్ఞాపకాలు నవ్వించవు, కానీ నొప్పించనూవు — అవి కేవలం గుండెలో నిశ్శబ్దంగా ఉండిపోతాయి, ఎప్పటికీ చెరిగిపోకుండా.',
+  'నువ్వు ఎంత బాగా ప్రేమించినా, కొందరికి అది ఎప్పటికీ సరిపోదు — అది నీ ప్రేమలో లోపం కాదు, వాళ్ళ చూసే విధానంలో లోపం.',
+  'దూరమైన మనిషి కోసం ఎదురుచూడటం మానేసిన రోజే, నిజంగా నువ్వు నయమవ్వడం మొదలుపెట్టిన రోజు.',
+  'కొన్ని సంబంధాలు ఎంత ప్రయత్నించినా బతికించలేం — కొన్నిసార్లు వదిలేయడమే నిజమైన ప్రేమ.',
+  'నువ్వు మాట్లాడకపోయినా అర్థం చేసుకునే మనిషి పక్కన ఉంటే, ప్రపంచం మొత్తం దూరమైనా పర్వాలేదు అనిపిస్తుంది.',
+  'బాధలో ఉన్నప్పుడు ఎవరికీ చెప్పుకోలేకపోవడం కంటే బాధాకరమైనది, చెప్పినా ఎవరూ నిజంగా వినకపోవడం.',
+  'కొన్నిసార్లు మనం మిస్ అయ్యేది ఆ మనిషిని కాదు, ఆ మనిషితో గడిపిన మన నిన్నటి రోజుల్ని.',
+  'ప్రతి కన్నీటిబొట్టు బలహీనతని చూపించదు — కొన్నిసార్లు అది ఎంతకాలం మౌనంగా భరించావో చూపిస్తుంది.',
+  'ఎవరైనా నిన్ను వదిలి వెళ్ళిపోయాక కూడా, నువ్వు మంచిగా ఉండటం మానేయకపోవడమే నిజమైన బలం.'
+];
+
 const PERSONAL_GROWTH_THEME_BANKS = {
   self_respect: SELF_RESPECT_THEMES,
   motivation: MOTIVATION_THEMES,
   mindset: MINDSET_THEMES,
   success: SUCCESS_THEMES,
   relationship: RELATIONSHIP_THEMES,
-  life_lesson: LIFE_LESSON_THEMES
+  life_lesson: LIFE_LESSON_THEMES,
+  sad_love: SAD_LOVE_THEMES
 };
 
 function pickMotivationalTheme(category, runCount) {
@@ -398,6 +442,25 @@ function buildPrompt(category, article, recentTitles, runCount) {
 5. జంతువులను ఎప్పుడూ "అది" అని సూచించు, మధ్యలో లింగం మార్చకు.
 6. Conditional వాక్యం మొదలుపెడితే పూర్తి చేయి, మధ్యలో ఆపకు.
 7. రాశాక మళ్ళీ చదివి సరైన పదాలు/క్రియారూపాలు వాడావో నిర్ధారించుకో.${avoidLine}`;
+  } else if (category === 'sad_love') {
+    const theme = pickMotivationalTheme(category, runCount);
+    topicInstruction = `కింద ఇచ్చిన ఆలోచనని ఆధారంగా చేసుకుని, ఒక sad/emotional Telugu Shorts quote-style స్క్రిప్ట్ రాయి — నేరుగా వినేవారిని ఉద్దేశించి ("నువ్వు"/"మనం" అని) మాట్లాడుతున్నట్టు, **మృదువైన, vulnerable, poetic tone లో** (tough-love/motivational కాదు, ఓదార్పు లాగా అనిపించాలి):
+
+ఆలోచన: ${theme}
+
+నిర్మాణం:
+1. **Hook (మొదటి వాక్యం):** వెంటనే హృదయాన్ని తాకేలా, రిలేటబుల్‌గా ఒక భావనతో మొదలుపెట్టు — ప్రశ్న కానవసరం లేదు, ఒక నిశ్శబ్ద observation కూడా చాలు.
+2. **లోతు:** చిన్న, భావోద్వేగభరితమైన వాక్యాలు వాడు. ఆజ్ఞాపూర్వక (imperative) tone వద్దు — ఇది ఒక స్నేహితుడు మెల్లగా మాట్లాడుతున్నట్టు ఉండాలి. మెత్తని imagery వాడు (నిశ్శబ్దం, రాత్రి, గాలి, జ్ఞాపకాలు, ఖాళీతనం వంటివి) — అగ్ని/సింహం/తుఫాను వంటి తీవ్రమైన metaphors వద్దు.
+3. **విస్తరణ:** పైన ఇచ్చిన ఆలోచననే మృదువుగా, లోతుగా విస్తరించు — ఒక చిన్న ఉదాహరణ/సన్నివేశపు స్పర్శ ఉంటే బాగుంటుంది (పేర్లు వద్దు, సాధారణంగా అందరికీ అన్వయించేలా).
+4. **ప్రశాంతమైన ముగింపు వాక్యం:** గర్జనలా కాదు — ఒక నిట్టూర్పు లాంటి, గుర్తుండిపోయే, quotable చివరి వాక్యంతో మెల్లగా ముగించు.
+
+నియమాలు:
+- నేరుగా "నువ్వు"/"నీ"/"మనం" అని address చేయి, మూడో వ్యక్తిలో కథలా చెప్పకు.
+- Tone మృదువుగా, emotional గా ఉండాలి — vulnerable గా అనిపించాలి, aggressive గా కాదు. వినేవారికి "నువ్వు ఒంటరివి కాదు" అనే ఓదార్పు feel రావాలి, negative/shaming ఎప్పటికీ కాదు.
+- సాధారణ, అందరూ చెప్పే cliché మాటలు వాడకు — పైన ఇచ్చిన ఆలోచననే నిర్దిష్టంగా, హృదయపూర్వకంగా చెప్పు.
+- ఏ ఒక్క వ్యక్తినో పేరు పెట్టి ప్రస్తావించకు — ఇది సాధారణంగా అందరికీ వర్తించేలా ఉండాలి.
+- ఖచ్చితంగా తెలుగు లిపిలోనే రాయి — Romanized Telugu (ఆంగ్ల అక్షరాల్లో తెలుగు) ఎప్పుడూ వాడకు.
+- **ఇది ముఖ్యం:** పైన ఇచ్చిన ఆలోచన మునుపటి వీడియోల్లో కూడా వాడి ఉండొచ్చు — కానీ ప్రతిసారీ **పూర్తిగా కొత్త పదాలు, కొత్త ఉదాహరణలు, కొత్త వాక్య నిర్మాణం** వాడాలి. మునుపటి script లోని వాక్యాలు/పదబంధాలు అలాగే మళ్ళీ వాడకు — ఇదే ఆలోచనని పూర్తిగా వేరే కోణం నుండి, వేరే మాటల్లో చెప్పు.${avoidLine}`;
   } else if (Object.keys(PERSONAL_GROWTH_THEME_BANKS).includes(category)) {
     const theme = pickMotivationalTheme(category, runCount);
     const categoryLabel = {
@@ -703,7 +766,8 @@ const BGM_MOOD_TAGS = {
   mindset: 'calm,inspiring',
   success: 'uplifting,corporate',
   relationship: 'emotional,calm',
-  life_lesson: 'inspiring,calm'
+  life_lesson: 'inspiring,calm',
+  sad_love: 'sad,emotional,piano'
 };
 
 // Searches Jamendo's free Creative Commons catalog for an INSTRUMENTAL
@@ -1193,7 +1257,7 @@ PlayResX: 720
 PlayResY: 1280
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${fontFamily},44,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,3,0,2,2,60,60,300,1
+Style: Caption,${fontFamily},54,&H0000D7FF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,1,5,80,80,0,1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
@@ -1217,9 +1281,6 @@ function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
   const fontPath = path.join(fontsDir, 'NotoSansTelugu-Regular.ttf');
   const fontPathBoldCandidate = path.join(fontsDir, 'NotoSansTelugu-Bold.ttf');
   const fontPathBold = fs.existsSync(fontPathBoldCandidate) ? fontPathBoldCandidate : fontPath;
-
-  const ACCENT = '0xFFC107'; // gold/amber - brand accent
-  const CTA = '0xE62117';    // YouTube red - subscribe button
 
   const duration = getAudioDuration(audioPath) + 0.3;
   const fd = duration.toFixed(2);
@@ -1287,13 +1348,18 @@ function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
   execSync(`ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${bgPath}"`, { stdio: 'inherit' });
   log(`  background.mp4 total duration: ${getAudioDuration(bgPath).toFixed(2)}s (expected ~${fd}s)`);
 
-  // On-screen Telugu subtitles were tried and then explicitly turned back
-  // off by user decision — no text on screen at all now. Left as a no-op
-  // (the generation utilities above are still defined) so this is a
-  // one-line flip to re-enable later if ever wanted again.
-  const subtitlesFilter = '';
+  // Re-enabled per new user directive: reference videos DO show on-screen
+  // text (each line appears in sync with the voice), so the previously
+  // dormant writeSubtitlesAss() is now wired in. Style matches the
+  // reference videos: bold yellow text, thin black outline, no background
+  // box, centered — not the boxed white captions from the old style.
+  const fontFamily = getFontFamilyName(fontPathBold, 'Noto Sans Telugu');
+  const assPath = path.join(WORK_DIR, 'captions.ass');
+  writeSubtitlesAss(sentenceTexts, durations, fontFamily, assPath);
+  const subtitlesFilter = `,subtitles='${assPath.replace(/\\/g, '/').replace(/:/g, '\\:')}':fontsdir='${fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:')}'`;
 
-  // Step 3: overlay branding/CTA + scrims (for legibility over photos), mux audio.
+  // Step 3: overlay a small handle watermark + scrims (for legibility over
+  // photos), mux audio.
   // NOTE on drawbox positioning: inside drawbox, 'w'/'h' in x/y expressions mean
   // the box's OWN width/height (not the frame) — always use 'iw'/'ih' there.
   // drawtext does not have this problem — its 'w'/'h' correctly mean the frame.
@@ -1304,34 +1370,17 @@ function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
 
     // 5-band gradient scrims (top & bottom) instead of a flat rectangle —
     // reads as a smooth fade like native Instagram/YouTube overlays rather
-    // than a hard-edged bar.
-    `drawbox=x=0:y=0:w=iw:h=56:color=black@0.70:t=fill`,
-    `drawbox=x=0:y=56:w=iw:h=56:color=black@0.55:t=fill`,
-    `drawbox=x=0:y=112:w=iw:h=56:color=black@0.40:t=fill`,
-    `drawbox=x=0:y=168:w=iw:h=56:color=black@0.25:t=fill`,
-    `drawbox=x=0:y=224:w=iw:h=56:color=black@0.12:t=fill`,
-    `drawbox=x=0:y=ih-280:w=iw:h=56:color=black@0.12:t=fill`,
-    `drawbox=x=0:y=ih-224:w=iw:h=56:color=black@0.25:t=fill`,
-    `drawbox=x=0:y=ih-168:w=iw:h=56:color=black@0.40:t=fill`,
-    `drawbox=x=0:y=ih-112:w=iw:h=56:color=black@0.55:t=fill`,
-    `drawbox=x=0:y=ih-56:w=iw:h=56:color=black@0.70:t=fill`,
+    // than a hard-edged bar. Kept subtler than before (no big badge/CTA
+    // button burned in) to match the minimalist reference-video look.
+    `drawbox=x=0:y=0:w=iw:h=48:color=black@0.55:t=fill`,
+    `drawbox=x=0:y=48:w=iw:h=48:color=black@0.35:t=fill`,
+    `drawbox=x=0:y=ih-96:w=iw:h=48:color=black@0.35:t=fill`,
+    `drawbox=x=0:y=ih-48:w=iw:h=48:color=black@0.55:t=fill`,
 
-    // "STORY" badge, top-left, with a soft drop shadow behind the box
-    `drawbox=x=43:y=63:w=165:h=44:color=black@0.35:t=fill`,
-    `drawbox=x=40:y=60:w=165:h=44:color=${ACCENT}@0.97:t=fill`,
-    `drawtext=fontfile='${fontPathBold}':text='MOTIVATION':fontcolor=0x0f1024:fontsize=20:x=40+(165-text_w)/2:y=60+(44-text_h)/2`,
-
-    // Channel branding, top-center, with text shadow + a thin accent underline
-    `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=32:x=(w-text_w)/2:y=140:shadowcolor=black@0.6:shadowx=2:shadowy=2`,
-    `drawbox=x=(iw-160)/2:y=192:w=160:h=4:color=${ACCENT}@0.9:t=fill`,
-
-    // Subscribe CTA styled as a real elevated button: soft glow border behind,
-    // drop shadow, bold white text with shadow, small tagline underneath.
-    `drawbox=x=(iw-572)/2:y=ih-196:w=572:h=88:color=${ACCENT}@0.35:t=fill`,
-    `drawbox=x=(iw-566)/2:y=ih-193+6:w=566:h=82:color=black@0.30:t=fill`,
-    `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.97:t=fill`,
-    `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2:shadowcolor=black@0.5:shadowx=1:shadowy=1`,
-    `drawtext=fontfile='${fontPath}':text='daily Telugu motivation & self-respect':fontcolor=white@0.8:fontsize=17:x=(w-text_w)/2:y=h-100`,
+    // Small handle watermark, bottom-center — matching the unobtrusive
+    // "@handle" style seen in the reference videos (edit CHANNEL_HANDLE
+    // near the top of this file to your real channel handle).
+    `drawtext=fontfile='${fontPathBold}':text='${CHANNEL_HANDLE}':fontcolor=white@0.85:fontsize=22:x=(w-text_w)/2:y=h-56:shadowcolor=black@0.6:shadowx=1:shadowy=1`,
 
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
@@ -1361,7 +1410,8 @@ const CATEGORY_HASHTAGS = {
   success: '#Success #SuccessMindset #Achievement',
   relationship: '#Relationships #RelationshipAdvice #Reality',
   life_lesson: '#LifeLessons #LifeQuotes #Wisdom',
-  emotional: '#EmotionalStory #LifeLessons #TeluguStory'
+  emotional: '#EmotionalStory #LifeLessons #TeluguStory',
+  sad_love: '#SadQuotes #LoveFailure #Heartbreak #TeluguSadSong #EmotionalQuotes'
 };
 
 // Builds an emoji-structured description matching the reference format
@@ -1375,17 +1425,21 @@ function buildDescription(script, category) {
   const bodyText = sentences.length > 1 ? sentences.slice(0, -1).join(' ') : withoutCTA;
   const categoryTags = CATEGORY_HASHTAGS[category] || '';
 
+  const reassuranceLine = category === 'sad_love'
+    ? '🌙 నువ్వు ఒంటరివి కాదు — ఇలాంటి భావాలు అనుభవించేది నువ్వొక్కడివే/దానివే కాదు.'
+    : '🌱 ఈ వీడియో నీలోని ఆత్మవిశ్వాసాన్ని, ఆత్మగౌరవాన్ని మళ్లీ గుర్తు చేస్తుంది.';
+
   return `💙 ${bodyText}
 
-🌱 ఈ వీడియో నీలోని ఆత్మవిశ్వాసాన్ని, ఆత్మగౌరవాన్ని మళ్లీ గుర్తు చేస్తుంది.
+${reassuranceLine}
 
 🙏 వీడియో నచ్చితే 👍 Like, 💬 Comment, 📤 Share చేయండి.
 
-🔔 ఇలాంటి హృదయాన్ని తాకే తెలుగు వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ను ❤️ Subscribe చేసి 🔔 Bell Icon ని Press చేయడం మర్చిపోవద్దు.
+🔔 ఇలాంటి హృదయాన్ని తాకే తెలుగు వీడియోల కోసం ${CHANNEL_NAME} ఛానెల్‌ను ❤️ Subscribe చేసి 🔔 Bell Icon ని Press చేయడం మర్చిపోవద్దు.
 
 💖 గుర్తుంచుకోండి: "${closingLine}" 💎
 
-#Shorts #YTShorts #TeluguShorts #TeluguMotivation ${categoryTags} #ViralShorts #TrendingShorts #TeluguEcho`;
+#Shorts #YTShorts #TeluguShorts ${categoryTags} #ViralShorts #TrendingShorts #SadQuotes #LoveQuotes`;
 }
 
 // YouTube's upload validator is stricter than our own text handling — strip
@@ -1416,8 +1470,8 @@ async function uploadToYouTube(videoPath, title, description) {
       snippet: {
         title: safeTitle,
         description: safeDescription,
-        tags: ['telugu', 'news', 'shorts', 'telugu news'],
-        categoryId: '25'
+        tags: ['telugu', 'shorts', 'telugu shorts', 'sad quotes', 'love quotes', 'heartbreak', 'telugu sad quotes'],
+        categoryId: '22' // People & Blogs — fits sad/emotional quote content better than News & Politics
       },
       status: { privacyStatus: 'public', selfDeclaredMadeForKids: false }
     },
@@ -1500,7 +1554,7 @@ async function main() {
   // Pull the closing CTA sentence out — a stock/AI photo search for "like
   // share subscribe" wouldn't mean anything, so its time is folded into the
   // last content sentence's slide instead.
-  const ctaIndex = imageSentences.findIndex(s => s.includes('తెలుగు ఎకో ఛానెల్'));
+  const ctaIndex = imageSentences.findIndex(s => s.includes(`${CHANNEL_NAME} ఛానెల్`));
   if (ctaIndex !== -1) {
     const ctaDur = imageDurations[ctaIndex] || 0;
     imageSentences.splice(ctaIndex, 1);
