@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,20 +22,22 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install ffmpeg
-        timeout-minutes: 3
+      - name: Install ffmpeg + Chromium runtime libs (for Puppeteer captions)
+        timeout-minutes: 4
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg \
+            libnss3 libatk-bridge2.0-0 libx11-xcb1 libxcomposite1 libxdamage1 \
+            libxrandr2 libgbm1 libasound2 libpangocairo-1.0-0 libgtk-3-0
 
       - name: Verify ffmpeg is available
         timeout-minutes: 1
         run: ffmpeg -version
 
-      - name: Install dependencies
-        timeout-minutes: 3
+      - name: Install dependencies (includes Puppeteer's bundled Chromium)
+        timeout-minutes: 5
         run: npm install
 
       - name: Install Python bridge for experimental HF Space video tier
@@ -44,7 +46,7 @@ jobs:
         run: pip install --break-system-packages gradio_client
 
       - name: Generate and upload video
-        timeout-minutes: 15
+        timeout-minutes: 18
         env:
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
