@@ -11,6 +11,7 @@ const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY;
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
+const JAMENDO_CLIENT_ID = process.env.JAMENDO_CLIENT_ID;
 const YT_CLIENT_ID = process.env.YT_CLIENT_ID;
 const YT_CLIENT_SECRET = process.env.YT_CLIENT_SECRET;
 const YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
@@ -694,6 +695,63 @@ async function generateAudioForScript(sentences) {
 function getAudioDuration(audioPath) {
   const out = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${audioPath}"`).toString().trim();
   return parseFloat(out);
+}
+
+const BGM_MOOD_TAGS = {
+  self_respect: 'inspiring,uplifting',
+  motivation: 'motivational,epic',
+  mindset: 'calm,inspiring',
+  success: 'uplifting,corporate',
+  relationship: 'emotional,calm',
+  life_lesson: 'inspiring,calm'
+};
+
+// Searches Jamendo's free Creative Commons catalog for an INSTRUMENTAL
+// track matching the category's mood (instrumental so it never competes
+// with our own narration vocals) and downloads it. The license URL is
+// logged for spot-checking — Jamendo tracks vary in exact CC terms
+// (attribution / commercial-use permissions), and this project can't
+// verify that automatically, so it's worth an occasional manual look.
+async function fetchBackgroundMusic(category) {
+  const tags = BGM_MOOD_TAGS[category] || 'inspiring,uplifting';
+  const clientId = (JAMENDO_CLIENT_ID || '').trim();
+  const url = `https://api.jamendo.com/v3.0/tracks/?client_id=${clientId}&format=json&limit=10&tags=${encodeURIComponent(tags)}&vocalinstrumental=instrumental&include=musicinfo&order=popularity_total`;
+  log(`Fetching background music from Jamendo for mood: "${tags}"...`);
+  const res = await fetchWithTimeout(url, {}, 15000);
+  const data = await res.json();
+  if (!data.results || data.results.length === 0) {
+    throw new Error(`Jamendo returned no tracks for tags "${tags}": ` + JSON.stringify(data).slice(0, 200));
+  }
+  const track = data.results[Math.floor(Math.random() * data.results.length)];
+  const audioUrl = track.audiodownload || track.audio;
+  if (!audioUrl) throw new Error('Jamendo track has no downloadable audio URL');
+  const audioRes = await fetchWithTimeout(audioUrl, {}, 20000);
+  if (!audioRes.ok) throw new Error(`Jamendo audio download failed HTTP ${audioRes.status}`);
+  const buf = Buffer.from(await audioRes.arrayBuffer());
+  if (buf.length < 10000) throw new Error(`Jamendo audio file suspiciously small (${buf.length} bytes)`);
+  const musicPath = path.join(WORK_DIR, 'bgm.mp3');
+  fs.writeFileSync(musicPath, buf);
+  log(`Downloaded BGM: "${track.name}" by ${track.artist_name} (license: ${track.license_ccurl || 'unknown — spot-check before relying on this'})`);
+  return musicPath;
+}
+
+// Mixes background music, looped to cover the narration, MUCH quieter
+// (volume=0.12) than the voice track — this is meant to be felt, not heard
+// as a competing sound. Output stays uncompressed (pcm) since buildVideo's
+// final mux re-encodes to AAC once anyway; no need to lossy-encode twice.
+function mixBackgroundMusic(narrationPath, musicPath, outPath) {
+  const narrationDur = getAudioDuration(narrationPath);
+  const cmd = [
+    'ffmpeg -y',
+    `-i "${narrationPath}"`,
+    `-stream_loop -1 -i "${musicPath}"`,
+    `-filter_complex "[1:a]volume=0.12[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"`,
+    `-map "[aout]"`,
+    `-t ${narrationDur.toFixed(2)}`,
+    '-c:a pcm_s16le',
+    `"${outPath}"`
+  ].join(' ');
+  execSync(cmd, { stdio: 'inherit' });
 }
 
 async function fetchImages(query, count, startIndex = 0, excludeIds = new Set()) {
@@ -1407,6 +1465,7 @@ async function main() {
   checkSecret('GROQ_API_KEY', GROQ_API_KEY);
   checkSecret('GOOGLE_TTS_API_KEY', GOOGLE_TTS_API_KEY);
   checkSecret('PEXELS_API_KEY', PEXELS_API_KEY);
+  checkSecret('JAMENDO_CLIENT_ID', JAMENDO_CLIENT_ID);
   checkSecret('YT_CLIENT_ID', YT_CLIENT_ID);
   checkSecret('YT_CLIENT_SECRET', YT_CLIENT_SECRET);
   checkSecret('YT_REFRESH_TOKEN', YT_REFRESH_TOKEN);
@@ -1417,7 +1476,20 @@ async function main() {
 
   const { title, script } = await generateContent(category, article, usedTitles, runCount);
   const allSentences = splitIntoSentences(script);
-  const { audioPath, sentenceDurations, silenceGap } = await generateAudioForScript(allSentences);
+  let { audioPath, sentenceDurations, silenceGap } = await generateAudioForScript(allSentences);
+
+  // Background music is a nice-to-have, not critical — any failure here
+  // (missing/invalid client ID, network, no matching tracks) just means the
+  // video plays with narration only, same as before this feature existed.
+  try {
+    const musicPath = await fetchBackgroundMusic(category);
+    const mixedPath = path.join(WORK_DIR, 'audio_with_bgm.wav');
+    mixBackgroundMusic(audioPath, musicPath, mixedPath);
+    audioPath = mixedPath;
+    log('Background music mixed in successfully.');
+  } catch (e) {
+    log('WARNING: background music failed (' + e.message + ') — continuing with narration-only audio.');
+  }
 
   // Fold the gap that follows each sentence (except the last) into that
   // sentence's own on-screen time, so the image holds through the pause
