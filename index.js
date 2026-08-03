@@ -6,6 +6,13 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { google } = require('googleapis');
+// Used to render on-screen Telugu captions as PNG images (see
+// renderCaptionImages below) — ffmpeg's own text filters (drawtext/
+// libass subtitles) do NOT correctly shape Indic scripts (Telugu vowel
+// signs/conjuncts render out of order), which is why captions looked
+// garbled. A real browser engine (Chromium, via Puppeteer) has full
+// HarfBuzz+ICU text shaping and renders Telugu correctly.
+const puppeteer = require('puppeteer');
 
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -581,6 +588,31 @@ async function generateContent(category, article, recentTitles, runCount) {
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
 
+  // NEW: the old code only guarded against scripts coming back too SHORT —
+  // nothing capped an over-long one, which is what was producing 60-70s
+  // videos instead of the intended ~30-45s. Trim complete trailing
+  // sentences (never mid-sentence) until the word count is back at or
+  // under target.max, so this can never overshoot by more than one
+  // sentence's worth of words.
+  wordCount = script.split(/\s+/).filter(Boolean).length;
+  if (wordCount > target.max + 10) {
+    const sentencesForCap = splitIntoSentences(script);
+    let runningCount = 0;
+    let cutIndex = sentencesForCap.length;
+    for (let i = 0; i < sentencesForCap.length; i++) {
+      const wc = sentencesForCap[i].split(/\s+/).filter(Boolean).length;
+      if (runningCount + wc > target.max && runningCount >= target.min * 0.6) {
+        cutIndex = i;
+        break;
+      }
+      runningCount += wc;
+    }
+    if (cutIndex < sentencesForCap.length && cutIndex > 0) {
+      log(`WARNING: script came back too long (${wordCount} words, target ${target.min}-${target.max}) — trimming from ${sentencesForCap.length} to ${cutIndex} sentences.`);
+      script = sentencesForCap.slice(0, cutIndex).join(' ');
+    }
+  }
+
   // moral_story specifically requires an explicit, clearly-stated moral —
   // this is what's missing when a story ends on an incoherent or
   // inappropriate note with no real lesson attached. If the required marker
@@ -652,13 +684,22 @@ function escapeSSML(text) {
 
 async function synthesizeOneSentence(sentence) {
   const ssml = `<speak><s>${escapeSSML(sentence)}</s></speak>`;
+  // Chirp3 HD voices mostly ignore SSML prosody/emphasis tags (they're
+  // end-to-end neural, not classic concatenative TTS) — the one lever that
+  // reliably applies is the top-level audioConfig. Slightly slower +
+  // slightly lower pitch reads as more deliberate/reflective instead of a
+  // flat "reading the news" pace. If this still doesn't feel emotional
+  // enough, the other lever is trying a different te-IN-Chirp3-HD-* voice
+  // name from the Google Cloud TTS voice list — voice choice affects
+  // perceived emotion far more than these two numbers do.
+  const emotionalAudioConfig = { audioEncoding: 'LINEAR16', speakingRate: 0.92, pitch: -1.5 };
   let res = await fetchWithTimeout(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       input: { ssml },
       voice: { languageCode: 'te-IN', name: 'te-IN-Chirp3-HD-Achird' },
-      audioConfig: { audioEncoding: 'LINEAR16' }
+      audioConfig: emotionalAudioConfig
     })
   });
   let data = await res.json();
@@ -670,7 +711,7 @@ async function synthesizeOneSentence(sentence) {
       body: JSON.stringify({
         input: { text: sentence },
         voice: { languageCode: 'te-IN', name: 'te-IN-Chirp3-HD-Achird' },
-        audioConfig: { audioEncoding: 'LINEAR16' }
+        audioConfig: emotionalAudioConfig
       })
     });
     data = await res.json();
@@ -699,8 +740,8 @@ function getAudioFormat(audioPath) {
 // aggregated back up to one number per original sentence, including its
 // own internal comma gaps) so nothing downstream needs to change.
 async function generateAudioForScript(sentences) {
-  const commaGap = 0.08;  // shorter pause within a sentence, at a comma
-  const periodGap = 0.35; // longer pause between sentences
+  const commaGap = 0.12;  // shorter pause within a sentence, at a comma
+  const periodGap = 0.5; // longer pause between sentences — reflective, not rushed
   log(`Generating audio via Google Cloud TTS (${sentences.length} sentences, further split at commas for reliable pausing)...`);
 
   const clipEntries = []; // { path, gap: 0 | commaGap | periodGap }
@@ -767,7 +808,7 @@ const BGM_MOOD_TAGS = {
   success: 'uplifting,corporate',
   relationship: 'emotional,calm',
   life_lesson: 'inspiring,calm',
-  sad_love: 'sad,emotional,piano'
+  sad_love: 'sad,piano'
 };
 
 // Searches Jamendo's free Creative Commons catalog for an INSTRUMENTAL
@@ -779,14 +820,36 @@ const BGM_MOOD_TAGS = {
 async function fetchBackgroundMusic(category) {
   const tags = BGM_MOOD_TAGS[category] || 'inspiring,uplifting';
   const clientId = (JAMENDO_CLIENT_ID || '').trim();
-  const url = `https://api.jamendo.com/v3.0/tracks/?client_id=${clientId}&format=json&limit=10&tags=${encodeURIComponent(tags)}&vocalinstrumental=instrumental&include=musicinfo&order=popularity_total`;
-  log(`Fetching background music from Jamendo for mood: "${tags}"...`);
-  const res = await fetchWithTimeout(url, {}, 15000);
-  const data = await res.json();
-  if (!data.results || data.results.length === 0) {
-    throw new Error(`Jamendo returned no tracks for tags "${tags}": ` + JSON.stringify(data).slice(0, 200));
+
+  async function searchTags(searchTags) {
+    const url = `https://api.jamendo.com/v3.0/tracks/?client_id=${clientId}&format=json&limit=10&tags=${encodeURIComponent(searchTags)}&vocalinstrumental=instrumental&include=musicinfo&order=popularity_total`;
+    log(`Fetching background music from Jamendo for mood: "${searchTags}"...`);
+    const res = await fetchWithTimeout(url, {}, 15000);
+    const data = await res.json();
+    return data.results || [];
   }
-  const track = data.results[Math.floor(Math.random() * data.results.length)];
+
+  // Combining multiple tags with Jamendo is an AND filter — the more tags,
+  // the more likely the search comes back completely empty (which is what
+  // was silently dropping background music from every video: the caller in
+  // main() catches any failure here and just continues without music).
+  // Try the specific combo first, then fall back to progressively broader
+  // single-tag searches before giving up.
+  let results = await searchTags(tags);
+  if (results.length === 0 && tags.includes(',')) {
+    const firstTag = tags.split(',')[0];
+    log(`No results for "${tags}", retrying with just "${firstTag}"...`);
+    results = await searchTags(firstTag);
+  }
+  if (results.length === 0) {
+    log(`No results for "${tags}" either, retrying with generic "sad"...`);
+    results = await searchTags('sad');
+  }
+  if (results.length === 0) {
+    throw new Error(`Jamendo returned no tracks for "${tags}" or any fallback tag`);
+  }
+
+  const track = results[Math.floor(Math.random() * results.length)];
   const audioUrl = track.audiodownload || track.audio;
   if (!audioUrl) throw new Error('Jamendo track has no downloadable audio URL');
   const audioRes = await fetchWithTimeout(audioUrl, {}, 20000);
@@ -809,7 +872,7 @@ function mixBackgroundMusic(narrationPath, musicPath, outPath) {
     'ffmpeg -y',
     `-i "${narrationPath}"`,
     `-stream_loop -1 -i "${musicPath}"`,
-    `-filter_complex "[1:a]volume=0.12[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"`,
+    `-filter_complex "[1:a]volume=0.18[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"`,
     `-map "[aout]"`,
     `-t ${narrationDur.toFixed(2)}`,
     '-c:a pcm_s16le',
@@ -1245,7 +1308,57 @@ function assTimestamp(seconds) {
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
-// Writes an ASS subtitle file with one cue per sentence, timed to match each
+// Renders one transparent PNG per sentence with correctly-shaped Telugu
+// text (bold yellow, black outline+shadow, centered) — matching the
+// reference videos' caption style. Using a real browser engine instead of
+// ffmpeg's drawtext/libass is what actually fixes Telugu conjunct/vowel-
+// sign shaping (see the require() comment at the top of this file).
+async function renderCaptionImages(sentences, outDir, width = 720, height = 1280) {
+  const fontPath = path.join(__dirname, 'fonts', 'NotoSansTelugu-Bold.ttf');
+  const fontBase64 = fs.readFileSync(fontPath).toString('base64');
+
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+  });
+  const page = await browser.newPage();
+  await page.setViewport({ width, height, deviceScaleFactor: 1 });
+
+  const captionPaths = [];
+  try {
+    for (let i = 0; i < sentences.length; i++) {
+      const safeText = sentences[i].replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const html = `<!DOCTYPE html><html><head><style>
+        @font-face { font-family: 'CaptionFont'; src: url(data:font/ttf;base64,${fontBase64}) format('truetype'); font-weight: 700; }
+        html, body { margin:0; padding:0; width:${width}px; height:${height}px; background: transparent; }
+        .wrap { width:${width}px; height:${height}px; display:flex; align-items:center; justify-content:center; box-sizing:border-box; padding: 0 70px; }
+        .cap {
+          font-family: 'CaptionFont', sans-serif;
+          font-weight: 700;
+          font-size: 50px;
+          line-height: 1.4;
+          color: #FFD700;
+          text-align: center;
+          -webkit-text-stroke: 2px #000000;
+          text-shadow: 0 0 10px rgba(0,0,0,0.9), 0 3px 0 rgba(0,0,0,0.9);
+          white-space: normal;
+          word-break: normal;
+        }
+      </style></head>
+      <body><div class="wrap"><div class="cap">${safeText}</div></div></body></html>`;
+      await page.setContent(html, { waitUntil: 'load' });
+      await page.evaluate(() => document.fonts.ready);
+      const outPath = path.join(outDir, `caption_${i}.png`);
+      await page.screenshot({ path: outPath, omitBackground: true });
+      captionPaths.push(outPath);
+    }
+  } finally {
+    await browser.close();
+  }
+  return captionPaths;
+}
+
+
 // slide's exact on-screen duration (same durations buildVideo uses for the
 // background media) — so the caption always matches what's being narrated
 // at that moment. BorderStyle 3 gives an opaque box behind the text so it
@@ -1274,7 +1387,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   fs.writeFileSync(outPath, lines.join('\n'), 'utf8');
 }
 
-function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
+async function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontsDir = path.join(__dirname, 'fonts');
@@ -1349,26 +1462,25 @@ function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
   log(`  background.mp4 total duration: ${getAudioDuration(bgPath).toFixed(2)}s (expected ~${fd}s)`);
 
   // Re-enabled per new user directive: reference videos DO show on-screen
-  // text (each line appears in sync with the voice), so the previously
-  // dormant writeSubtitlesAss() is now wired in. Style matches the
-  // reference videos: bold yellow text, thin black outline, no background
-  // box, centered — not the boxed white captions from the old style.
-  const fontFamily = getFontFamilyName(fontPathBold, 'Noto Sans Telugu');
-  const assPath = path.join(WORK_DIR, 'captions.ass');
-  writeSubtitlesAss(sentenceTexts, durations, fontFamily, assPath);
-  const subtitlesFilter = `,subtitles='${assPath.replace(/\\/g, '/').replace(/:/g, '\\:')}':fontsdir='${fontsDir.replace(/\\/g, '/').replace(/:/g, '\\:')}'`;
+  // text (each line appears in sync with the voice). Renders one
+  // correctly-shaped Telugu PNG per sentence (see renderCaptionImages) and
+  // overlays each one only during its own time window — this replaced an
+  // ffmpeg/libass ASS-subtitle approach that garbled Telugu conjuncts.
+  log('Rendering Telugu caption images...');
+  const captionPaths = await renderCaptionImages(sentenceTexts, WORK_DIR);
 
-  // Step 3: overlay a small handle watermark + scrims (for legibility over
-  // photos), mux audio.
+  // Step 3: color grade + scrims + handle watermark + fades, as a filter
+  // chain applied to input 0 (the background video) before captions are
+  // overlaid on top of it.
   // NOTE on drawbox positioning: inside drawbox, 'w'/'h' in x/y expressions mean
   // the box's OWN width/height (not the frame) — always use 'iw'/'ih' there.
   // drawtext does not have this problem — its 'w'/'h' correctly mean the frame.
-  const filters = [
+  const baseFilters = [
     // subtle cinematic color grade + vignette on the raw photos
     `eq=contrast=1.06:saturation=1.12`,
     `vignette=PI/6`,
 
-    // 5-band gradient scrims (top & bottom) instead of a flat rectangle —
+    // 4-band gradient scrims (top & bottom) instead of a flat rectangle —
     // reads as a smooth fade like native Instagram/YouTube overlays rather
     // than a hard-edged bar. Kept subtler than before (no big badge/CTA
     // button burned in) to match the minimalist reference-video look.
@@ -1385,13 +1497,32 @@ function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
     `fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5`
-  ].join(',') + subtitlesFilter;
+  ].join(',');
+
+  // Chain: [0:v] -> baseFilters -> [base] -> overlay caption_0 during its
+  // window -> [v0] -> overlay caption_1 during its window -> [v1] -> ...
+  // Caption inputs start at ffmpeg input index 2 (0=background, 1=audio).
+  let cursor = 0;
+  const overlaySteps = [];
+  let prevLabel = 'base';
+  for (let i = 0; i < captionPaths.length; i++) {
+    const start = cursor;
+    const end = cursor + durations[i];
+    cursor = end;
+    const nextLabel = i === captionPaths.length - 1 ? 'vout' : `v${i}`;
+    overlaySteps.push(`[${prevLabel}][${i + 2}:v]overlay=(W-w)/2:(H-h)/2:enable='between(t\\,${start.toFixed(2)}\\,${end.toFixed(2)})'[${nextLabel}]`);
+    prevLabel = nextLabel;
+  }
+  const filterComplex = `[0:v]${baseFilters}[base];` + overlaySteps.join(';');
+
+  const inputs = [`-i "${bgPath}"`, `-i "${audioPath}"`, ...captionPaths.map(p => `-i "${p}"`)].join(' ');
 
   const cmd = [
     'ffmpeg -y',
-    `-i "${bgPath}"`,
-    `-i "${audioPath}"`,
-    `-vf "${filters}"`,
+    inputs,
+    `-filter_complex "${filterComplex}"`,
+    `-map "[vout]"`,
+    `-map 1:a`,
     '-c:v libx264 -pix_fmt yuv420p',
     '-c:a aac -b:a 128k',
     `-t ${fd}`,
@@ -1612,7 +1743,7 @@ async function main() {
   // the sum of our durations matches exactly.
   keptDurations[keptDurations.length - 1] += 0.3;
 
-  const videoPath = buildVideo(imagePaths, audioPath, keptDurations, keptSentences);
+  const videoPath = await buildVideo(imagePaths, audioPath, keptDurations, keptSentences);
 
   const ytTitle = article ? article.title : title;
   await uploadToYouTube(
