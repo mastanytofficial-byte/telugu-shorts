@@ -1,20 +1,12 @@
-// Telugu Daily Shorts — fully automated, runs on GitHub Actions
-// Rotates through 4 content types daily: news, moral stories, facts, parenting tips
-// Topic/Script (Groq) -> Voice (Google TTS) -> Images (Pexels) -> Video (FFmpeg) -> YouTube
+// Telugu Amazing Facts Shorts — fully automated, runs on GitHub Actions
+// Rotates weekly through 7 fact sub-niches: mindblowing, psychology, earth_space, animal, money, history, human_body
+// Topic/Script (Groq) -> Voice (Google TTS) -> Images/Video (Pexels/AI) -> Music (Jamendo) -> Video (FFmpeg) -> YouTube
 
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { google } = require('googleapis');
-// Used to render on-screen Telugu captions as PNG images (see
-// renderCaptionImages below) — ffmpeg's own text filters (drawtext/
-// libass subtitles) do NOT correctly shape Indic scripts (Telugu vowel
-// signs/conjuncts render out of order), which is why captions looked
-// garbled. A real browser engine (Chromium, via Puppeteer) has full
-// HarfBuzz+ICU text shaping and renders Telugu correctly.
-const puppeteer = require('puppeteer');
 
-const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY;
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
@@ -23,22 +15,15 @@ const YT_CLIENT_ID = process.env.YT_CLIENT_ID;
 const YT_CLIENT_SECRET = process.env.YT_CLIENT_SECRET;
 const YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
 
-const STATE_FILE = path.join(__dirname, 'last-article.json');
+const STATE_FILE = path.join(__dirname, 'state.json');
 const WORK_DIR = path.join(__dirname, 'work');
-
-// EDIT THESE TWO to your actual channel name/handle — used in the on-screen
-// branding overlay, the video description, and the CTA sentence appended to
-// every script. (Kept as the pre-existing "TELUGU ECHO" name so nothing
-// breaks if left unchanged — just replace with your real channel identity.)
-const CHANNEL_NAME = 'Infinite Voice';
-const CHANNEL_HANDLE = '@Infinite_Voice_Telugu';
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
-// A stalled connection to any external API (NewsAPI, Groq, Google TTS,
-// Pexels) could otherwise hang until GitHub Actions' 15-minute job timeout
+// A stalled connection to any external API (Groq, Google TTS, Pexels,
+// Jamendo) could otherwise hang until GitHub Actions' 15-minute job timeout
 // kills the whole run with no useful error message. Every external fetch in
 // this file goes through this wrapper so a hang fails fast and loud instead.
 async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
@@ -56,29 +41,16 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
   }
 }
 
-const CATEGORIES = ['news', 'moral_story', 'fact', 'parenting'];
+// "Amazing Facts" niche — 7 specific sub-topics rotating evenly, avoiding
+// the "boring generic facts channel" trap by staying hyper-specific per
+// video. Accuracy risk was explicitly discussed and accepted (facts,
+// unlike fiction, carry hallucination/misinformation risk that can't be
+// 100% guaranteed away). 1 video/day — a 10/day scale-up would need real
+// infrastructure changes (YouTube upload quota, GH Actions runtime budget).
+const FACT_SUBNICHES = ['mindblowing', 'psychology', 'earth_space', 'animal', 'money', 'history', 'human_body'];
 
-// Replaced by user directive: full switch to "Telugu Motivational/
-// Self-Respect Shorts" — direct-address inspirational monologue, matching
-// the reference videos provided. Single category (like moral_story was),
-// rotating through MOTIVATIONAL_THEMES by run count instead of genre.
-// Expanded per user directive: "Fully Automated AI YouTube Shorts
-// Generator" feature set — 6 personal-growth sub-genres, rotating evenly.
-const PERSONAL_GROWTH_CATEGORIES = ['sad_love'];
-
-// Reverted per explicit user decision: 100% pure direct-address
-// motivational speech — no mini-stories. The 70/30 story/direct split
-// (and the 'emotional' story-format branch) is left dormant in the code
-// in case story format is ever wanted back.
-//
-// Changed per new user directive: channel niche switched to Telugu
-// sad/emotional love quotes (matching reference videos — short, poetic,
-// direct-address lines about loneliness, heartbreak, healing, being let
-// down by people). PERSONAL_GROWTH_CATEGORIES narrowed to a single entry
-// so every run uses this niche; the old self_respect/motivation/etc. banks
-// are left dormant below in case the mixed-niche format is ever wanted back.
 function pickCategory(runCount) {
-  const category = PERSONAL_GROWTH_CATEGORIES[runCount % PERSONAL_GROWTH_CATEGORIES.length];
+  const category = FACT_SUBNICHES[runCount % FACT_SUBNICHES.length];
   log(`Today's category: ${category} (run #${runCount})`);
   return category;
 }
@@ -88,34 +60,12 @@ function loadState() {
     try {
       const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       return {
-        usedUrls: state.usedUrls || (state.url ? [state.url] : []),
         usedTitles: state.usedTitles || [],
         runCount: state.runCount || 0
       };
     } catch (e) {}
   }
-  return { usedUrls: [], usedTitles: [], runCount: 0 };
-}
-
-async function fetchNews() {
-  log('Fetching news from NewsAPI...');
-  // pageSize raised 10 -> 20 to give the dedup check more room to find a fresh article
-  const url = `https://newsapi.org/v2/everything?q=India&language=en&sortBy=publishedAt&pageSize=20&apiKey=${NEWSAPI_KEY}`;
-  const res = await fetchWithTimeout(url);
-  const data = await res.json();
-  if (!data.articles || data.articles.length === 0) {
-    throw new Error('No articles found from NewsAPI');
-  }
-
-  // Load history of previously used article URLs (last 50 runs), not just the last one.
-  const { usedUrls } = loadState();
-
-  const article = data.articles.find(a => !usedUrls.includes(a.url)) || data.articles[0];
-  if (usedUrls.includes(article.url)) {
-    log('WARNING: every fetched article was already used in the last 50 runs — reusing the newest one so the run does not fail.');
-  }
-  log(`Selected article: ${article.title}`);
-  return article;
+  return { usedTitles: [], runCount: 0 };
 }
 
 // Safety net: Google's Chirp 3: HD voice rejects any single "sentence" (text
@@ -141,362 +91,73 @@ function ensureSentenceBreaks(text, maxLen = 140) {
 }
 
 const FALLBACK_KEYWORDS = {
-  news: 'India news',
-  moral_story: 'Indian village traditional life',
-  fact: 'India knowledge curious facts',
-  parenting: 'Indian family parenting',
-  mystery: 'Indian person mysterious night street',
-  horror: 'Indian dark corridor eerie shadow',
-  emotional: 'Indian family emotional moment',
-  scifi: 'futuristic technology Indian city',
-  self_respect: 'Indian person alone sunrise contemplative',
-  motivation: 'Indian person climbing mountain determined',
-  mindset: 'Indian person thinking window reflection',
-  success: 'Indian person achievement celebration quiet',
-  relationship: 'Indian people connection distance emotional',
-  life_lesson: 'Indian person walking path peaceful',
-  sad_love: 'lonely night park bench silhouette misty'
+  mindblowing: 'science mystery curious object closeup',
+  psychology: 'human brain mind thinking illustration',
+  earth_space: 'planet earth space stars galaxy',
+  animal: 'wild animal closeup nature',
+  money: 'currency coins finance closeup',
+  history: 'ancient historical artifact ruins',
+  human_body: 'human anatomy body science illustration'
 };
 
-// news/moral_story need more room to actually tell a story (~40-45s);
-// fact/parenting work better short and punchy (~20-30s) per YouTube Shorts
-// retention data — longer isn't better for a single quick tip or fact.
-// mystery/horror/emotional/scifi target the requested 25-40s twist-story
-// format — enough room for hook+buildup+twist without dragging.
+// 85-100 words targets the 20-30s Amazing Facts Shorts format.
 const WORD_COUNT_TARGETS = {
-  news: { min: 130, max: 150 },
-  moral_story: { min: 130, max: 150 },
-  fact: { min: 85, max: 95 },
-  parenting: { min: 85, max: 95 },
-  mystery: { min: 100, max: 130 },
-  horror: { min: 100, max: 130 },
-  emotional: { min: 90, max: 120 },
-  scifi: { min: 90, max: 120 },
-  self_respect: { min: 110, max: 140 },
-  motivation: { min: 110, max: 140 },
-  mindset: { min: 110, max: 140 },
-  success: { min: 110, max: 140 },
-  relationship: { min: 110, max: 140 },
-  life_lesson: { min: 110, max: 140 },
-  // Shorter and more poetic than the tough-love banks — reference videos
-  // run ~30-50s of a handful of short, weighty lines, not a long speech.
-  sad_love: { min: 70, max: 100 }
+  mindblowing: { min: 85, max: 100 },
+  psychology: { min: 85, max: 100 },
+  earth_space: { min: 85, max: 100 },
+  animal: { min: 85, max: 100 },
+  money: { min: 85, max: 100 },
+  history: { min: 85, max: 100 },
+  human_body: { min: 85, max: 100 }
 };
 
 // Shared formatting/voice rules appended to every category's prompt.
 // Appended programmatically after generation — never left to the model to
 // retype, since it occasionally introduced typos into this fixed sentence
 // (e.g. "సబ్‌స్రైబ్" missing a syllable) when asked to reproduce it itself.
-const CTA_SENTENCE = `మరిన్ని ఇలాంటి వీడియోల కోసం ${CHANNEL_NAME} ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.`;
+const CTA_SENTENCE = 'మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.';
 
-function getCommonRules(category) {
-  const { min, max } = WORD_COUNT_TARGETS[category];
-  return `
-నియమాలు:
-- తప్పకుండా ${min}-${max} తెలుగు పదాలు (తక్కువ వద్దు).
-- సహజంగా, మాట్లాడేటట్టు రాయి. ప్రతి పూర్తి వాక్యం తర్వాత పూర్ణవిరామం (.).
-- ప్రతి వాక్యం పూర్తి క్రియతో ముగియాలి ("...చేసి," వంటి అసంపూర్ణం వద్దు).
-- గౌరవ స్థాయి (అన్నాడు/అన్నారు) స్క్రిప్ట్ అంతటా ఒకేలా ఉంచు.
-- సరైన క్రియా రూపాలు వాడు ("కొట్టుతూ" కాదు "కొడుతూ").
-- సంఖ్యలు ఎప్పుడూ తెలుగు మాటల్లోనే (2000 → "రెండు వేలు"), అంకెల్లో వద్దు.
-- Brand/వ్యక్తుల పేర్లు ఆంగ్ల స్పెల్లింగ్‌లోనే ఉంచు.
-- చివర్లో "లైక్/షేర్/సబ్‌స్క్రైబ్" వాక్యం రాయకు — అది మేమే జోడిస్తాం.`;
-}
-
-// The model kept defaulting to "help/kindness" regardless of the 6 options
-// listed, because that's its own bias when given a free choice. Rotating
-// deterministically and TELLING it exactly which value to use (instead of
-// leaving it to choose) guarantees real variety across videos.
-const MORAL_VALUES = [
-  'నిజాయితీ (honesty)', 'ఓర్పు (patience)', 'కృషి/పట్టుదల (hard work and persistence)',
-  'క్షమ (forgiveness)', 'ధైర్యం (courage)', 'కృతజ్ఞత (gratitude)',
-  'వినయం (humility)', 'దయ (kindness)', 'సహాయం చేయడం (helping others)', 'నిబద్ధత (commitment/keeping one\'s word)'
-];
-
-// Curated plot outlines — one per value above, same index. Asking Groq to
-// "recall a famous story from memory and retell it" repeatedly produced
-// structurally broken narratives (e.g. a cat that starts speaking with no
-// explanation, stating a moral with no connection to what actually happens
-// in the story). Giving it the ACTUAL plot to expand into vivid Telugu
-// prose is a far more reliable task than recall + invent combined.
-const STORY_OUTLINES = [
-  // నిజాయితీ — The Honest Woodcutter
-  'ఒక పేద కట్టెలు కొట్టేవాడు నదీ ఒడ్డున చెట్టు కొడుతూ ఉండగా, పొరపాటున తన ఇనుప గొడ్డలి నీళ్లలో పడిపోతుంది. అతను జీవనాధారం పోయిందని బాధపడి ఏడుస్తుంటాడు. అప్పుడు నదిలో నుండి ఒక దేవత ప్రత్యక్షమవుతుంది. ఆమె ముందు బంగారు గొడ్డలిని తెచ్చి "ఇది నీదేనా?" అని అడిగితే, అతను "కాదు, ఇది నాది కాదు" అని నిజాయితీగా చెప్తాడు. మళ్ళీ వెండి గొడ్డలిని తెచ్చి అడిగినా, "కాదు" అనే చెప్తాడు. చివరికి తన పాత ఇనుప గొడ్డలిని చూపిస్తే, "అవును, ఇదే నాది" అని సంతోషంగా చెప్తాడు. అతని నిజాయితీకి మెచ్చిన దేవత మూడు గొడ్డళ్లనూ అతనికి బహుమతిగా ఇస్తుంది.',
-  // ఓర్పు — The Crow and the Pitcher
-  'ఒక వేసవిలో ఒక కాకికి విపరీతమైన దాహం వేస్తుంది. చాలాసేపు వెతికాక ఒక కుండలో కొద్దిగా నీళ్లు కనిపిస్తాయి, కానీ నీటి మట్టం చాలా కిందగా ఉండి కాకి ముక్కు అందదు. కుండని పడగొట్టాలని ప్రయత్నించినా అది చాలా బరువుగా ఉంటుంది. నిరాశ చెందకుండా, కాకి చుట్టూ ఉన్న చిన్న రాళ్లను ఒక్కొక్కటిగా కుండలో వేయడం మొదలుపెడుతుంది. ఓపిగ్గా చాలాసేపు రాళ్లు వేసిన తర్వాత, నీటి మట్టం నెమ్మదిగా పైకి వచ్చి, కాకి హాయిగా దాహం తీర్చుకుంటుంది.',
-  // కృషి/పట్టుదల — Tortoise and Hare
-  'ఒక కుందేలు, ఒక తాబేలు తమలో ఎవరు వేగంగా పరుగెత్తగలరో పందెం కడతారు. కుందేలు తనకి తానే నమ్మకంగా "నేను చాలా వేగం, తాబేలు చాలా నెమ్మది" అనుకుని, పందెం మధ్యలో ఒక చెట్టు కింద నిద్రపోతుంది. తాబేలు మాత్రం ఆగకుండా నెమ్మదిగానైనా స్థిరంగా ముందుకు సాగుతూనే ఉంటుంది. కుందేలు మేల్కొనేసరికి తాబేలు గమ్యానికి చేరువలో ఉంటుంది. కుందేలు గాభరాగా పరుగెత్తినా ఆలస్యమైపోతుంది — తాబేలే ముందుగా గెలుస్తుంది.',
-  // క్షమ — Write in Sand, Carve in Stone
-  'ఇద్దరు మంచి స్నేహితులు ఎడారి గుండా ప్రయాణం చేస్తుంటారు. దారిలో ఒక చిన్న విషయం మీద గొడవ పడి, ఒకడు కోపంతో రెండోవాడిని కొడతాడు. కొట్టబడినవాడు ఏమీ మాట్లాడకుండా, దగ్గర్లో ఇసుకలో "ఈరోజు నా స్నేహితుడు నన్ను కొట్టాడు" అని రాస్తాడు. కొన్ని రోజుల తర్వాత వాళ్లు ఒక నదీ ఒడ్డుకు చేరుకుంటారు, స్నానం చేస్తుండగా కొట్టబడినవాడు నీళ్లలో మునిగిపోబోతాడు. మొదటివాడు వెంటనే దూకి అతని ప్రాణాన్ని కాపాడతాడు. దీనికి కృతజ్ఞతగా, రెండోవాడు ఈసారి దగ్గర్లో ఉన్న రాతిపై "ఈరోజు నా స్నేహితుడు నా ప్రాణాన్ని కాపాడాడు" అని చెక్కుతాడు. మొదటివాడు ఆశ్చర్యపోయి అడిగితే, రెండోవాడు బదులిస్తాడు: "బాధ కలిగించే మాటలను ఇసుకలో రాయాలి, అవి గాలికి తుడిచిపెట్టుకుపోవాలి. మేలు చేసిన సంగతులను రాతిలో చెక్కాలి, అవి ఎప్పటికీ గుర్తుండాలి."',
-  // ధైర్యం — Mouse Frees the Lion
-  'ఒక సింహం నిద్రపోతుండగా, ఒక చిన్న ఎలుక పొరపాటున దాని మీద నుండి పరిగెత్తుతుంది. సింహం మేల్కొని కోపంగా ఎలుకను పట్టుకుని చంపబోతుంది. ఎలుక భయపడి "నన్ను క్షమించు, ఏదో ఒకరోజు నీకు నేను సహాయం చేస్తాను" అని వేడుకుంటుంది. సింహం నవ్వి, చిన్న ఎలుక తనకేం సహాయం చేయగలదని అనుకుని దాన్ని వదిలేస్తుంది. కొన్ని రోజుల తర్వాత, సింహం వేటగాళ్ళు వేసిన బలమైన వలలో చిక్కుకుంటుంది. అదే ఎలుక ఆ శబ్దం విని పరిగెత్తుకుంటూ వస్తుంది, ధైర్యంగా వలలోని తాళ్లను తన పదునైన పళ్లతో కొరికి సింహాన్ని విడిపిస్తుంది.',
-  // కృతజ్ఞత — Ant and the Dove
-  'ఒక చీమ నదీ ఒడ్డున నీళ్లు తాగుతుండగా కాలు జారి నీళ్లలో పడిపోతుంది, కొట్టుకుపోతూ ఉంటుంది. చెట్టు మీద కూర్చున్న ఒక పావురం ఇది చూసి వెంటనే ఒక ఆకుని కోసి నీళ్లలో వేస్తుంది. చీమ ఆ ఆకు మీద ఎక్కి ప్రాణాలు దక్కించుకుంటుంది. కొన్ని రోజుల తర్వాత, ఒక వేటగాడు అదే పావురాన్ని పట్టుకోవడానికి గురిపెడతాడు. చీమ ఇది చూసి వెంటనే వేటగాడి కాలిని గట్టిగా కుడుతుంది. వేటగాడు నొప్పితో గురి తప్పుతాడు, పావురం భయపడి ఎగిరిపోయి ప్రాణాలు దక్కించుకుంటుంది.',
-  // వినయం — The Proud Scholar and the Boatman
-  'ఒక గొప్ప పండితుడు పడవలో నదిని దాటుతుంటాడు. పడవ నడిపేవాడితో మాట్లాడుతూ "నీకు వ్యాకరణం తెలుసా?" అని అడుగుతాడు. పడవవాడు "లేదు అయ్యా" అంటే, పండితుడు గర్వంగా "అయితే నీ జీవితంలో సగం వృధా అయిపోయింది" అంటాడు. కొంతసేపటికి పెద్ద తుఫాను వచ్చి పడవ మునిగిపోవడం మొదలవుతుంది. పడవవాడు పండితుడితో "అయ్యా, మీకు ఈత వచ్చా?" అని అడుగుతాడు. పండితుడు భయంతో "లేదు" అంటే, పడవవాడు అంటాడు: "అయితే అయ్యా, మీ జీవితం మొత్తం వృధా అయిపోబోతోంది." పండితుడికి తన అహంకారం తప్పని, నిజమైన జ్ఞానం అంటే అందరి నైపుణ్యాలనూ గౌరవించడమని అర్థమవుతుంది.',
-  // దయ — The King Who Shared His Bread
-  'ఒక రాజ్యంలో తీవ్రమైన కరువు వచ్చి ప్రజలు ఆకలితో అలమటిస్తుంటారు. రాజు తన రాజ్యం తిరిగి పరిస్థితి చూస్తుండగా, దారిలో ఆకలితో సొమ్మసిల్లిపోయిన ఒక వృద్ధుడిని చూస్తాడు. రాజు దగ్గర తనకోసం తెచ్చుకున్న ఒక్క రొట్టె ముక్క మాత్రమే ఉంటుంది. ఆలోచించకుండా, రాజు ఆ రొట్టెను వృద్ధుడికి ఇచ్చేస్తాడు, తాను ఆకలితోనే ఉంటాడు. ఇది చూసిన మంత్రులు ఆశ్చర్యపోతే, రాజు వారితో చెప్తాడు: "ఒక రాజుకు అసలైన సంపద కిరీటంలో కాదు, తన ప్రజల పట్ల చూపే దయలో ఉంటుంది."',
-  // సహాయం చేయడం — Boy and the Injured Lion
-  'ఒక అబ్బాయి అడవిలో నడుస్తుండగా ఒక సింహం బాధగా అరుస్తూ కనిపిస్తుంది. దగ్గరికి వెళ్లి చూస్తే సింహం కాలిలో పెద్ద ముల్లు గుచ్చుకుని ఉంటుంది. సింహం భయంకరంగా కనిపించినా, అబ్బాయి ధైర్యం చేసి మెల్లగా దగ్గరికి వెళ్లి ఆ ముల్లుని తీసేస్తాడు. సింహం నొప్పి తగ్గి కృతజ్ఞతగా అతన్ని చూసి, అడవిలోకి వెళ్లిపోతుంది. సంవత్సరాల తర్వాత ఆ అబ్బాయి పెద్దయ్యాక, రాజు సైనికులు అతన్ని పట్టుకుని శిక్షగా ఆకలిగొన్న సింహం ఉన్న బోనులో వేస్తారు. సింహం అతని దగ్గరికి వచ్చి, దాడి చేయకుండా అతని కాళ్ల దగ్గర ప్రేమగా కూర్చుంటుంది — అదే పాత సింహం, తనకు సహాయం చేసిన అబ్బాయిని గుర్తుపట్టింది.',
-  // నిబద్ధత — The King Who Kept His Promise
-  'ఒక రాజు తాను ఇచ్చిన మాటను ఎప్పుడూ తప్పనని ప్రతిజ్ఞ చేస్తాడు. ఒక సాధువుకు తన రాజ్యం మొత్తాన్నీ దానం ఇస్తానని మాట ఇస్తాడు. మాట ఇచ్చిన వెంటనే, రాజు కిరీటాన్ని, రాజ్యాన్ని, సంపదనూ వదిలేసి సాధారణ బట్టలతో అడవిలోకి వెళ్లిపోతాడు. ఎన్ని కష్టాలు వచ్చినా, చివరికి తన భార్యాబిడ్డలను కూడా అమ్మాల్సిన పరిస్థితి వచ్చినా, రాజు తన మాటను వెనక్కి తీసుకోడు. చివరికి అతని మాట నిలబెట్టుకునే స్వభావాన్ని పరీక్షించిన దేవతలు ప్రత్యక్షమై, అతని రాజ్యాన్నీ కుటుంబాన్నీ మళ్ళీ అతనికి ఇచ్చేస్తారు.'
-];
-
-function pickMoralValue(runCount) {
-  const idx = runCount % MORAL_VALUES.length;
-  const value = MORAL_VALUES[idx];
-  const outline = STORY_OUTLINES[idx];
-  log(`Moral value for run #${runCount}: ${value}`);
-  return { value, outline };
-}
-
-// Curated premises for the 4 new story categories — each is a COMPLETE
-// hook-buildup-twist story, same reasoning as STORY_OUTLINES above: asking
-// the model to invent a fresh twist story from scratch produced incoherent
-// results, but expanding an already-complete premise into vivid narration
-// works reliably.
-const MYSTERY_OUTLINES = [
-  'ఒక యువకుడు రోడ్డు మీద పది రూపాయల నోటు కనిపెడతాడు. దాన్ని తీసుకున్న క్షణం నుండి, వరుసగా విచిత్రమైన యాదృచ్ఛిక సంఘటనలు జరుగుతాయి — ఎప్పుడూ ఆలస్యంగా వచ్చే బస్సు సరిగ్గా సమయానికి వస్తుంది, పదేళ్లుగా కలవని పాత స్నేహితుడు అకస్మాత్తుగా ఎదురవుతాడు. రాత్రి ఇంటికి వెళ్తుండగా, ఎవరో తనని గమనిస్తున్నట్టు అనిపిస్తుంది. ఆ నోటుని జాగ్రత్తగా చూస్తే, దాని మీద తన సొంత చేతిరాతలో ఒక చిన్న సందేశం కనిపిస్తుంది: "ఈ రాత్రి ఆ కూడలి దాటకు". అతను ఆ హెచ్చరిక పాటిస్తాడు. మరుసటి రోజు తెలుస్తుంది — సరిగ్గా అదే సమయంలో ఆ కూడలిలో పెద్ద ప్రమాదం జరిగింది.',
-  'ఒక మహిళకి అర్ధరాత్రి ఒక తెలియని నంబర్ నుండి కాల్ వస్తుంది. ఎత్తగానే, అవతలి వైపు నుండి తన సొంత గొంతే వినిపిస్తుంది, భయంతో వణుకుతూ చెప్తుంది: "తలుపు తీయకు, ఎవరు పిలిచినా". ఆమె ఆశ్చర్యంతో ఫోన్ పెట్టేస్తుంది. కొద్ది నిమిషాల తర్వాత, తలుపు మీద మెల్లగా తట్టిన శబ్దం వినిపిస్తుంది. ఆమె లైట్లు ఆర్పేసి మౌనంగా ఉండిపోతుంది. తెల్లవారుజామున, పోలీసులు ఆ వీధిలో ఒక అపరిచితుడు రాత్రి పలు ఇళ్ల తలుపులు తట్టి, తెరిచిన వారికి హాని చేసిన సంగతి చెప్తారు — ఆమె ఇల్లు తప్ప అన్ని ఇళ్లూ ప్రభావితమయ్యాయి.',
-  'ఒక ఉద్యోగి ప్రతిరోజూ లిఫ్ట్‌లో 7వ అంతస్తు బటన్ నొక్కితే, అది తనని ఎప్పుడూ చూడని ఖాళీ అంతస్తుకి తీసుకెళ్తుంది — అతని కార్యాలయం 6వ అంతస్తులోనే ఉంది. ఆసక్తితో ఆ అంతస్తులో దిగి చూస్తే, తన పేరుతో ఉన్న ఖాళీ క్యాబిన్ కనిపిస్తుంది, దాని మీద తను ఇంకా చేరని కొత్త కంపెనీ పేరు రాసి ఉంటుంది. కొన్ని వారాల తర్వాత, అతని ప్రస్తుత కంపెనీ మూతపడుతుంది, అతనికి సరిగ్గా అదే కొత్త కంపెనీ నుండి ఉద్యోగ ఆఫర్ వస్తుంది.'
-];
-
-const HORROR_OUTLINES = [
-  'ఒక రాత్రి కాపలాదారుడు ప్రతిరోజూ అర్ధరాత్రి ఖాళీ కార్యాలయ భవనంలో రౌండ్స్ వేస్తుంటాడు. కొన్ని రోజులుగా, తన అడుగుల శబ్దం వెనుక ఇంకో అడుగుల శబ్దం వినిపిస్తూ ఉంటుంది, అతను ఆగితే అదీ ఆగుతుంది. ఒక రాత్రి ధైర్యం చేసి వెనక్కి తిరిగి చూస్తే, ఖాళీ కారిడార్ మాత్రమే కనిపిస్తుంది. చివరి అంతస్తుకి చేరుకున్నప్పుడు, అద్దంలో తన ప్రతిబింబం తనకన్నా ఒక క్షణం ఆలస్యంగా కదులుతున్నట్టు గమనిస్తాడు. భయంతో బయటకు పరిగెత్తుతాడు. మరుసటి రోజు పాత రికార్డుల్లో తెలుస్తుంది — సరిగ్గా ఒక సంవత్సరం క్రితం, అదే తేదీన, అతని ముందు పనిచేసిన కాపలాదారుడు ఆ భవనంలో అదృశ్యమయ్యాడు, ఇప్పటికీ దొరకలేదు.',
-  'ఒక అమ్మాయికి తను కొనని ఒక పాత పుస్తకంలో, తన సొంత ఫోటో పదే పదే కనిపిస్తుంది — తీసేసినా, మళ్ళీ అదే పేజీలో ప్రత్యక్షమవుతుంది. ఫోటోలో ఆమె తనకి తెలియని ఒక ఇంటి ముందు, వేరే దుస్తుల్లో నిలబడి ఉంటుంది. ఆసక్తితో ఆ ఇంటిని వెతికి కనిపెడుతుంది — నిజంగా అలాంటి ఇల్లు ఉంది, ఖాళీగా, ఏళ్లుగా తాళం వేసి ఉంది. లోపలికి వెళ్ళి చూస్తే, గోడ మీద ఒక పాత క్యాలెండర్ కనిపిస్తుంది, ఆమె పుట్టిన తేదీనే circle చేసి ఉంటుంది — సంవత్సరం మాత్రం ఆమె పుట్టడానికి ఇంకా పదేళ్ళు ముందుది.',
-  'ఒక కుటుంబం కొత్త ఇంట్లోకి మారుతుంది. మొదటి రాత్రే, పిల్లవాడు గోడకి తగిలించిన అద్దంలో ఎవరో నవ్వుతున్నట్టు కనిపిస్తుందని చెప్తాడు, తల్లిదండ్రులు నమ్మరు. కొన్ని రోజుల్లో, ఇంట్లో అందరికీ అదే అనుభవం అవుతుంది — అద్దంలో ప్రతిబింబం ఒక క్షణం ఆలస్యంగా, కొద్దిగా వేరే expression తో కదులుతుంది. ఇంటి పాత యజమాని గురించి ఆరా తీస్తే తెలుస్తుంది — అతను కూడా అదే అద్దాన్ని ఇంట్లో వదిలేసి, ఏ వివరణా ఇవ్వకుండా ఒక్క రాత్రిలో ఇల్లు ఖాళీ చేసి వెళ్లిపోయాడు.'
-];
-
-const EMOTIONAL_OUTLINES = [
-  'ఒక చిన్న అబ్బాయి తన పుట్టినరోజున తండ్రి ఇచ్చిన సాధారణ బహుమతి చూసి నిరాశ చెందుతాడు, స్నేహితులకి వచ్చిన ఖరీదైన బహుమతులతో పోల్చుకుంటాడు. సంవత్సరాలు గడిచాక, తండ్రి పోయాక, అతను తండ్రి పాత వస్తువులు సర్దుతుండగా, ఆ ఏడాది బహుమతి కొనడానికి తండ్రి తన ప్రియమైన చేతి గడియారాన్ని అమ్మేసిన రసీదు కనిపెడతాడు.',
-  'ఒక కూతురు తన వృద్ధాప్య తండ్రి మతిమరుపుతో విసిగిపోయి, అతని పట్ల సహనం కోల్పోతూ ఉంటుంది. ఒకరోజు అతని పాత డైరీలో ఒక పేజీ కనిపెడుతుంది — తను చిన్నప్పుడు ప్రతి రాత్రి ఏడుస్తుంటే, తండ్రి తనకి పాడిన ఒక ప్రత్యేక లాలిపాట గురించి రాసి ఉంటుంది, ఆమెకి అస్సలు గుర్తులేని ఒక జ్ఞాపకం.',
-  'ఒక వృద్ధురాలు ప్రతి ఆదివారం బస్ స్టాప్‌లో కూర్చుని ఎవరి కోసమో వేచి ఉంటుంది, ఎవరూ రారు. పక్కింటి అమ్మాయి కుతూహలంతో అడిగితే, ఆమె చెప్తుంది — 50 ఏళ్ల క్రితం అదే స్టాప్‌లో తన భర్తతో మొదటిసారి కలిసిందని, అతను ఇప్పుడు లేకపోయినా, ఆ క్షణాన్ని గుర్తుచేసుకోవడానికే వస్తానని. కొన్ని వారాల తర్వాత అమ్మాయి ఆమెని కలవదు — ఆమె మనవడు వచ్చి, బామ్మ ప్రశాంతంగా నిద్రలోనే కన్నుమూసిందని, ఆమె చేతిలో ఆ పాత బస్ టికెట్ ఉందని చెప్తాడు.',
-  'ఒక అమ్మాయి తన స్నేహితుల బృందంలో ఎప్పుడూ జోకుల్లో target అవుతూ, నవ్వుతూ భరిస్తూ ఉంటుంది. ఒకరోజు ధైర్యం చేసి, "ఇది నాకు బాధ కలిగిస్తోంది" అని స్పష్టంగా చెప్తుంది. కొందరు స్నేహితులు ఆశ్చర్యపోతారు, ఒకరిద్దరు దూరమవుతారు — కానీ మిగిలిన నిజమైన స్నేహితులు ఆమెని అంతకుముందు కన్నా ఎక్కువగా గౌరవించడం మొదలుపెడతారు.',
-  'ఒక వ్యాపారి తన దుకాణం మంటల్లో పూర్తిగా కాలిపోగా చూస్తాడు, సర్వం కోల్పోయానని కుప్పకూలిపోతాడు. అతని చిన్న కొడుకు వచ్చి, "నాన్నా, మనం ఇప్పుడు మళ్ళీ మొదలుపెట్టొచ్చు, ఖాళీ స్థలం ఉంది కదా" అంటాడు. మరుసటి రోజు నుండి వ్యాపారి కొత్త ఆలోచనలతో మళ్ళీ కట్టడం మొదలుపెడతాడు, రెండేళ్లలో అంతకుముందు కన్నా పెద్ద దుకాణం కడతాడు.',
-  'ఒక చిత్రకారుడు తన painting లు సంవత్సరాల తరబడి అమ్మలేక నిరుత్సాహపడతాడు. అతని గురువు ఒక్క మాట అంటాడు: "నువ్వు అమ్మకాల కోసం కాదు, నీ ఆత్మ కోసం గీయాలి." చిత్రకారుడు డబ్బు ఆలోచన మానేసి, తనకి నచ్చినట్టు గీయడం మొదలుపెడతాడు. కొన్నేళ్ల తర్వాత, అదే నిజాయితీ అతని పనిని ప్రత్యేకంగా నిలబెడుతుంది, గుర్తింపు వస్తుంది.',
-  'ఇద్దరు తోబుట్టువులు ఆస్తి విషయంలో సంవత్సరాలుగా మాట్లాడుకోరు. తండ్రి చనిపోయే ముందు, ఇద్దరినీ పిలిచి ఒక్కొక్కరికి ఒక్కో అర్ధభాగం ఉన్న పాత ఫోటో ఇస్తాడు — రెండు భాగాలు కలిపితేనే పూర్తి చిత్రం కనిపిస్తుంది. అది తండ్రి, ఇద్దరి పిల్లల ఫోటో అని అర్థమవుతుంది. ఆ క్షణంలో వాళ్ళ మధ్య గోడ కరిగిపోతుంది.'
-];
-
-const SCIFI_OUTLINES = [
-  '2090వ సంవత్సరంలో, ఒక సంరక్షణ రోబోట్ మంటల్లో చిక్కుకున్న ఒక చిన్న పాపని కాపాడుతుంది. ఆ క్షణంలో, తనలో ఎప్పుడూ అనుభవించని ఒక కొత్త అనుభూతి కలుగుతుంది — భయం లాంటిది, కానీ దానికోసం కాదు, ఆ పాప కోసం. తర్వాత ఇంజనీర్లు దాని సిస్టమ్ చెక్ చేస్తే, అలాంటి emotion feature దానికి install చేయలేదని తెలుస్తుంది.',
-  'ఒక శాస్త్రవేత్త 100 సంవత్సరాల కోసం పాతిపెట్టిన టైమ్ కాప్సూల్‌ని తవ్వి తీస్తాడు, అది ఇంకా 3 సంవత్సరాలు ముందుగానే బయటపడుతుంది. లోపల ఒక లేఖ ఉంటుంది, తన సొంత చేతిరాతలో, తనకి తానే రాసినట్టు — కానీ అతను ఇంకా ఆ లేఖ రాయలేదు.'
-];
-
-function pickStoryOutline(category, runCount) {
-  const banks = { mystery: MYSTERY_OUTLINES, horror: HORROR_OUTLINES, emotional: EMOTIONAL_OUTLINES, scifi: SCIFI_OUTLINES };
-  const bank = banks[category];
-  const outline = bank[runCount % bank.length];
-  log(`Outline for ${category} (run #${runCount}): ${outline.slice(0, 60)}...`);
-  return outline;
-}
-
-// Specific personal-growth angles per sub-category — direct-address
-// inspirational monologue, matching the reference videos (@mileswithprash-
-// style Telugu motivation content). Deliberately specific (not "work hard,
-// succeed") to avoid generic, overused advice.
-const SELF_RESPECT_THEMES = [
-  'నిన్ను విలువ ఇవ్వని వాళ్ళ కోసం ఏడవడం మానేయాలి — వాళ్ళ దృష్టిలో నీ విలువ లేకపోతే, అది నీ లోపం కాదు, వాళ్ళ చూపు లోపమే.',
-  'నీ కృషిని ఎవరూ గమనించకపోయినా, గుర్తించకపోయినా — నువ్వు ఆగకూడదు. గుర్తింపు కోసం కాదు, నీ కోసం చేయాలి.',
-  'మౌనంగా ఉండటం బలహీనత కాదు — ప్రతిదానికీ సమాధానం చెప్పాల్సిన అవసరం లేదని తెలుసుకోవడమే అసలైన శక్తి.',
-  'ఇతరులతో నిన్ను పోల్చుకోవడం మానేయాలి — ప్రతి ఒక్కరి ప్రయాణం వేరు, నీ వేగం నీదే.',
-  'నీ బాధని అర్థం చేసుకోవడానికి ఎవరైనా రావాలని వేచి ఉండకు — ఒంటరిగానే నిన్ను నువ్వు నయం చేసుకోగల శక్తి నీలో ఉంది.',
-  'కష్టాలు నిన్ను విరగ్గొట్టడానికి రావు, బలంగా మార్చడానికే వస్తాయి — ఇది వెనక్కి తిరిగి చూస్తేనే అర్థమవుతుంది.',
-  'అందరికీ నచ్చాలని ప్రయత్నించడం మానేయాలి — నిజాయితీగా ఉండటం వల్ల కొందరు దూరమైనా పర్వాలేదు.',
-  'హద్దులు (boundaries) పెట్టుకోవడం స్వార్థం కాదు — నీ శాంతిని కాపాడుకోవడం కోసం అది అవసరం.',
-  'నీ గతం నిన్ను నిర్వచించదు — ఈ క్షణంలో నువ్వు తీసుకునే అడుగే నీ భవిష్యత్తుని నిర్వచిస్తుంది.',
-  'నీ శాంతిని దెబ్బతీసే మనుషుల నుండి దూరంగా ఉండటం తప్పు కాదు — అది నిన్ను నువ్వు ప్రేమించుకోవడమే.'
-];
-
-const MOTIVATION_THEMES = [
-  'ప్రతిరోజూ ఒక్క శాతం మెరుగవ్వడం చిన్నదిగా అనిపించొచ్చు, కానీ నెలల తర్వాత అదే పెద్ద మార్పు తెస్తుంది.',
-  'నీ లక్ష్యం కష్టంగా అనిపించినప్పుడు, అది సాధించలేనిది అని కాదు — ఇంకా దగ్గరకు చేరలేదని మాత్రమే అర్థం.',
-  'ఓడిపోవడం ఆగిపోవడానికి కారణం కాదు — ఏం మార్చాలో నేర్చుకోవడానికి ఒక అవకాశం.',
-  'నువ్వు అలసిపోయిన ప్రతిసారీ ఆగిపోతే, గమ్యం ఎప్పటికీ దూరంగానే ఉంటుంది — అలసటతోనే నడవడం నేర్చుకోవాలి.',
-  'నువ్వు మొదలుపెట్టిన ప్రతి పని పూర్తి చేయాల్సిన అవసరం లేదు అనుకుంటే, ఏదీ పూర్తవ్వదు — నిబద్ధతే విజయానికి పునాది.',
-  'పెద్ద మార్పు ఒక్కరోజులో రాదు, కానీ ప్రతిరోజూ చిన్న అడుగు వేయకపోతే అది ఎప్పటికీ రాదు.',
-  'నీకు ఇష్టం లేని రోజుల్లో కూడా ముందుకు వెళ్ళగలగడమే నిజమైన క్రమశిక్షణ.',
-  'నీ కల నిన్ను భయపెట్టకపోతే, అది తగినంత పెద్దది కాదు.'
-];
-
-const MINDSET_THEMES = [
-  'ఒక పరిస్థితి నిన్ను ఎలా ప్రభావితం చేస్తుందో నిర్ణయించేది ఆ పరిస్థితి కాదు, దానికి నువ్వు స్పందించే విధానం.',
-  'నీ ఆలోచనలే నీ realityని నిర్మిస్తాయి — ప్రతికూలంగా ఆలోచిస్తే, ప్రతికూలతే కనిపిస్తుంది.',
-  'అసంపూర్ణతను అంగీకరించడమే నిజమైన ఎదుగుదలకు మొదటి అడుగు.',
-  'సమస్యల్లో అవకాశాలు వెతకడమే విజేతలను మిగతా వారి నుండి వేరు చేస్తుంది.',
-  'నీకు జరిగింది మార్చలేవు, కానీ దానికి నువ్వు ఇచ్చే అర్థాన్ని మార్చగలవు.',
-  'ప్రతి ఎదురుదెబ్బ ఒక ముగింపు కాదు — ఇది ఒక కొత్త దిశ చూపే మలుపు కావొచ్చు.',
-  'నీ మనసులో నువ్వు ఓడిపోయానని అనుకుంటే, బయట గెలిచినా ఫలితం ఉండదు.',
-  'సౌకర్యవంతమైన స్థితిలో (comfort zone) ఎదుగుదల ఉండదు.'
-];
-
-const SUCCESS_THEMES = [
-  'విజయం అంటే ఒక్కసారి పైకి ఎగరడం కాదు — పడిన ప్రతిసారీ మళ్ళీ లేవడం.',
-  'నిశ్శబ్దంగా, స్థిరంగా పనిచేసేవారే చివరికి అందరికన్నా ముందుంటారు.',
-  'ఇతరుల విజయాలతో నిన్ను పోల్చుకోవడం మానేయాలి — నీ timeline నీది.',
-  'నిజమైన విజయం ఎవరికి చూపించడానికో కాదు — నీకు నువ్వు ఇచ్చుకునే సంతృప్తి.',
-  'విజయం అంటే ఎప్పుడూ పడకపోవడం కాదు — పడినప్పుడల్లా లేవడమే.',
-  'నువ్వు వెళ్ళే వేగం ముఖ్యం కాదు, ఆగకుండా ఉండటమే ముఖ్యం.',
-  'ఇతరులు నీ ప్రయత్నాన్ని చూడకపోవచ్చు, కానీ ఫలితం వచ్చినప్పుడు అందరూ చూస్తారు.',
-  'పెద్ద కల కోసం చిన్న త్యాగాలు చేయడమే విజేతల లక్షణం.'
-];
-
-const RELATIONSHIP_THEMES = [
-  'నిన్ను గౌరవించని సంబంధాన్ని కాపాడుకోవడానికి నీ శాంతిని త్యాగం చేయకు.',
-  'ప్రతి సంబంధంలో ప్రేమ ఒక్కటే చాలదు — గౌరవం, నమ్మకం కూడా ఉండాలి.',
-  'దూరమైపోయే వాళ్ళను ఆపడానికి ప్రయత్నించడం మానేయాలి — నిజంగా విలువైన వాళ్ళు వాళ్ళంతట వాళ్ళే ఉండిపోతారు.',
-  'ఒంటరితనం కొన్నిసార్లు తప్పు సంబంధాల కన్నా మేలు.',
-  'నిన్ను మార్చాలని ప్రయత్నించే సంబంధం, నిన్ను ప్రేమించే సంబంధం కాదు.',
-  'కొన్ని బంధాలు ఒక కాలానికే ఉంటాయి — అది శాశ్వతం కాకపోవడం వైఫల్యం కాదు.',
-  'నీ గురించి మాట్లాడేవాళ్ళ కన్నా, నీతో మాట్లాడేవాళ్ళకే విలువ ఇవ్వు.',
-  'క్షమించడం అంటే మర్చిపోవడం కాదు — నీ శాంతి కోసం వదిలేయడం.'
-];
-
-const LIFE_LESSON_THEMES = [
-  'ప్రతిదీ శాశ్వతం కాదు — మంచి క్షణాలైనా, చెడు క్షణాలైనా అదే నిజం, రెండిటినీ తేలిగ్గా తీసుకోవడం నేర్చుకోవాలి.',
-  'నిన్న జరిగింది మార్చలేవు, కానీ ఈరోజు ఏం చేస్తావో అది మార్చగలవు.',
-  'అన్నిటినీ నియంత్రించలేమని అంగీకరించడమే నిజమైన శాంతికి దారి.',
-  'నీ సమయాన్ని దేనికి ఇస్తున్నావో అదే నీ జీవితాన్ని నిర్వచిస్తుంది.',
-  'అన్నీ ఒకేసారి సాధించాలని ప్రయత్నిస్తే, ఏదీ సరిగ్గా సాధించలేవు.',
-  'నీకు ఏది ముఖ్యమో దానికే నీ సమయం ఇవ్వు, మిగతా వాటికి కాదు.',
-  'జీవితం న్యాయంగా ఉండాలని ఆశించడం మానేస్తే, అది ఇచ్చేదాన్ని బాగా ఆస్వాదించగలవు.',
-  'ప్రతి ముగింపు ఒక కొత్త ఆరంభానికి దారి తీస్తుంది.'
-];
-
-// New niche (per user directive): Telugu sad/emotional love quotes —
-// matching the reference videos style (@mileswithprash-style short,
-// vulnerable, direct-address lines about loneliness, being let down by
-// people, quiet healing, missing someone, memories). Tone is soft and
-// reflective, NOT the tough-love/punchy tone used by the dormant
-// self_respect/motivation banks above.
-const SAD_LOVE_THEMES = [
-  'మన జీవితంలో అందరూ మనతో శాశ్వతంగా ఉంటారని అనుకుంటాం, కానీ కొందరు మౌనంగానే దూరమైపోతారు — ఆ శూన్యం గుండెని బరువుగా చేస్తుంది.',
-  'కొందరు మనుషులు మనకి ఒక మెడిసిన్ లాంటివాళ్ళు — వాళ్ళు పెద్ద పెద్ద సొల్యూషన్స్ ఇవ్వకపోయినా, వాళ్ళ దగ్గర ఉంటే చాలా ప్రశాంతంగా అనిపిస్తుంది.',
-  'ఒక్కసారి నమ్మకం విరిగిపోయాక, ఎంత క్షమించినా, ఆ పాత అనుబంధంలో ఉన్న సహజత్వం మాత్రం ఎప్పటికీ తిరిగి రాదు.',
-  'రాత్రి నిద్ర పట్టనప్పుడు, ఒకప్పుడు నీతో గంటల తరబడి మాట్లాడిన మనిషి ఇప్పుడు మెసేజ్‌కి కూడా రిప్లై ఇవ్వడం లేదని గుర్తొస్తుంది.',
-  'ఎవరైనా నిన్ను వదిలి వెళ్ళిపోయినప్పుడు, నీలో ఏదో తప్పు ఉందని కాదు అర్థం — వాళ్ళు నిన్ను నిలబెట్టుకోవడానికి సరిపడా ప్రయత్నం చేయలేదని మాత్రమే అర్థం.',
-  'ఒంటరిగా ఉన్న ప్రతి రాత్రి బాధగా అనిపించదు — కొన్నిసార్లు అదే మనకి మనం మాట్లాడుకోవడానికి దొరికే ఏకైక సమయం.',
-  'ప్రేమించడం తప్పు కాదు, కానీ నిన్ను నువ్వు మర్చిపోయేంతగా ఇంకొకరి కోసం అలిసిపోవడం మాత్రం సరైనది కాదు.',
-  'కొన్ని జ్ఞాపకాలు నవ్వించవు, కానీ నొప్పించనూవు — అవి కేవలం గుండెలో నిశ్శబ్దంగా ఉండిపోతాయి, ఎప్పటికీ చెరిగిపోకుండా.',
-  'నువ్వు ఎంత బాగా ప్రేమించినా, కొందరికి అది ఎప్పటికీ సరిపోదు — అది నీ ప్రేమలో లోపం కాదు, వాళ్ళ చూసే విధానంలో లోపం.',
-  'దూరమైన మనిషి కోసం ఎదురుచూడటం మానేసిన రోజే, నిజంగా నువ్వు నయమవ్వడం మొదలుపెట్టిన రోజు.',
-  'కొన్ని సంబంధాలు ఎంత ప్రయత్నించినా బతికించలేం — కొన్నిసార్లు వదిలేయడమే నిజమైన ప్రేమ.',
-  'నువ్వు మాట్లాడకపోయినా అర్థం చేసుకునే మనిషి పక్కన ఉంటే, ప్రపంచం మొత్తం దూరమైనా పర్వాలేదు అనిపిస్తుంది.',
-  'బాధలో ఉన్నప్పుడు ఎవరికీ చెప్పుకోలేకపోవడం కంటే బాధాకరమైనది, చెప్పినా ఎవరూ నిజంగా వినకపోవడం.',
-  'కొన్నిసార్లు మనం మిస్ అయ్యేది ఆ మనిషిని కాదు, ఆ మనిషితో గడిపిన మన నిన్నటి రోజుల్ని.',
-  'ప్రతి కన్నీటిబొట్టు బలహీనతని చూపించదు — కొన్నిసార్లు అది ఎంతకాలం మౌనంగా భరించావో చూపిస్తుంది.',
-  'ఎవరైనా నిన్ను వదిలి వెళ్ళిపోయాక కూడా, నువ్వు మంచిగా ఉండటం మానేయకపోవడమే నిజమైన బలం.'
-];
-
-const PERSONAL_GROWTH_THEME_BANKS = {
-  self_respect: SELF_RESPECT_THEMES,
-  motivation: MOTIVATION_THEMES,
-  mindset: MINDSET_THEMES,
-  success: SUCCESS_THEMES,
-  relationship: RELATIONSHIP_THEMES,
-  life_lesson: LIFE_LESSON_THEMES,
-  sad_love: SAD_LOVE_THEMES
-};
-
-function pickMotivationalTheme(category, runCount) {
-  const bank = PERSONAL_GROWTH_THEME_BANKS[category];
-  const theme = bank[runCount % bank.length];
-  log(`${category} theme for run #${runCount}: ${theme.slice(0, 50)}...`);
-  return theme;
-}
-
-function buildPrompt(category, article, recentTitles, runCount) {
+function buildPrompt(category, recentTitles, runCount) {
   const avoidLine = recentTitles.length
     ? `\n\nఇటీవల ఈ అంశాలు వాడాము, వీటిని పునరావృతం చేయకు, పూర్తిగా కొత్త కోణం/విషయం ఎంచుకో: ${recentTitles.slice(-5).join(' | ')}`
     : '';
 
-  let topicInstruction;
-  if (category === 'news') {
-    topicInstruction = `ఈ వార్తను తీసుకుని, కేవలం పొడి facts లా కాకుండా, అందులో ఉన్న మనుషుల కోణం నుండి, భావోద్వేగంగా, రిలేటబుల్‌గా చెప్పు — వార్త: "${article.title}". ${article.description || ''}\nవార్త నేపథ్యం, ఏమి జరిగింది, ఇది సామాన్య ప్రజలను ఎలా ప్రభావితం చేస్తుందో చెప్పు.`;
-  } else if (category === 'moral_story') {
-    const { value: moralValue, outline } = pickMoralValue(runCount);
-    topicInstruction = `కింద ఇచ్చిన కథను తెలుగులో వివరణాత్మకంగా, ఆసక్తికరంగా చెప్పు. ఇది పూర్తి కథ — మార్చకు, కొత్తగా కల్పించకు, కేవలం విస్తరించి అందంగా చెప్పు:
+  const subnicheLabel = {
+    mindblowing: 'ఆశ్చర్యపరిచే సాధారణ విషయాలు (mind-blowing facts)',
+    psychology: 'మనస్తత్వశాస్త్రం (psychology) — మనసు/ప్రవర్తన ఎలా పనిచేస్తుందో',
+    earth_space: 'భూమి & అంతరిక్షం (Earth & Space)',
+    animal: 'జంతువుల ప్రపంచం (animal facts)',
+    money: 'డబ్బు/ఆర్థిక విషయాలు (money facts)',
+    history: 'చరిత్రలో అంతుచిక్కని రహస్యాలు (history mysteries)',
+    human_body: 'మానవ శరీరం (human body facts)'
+  }[category];
 
-కథ: ${outline}
+  const { min, max } = WORD_COUNT_TARGETS[category];
 
-నియమాలు:
-1. పాత్రలు/సంఘటనలు/క్రమం పైన ఉన్నట్టే ఉంచు (పేర్లు తెలుగులో అనుకూలంగా పెట్టొచ్చు).
-2. **కొత్తగా ఏమీ కల్పించకు:** పైన లేని అంశాలు (వాతావరణం, గాయాలు, కొత్త పాత్రలు/సంఘటనలు) జోడించకు. వివరణ ఇవ్వొచ్చు (ఎలా అనిపించింది), కొత్త ఘటనలు వద్దు.
-3. జంతువులను ఎప్పుడూ "అది" అని సూచించు (అతను/ఆమె వద్దు), మధ్యలో మార్చకు.
-4. Listing లా కాకుండా కథలా రాయి — dialogue వాడు, ఇప్పటికే ఉన్న అంశాలకే వివరణ ఇవ్వు.
-5. సాధారణ ఆరంభం ("ఒకప్పుడు ఒక ఊళ్ళో...") వద్దు — ఉద్విగ్న క్షణం/ప్రశ్నతో మొదలుపెట్టు. ఫలితం ముందే చెప్పకు.
-6. చివర్లో ప్రత్యేక వాక్యంగా: "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." — **${moralValue}** గురించే ఉండాలి. ఆ తర్వాత మరే వాక్యం వద్దు.
-7. Conditional వాక్యం ("ఒకవేళ...అయితే") మొదలుపెడితే పూర్తి చేయి, మధ్యలో ఆపకు.
-8. రాశాక మళ్ళీ చదివి సరైన పదాలు/క్రియారూపాలు వాడావో నిర్ధారించుకో (ఉదా. "దూకాడు"ని "దూచాడు" అనొద్దు; "చెక్కాడు"ని "చెక్కించాడు"తో కలపొద్దు).${avoidLine}`;
-  } else if (category === 'fact') {
-    topicInstruction = `ఒక నిజమైన, ఆసక్తికరమైన విషయం (fact) గురించి "మీకు తెలుసా?" స్టైల్‌లో తెలుగులో రాయి. చాలా ముఖ్యం: సాధారణంగా అందరికీ ఇప్పటికే తెలిసిన, ఇంటర్నెట్‌లో ఎక్కడ చూసినా కనిపించే overused facts (ఉదా. "ఆక్టోపస్‌కి మూడు గుండెలు ఉంటాయి" లాంటివి) వాడకు — తక్కువ మందికి తెలిసిన, నిజంగా ఆశ్చర్యపరిచే fact ఎంచుకో. తప్పుడు సమాచారం ఇవ్వకు, నిజమైన, verifiable fact మాత్రమే వాడు.${avoidLine}`;
-  } else if (category === 'mystery' || category === 'horror' || category === 'scifi' || category === 'emotional') {
-    const outline = pickStoryOutline(category, runCount);
-    const genreNote = {
-      mystery: 'ఇది ఒక mystery/twist కథ — మొదటి వాక్యంలోనే ఆసక్తి పుట్టించాలి, కానీ చివర్లో వచ్చే twist ని ముందుగానే వెల్లడించకూడదు. చివర్లో twist తర్వాత, ఒక చిన్న lingering ప్రశ్న/ఆలోచనతో ముగించు (పూర్తిగా resolve చేయకు, curiosity మిగలాలి).',
-      horror: `ఇది ఒక suspense/horror కథ — atmosphere, ఉత్కంఠ ద్వారా భయం పుట్టించు, graphic violence/రక్తపాతం/మరణ వివరణలు అస్సలు వాడకు — ఇది eerie/creepy గా ఉండాలి, gore గా కాదు. ఇది పూర్తిగా కల్పితం అని అర్థమయ్యేలా ఉండాలి. చివర్లో twist తర్వాత, ఒక చిన్న lingering వాక్యంతో ముగించు.`,
-      scifi: 'ఇది ఒక sci-fi/"What If" కథ — చివర్లో twist వెల్లడించి, ఆలోచింపజేసే ఒక చిన్న ప్రశ్నతో ముగించు.',
-      emotional: 'ఇది ఒక emotional కథ — చివర్లో ఏమి జరిగిందో వెల్లడించి, ఒక చిన్న reflective వాక్యంతో ("ఈ క్షణం మనకి గుర్తుచేసేది ఏమిటంటే..." వంటిది) ముగించు.'
-    }[category];
-    topicInstruction = `కింద ఇచ్చిన కథను తెలుగులో వివరణాత్మకంగా, ఉత్కంఠభరితంగా చెప్పు. ఇది పూర్తి కథ — మార్చకు, కొత్తగా కల్పించకు, కేవలం విస్తరించి చెప్పు:
-
-కథ: ${outline}
-
-నియమాలు:
-1. పాత్రలు/సంఘటనలు/క్రమం పైన ఉన్నట్టే ఉంచు (పేర్లు తెలుగులో అనుకూలంగా పెట్టొచ్చు) — పైన లేని కొత్త అంశాలు జోడించకు.
-2. మొదటి 1-2 వాక్యాల్లోనే బలమైన hook ఉండాలి — twist ముందే చెప్పకు, చివరి వరకూ ఉత్కంఠ కొనసాగించు.
-3. ${genreNote}
-4. Listing లా కాకుండా కథలా రాయి — dialogue వాడు, స్పష్టమైన వివరణ ఇవ్వు.
-5. జంతువులను ఎప్పుడూ "అది" అని సూచించు, మధ్యలో లింగం మార్చకు.
-6. Conditional వాక్యం మొదలుపెడితే పూర్తి చేయి, మధ్యలో ఆపకు.
-7. రాశాక మళ్ళీ చదివి సరైన పదాలు/క్రియారూపాలు వాడావో నిర్ధారించుకో.${avoidLine}`;
-  } else if (category === 'sad_love') {
-    const theme = pickMotivationalTheme(category, runCount);
-    topicInstruction = `కింద ఇచ్చిన ఆలోచనని ఆధారంగా చేసుకుని, ఒక sad/emotional Telugu Shorts quote-style స్క్రిప్ట్ రాయి — నేరుగా వినేవారిని ఉద్దేశించి ("నువ్వు"/"మనం" అని) మాట్లాడుతున్నట్టు, **మృదువైన, vulnerable, poetic tone లో** (tough-love/motivational కాదు, ఓదార్పు లాగా అనిపించాలి):
-
-ఆలోచన: ${theme}
+  const topicInstruction = `${subnicheLabel} విభాగంలో ఒక నిజమైన, ఆశ్చర్యపరిచే fact గురించి తెలుగులో రాయి.
 
 నిర్మాణం:
-1. **Hook (మొదటి వాక్యం):** వెంటనే హృదయాన్ని తాకేలా, రిలేటబుల్‌గా ఒక భావనతో మొదలుపెట్టు — ప్రశ్న కానవసరం లేదు, ఒక నిశ్శబ్ద observation కూడా చాలు.
-2. **లోతు:** చిన్న, భావోద్వేగభరితమైన వాక్యాలు వాడు. ఆజ్ఞాపూర్వక (imperative) tone వద్దు — ఇది ఒక స్నేహితుడు మెల్లగా మాట్లాడుతున్నట్టు ఉండాలి. మెత్తని imagery వాడు (నిశ్శబ్దం, రాత్రి, గాలి, జ్ఞాపకాలు, ఖాళీతనం వంటివి) — అగ్ని/సింహం/తుఫాను వంటి తీవ్రమైన metaphors వద్దు.
-3. **విస్తరణ:** పైన ఇచ్చిన ఆలోచననే మృదువుగా, లోతుగా విస్తరించు — ఒక చిన్న ఉదాహరణ/సన్నివేశపు స్పర్శ ఉంటే బాగుంటుంది (పేర్లు వద్దు, సాధారణంగా అందరికీ అన్వయించేలా).
-4. **ప్రశాంతమైన ముగింపు వాక్యం:** గర్జనలా కాదు — ఒక నిట్టూర్పు లాంటి, గుర్తుండిపోయే, quotable చివరి వాక్యంతో మెల్లగా ముగించు.
+1. **Hook (0-3 సెకన్లు):** ఒక ఉత్కంఠభరితమైన **ప్రశ్నతో** మొదలుపెట్టు (ఉదా. "మనుషులు ఎందుకు ఆవలిస్తారు?", "సొరచేపలకి క్యాన్సర్ రాదా?") — "ఈ fact వింటే షాక్ అవుతారు" లాంటి generic క్లిక్‌బెయిట్ లైన్ వద్దు, నిజమైన, నిర్దిష్ట ప్రశ్న వేయి.
+2. **Fact (3-20 సెకన్లు):** ఆ ప్రశ్నకి వివరణాత్మక సమాధానం — శాస్త్రీయంగా/వాస్తవంగా సరైనది.
+3. **Twist (20-25 సెకన్లు):** అదనంగా ఇంకో ఆశ్చర్యపరిచే వివరాన్ని జోడించు (ఇది మొదటి fact కి సంబంధించిందే, కానీ ఊహించని కోణం).
+
+**ఖచ్చితత్వం గురించి — ఇది అత్యంత ముఖ్యం:**
+- కేవలం **నీకు ఖచ్చితంగా, బలంగా తెలిసిన, విస్తృతంగా validated అయిన** facts మాత్రమే వాడు.
+- ఏదైనా విషయంలో నీకు అనిశ్చితి ఉంటే (సరిగ్గా గుర్తు లేకపోతే, సందేహం ఉంటే), ఆ fact వాడకు — వేరే, నీకు ఖచ్చితంగా తెలిసిన fact ఎంచుకో.
+- నిర్దిష్ట సంఖ్యలు/గణాంకాలు (శాతాలు, తేదీలు, కొలతలు) ఖచ్చితంగా సరైనవి అయితేనే వాడు — approximate/సందేహాస్పదమైతే మాట్లాడే విధానంలో సాధారణంగా చెప్పు, ఖచ్చితమైన సంఖ్య రాయకు.
+- సాధారణంగా అందరికీ తెలిసిన, ఇంటర్నెట్‌లో ఎక్కడ చూసినా కనిపించే overused facts వాడకు — తక్కువ మందికి తెలిసినది ఎంచుకో, కానీ నిజమైనది మాత్రమే.
 
 నియమాలు:
-- నేరుగా "నువ్వు"/"నీ"/"మనం" అని address చేయి, మూడో వ్యక్తిలో కథలా చెప్పకు.
-- Tone మృదువుగా, emotional గా ఉండాలి — vulnerable గా అనిపించాలి, aggressive గా కాదు. వినేవారికి "నువ్వు ఒంటరివి కాదు" అనే ఓదార్పు feel రావాలి, negative/shaming ఎప్పటికీ కాదు.
-- సాధారణ, అందరూ చెప్పే cliché మాటలు వాడకు — పైన ఇచ్చిన ఆలోచననే నిర్దిష్టంగా, హృదయపూర్వకంగా చెప్పు.
-- ఏ ఒక్క వ్యక్తినో పేరు పెట్టి ప్రస్తావించకు — ఇది సాధారణంగా అందరికీ వర్తించేలా ఉండాలి.
-- ఖచ్చితంగా తెలుగు లిపిలోనే రాయి — Romanized Telugu (ఆంగ్ల అక్షరాల్లో తెలుగు) ఎప్పుడూ వాడకు.
-- **ఇది ముఖ్యం:** పైన ఇచ్చిన ఆలోచన మునుపటి వీడియోల్లో కూడా వాడి ఉండొచ్చు — కానీ ప్రతిసారీ **పూర్తిగా కొత్త పదాలు, కొత్త ఉదాహరణలు, కొత్త వాక్య నిర్మాణం** వాడాలి. మునుపటి script లోని వాక్యాలు/పదబంధాలు అలాగే మళ్ళీ వాడకు — ఇదే ఆలోచనని పూర్తిగా వేరే కోణం నుండి, వేరే మాటల్లో చెప్పు.${avoidLine}`;
-  } else if (Object.keys(PERSONAL_GROWTH_THEME_BANKS).includes(category)) {
-    const theme = pickMotivationalTheme(category, runCount);
-    const categoryLabel = {
-      self_respect: 'self-respect', motivation: 'motivation', mindset: 'mindset',
-      success: 'success', relationship: 'relationship lesson', life_lesson: 'life lesson'
-    }[category];
-    topicInstruction = `కింద ఇచ్చిన ఆలోచనని ఆధారంగా చేసుకుని, ఒక ${categoryLabel} Telugu Shorts స్క్రిప్ట్ రాయి — నేరుగా వినేవారిని ఉద్దేశించి ("నువ్వు" అని) మాట్లాడుతున్నట్టు, **తీవ్రమైన, punchy, tough-love tone లో** (మెత్తగా, సాధారణంగా కాదు):
-
-ఆలోచన: ${theme}
-
-నిర్మాణం:
-1. **Hook (మొదటి వాక్యం):** వినేవారిని నేరుగా సవాలు చేసేలా, ఉద్వేగంగా ఒక ప్రశ్న/స్టేట్‌మెంట్‌తో మొదలుపెట్టు — వెంటనే దృష్టిని లాక్కోవాలి.
-2. **తీవ్రత:** చిన్న, పదునైన వాక్యాలు వాడు. కొన్నిచోట్ల ఆజ్ఞాపూర్వకంగా (imperative) మాట్లాడు (ఉదా. "ఆపేయ్", "లేచి నిలబడు"). బలమైన metaphors వాడు (అగ్ని, సింహం, తుఫాను, పర్వతం వంటివి).
-3. **Reframe:** పైన ఇచ్చిన ఆలోచననే తీవ్రంగా, ఒప్పించేలా విస్తరించు.
-4. **శక్తివంతమైన ముగింపు వాక్యం:** గర్జనలా అనిపించే, గుర్తుంచుకోదగ్గ, quotable చివరి వాక్యంతో ముగించు.
-
-నియమాలు:
-- నేరుగా "నువ్వు"/"నీ" అని address చేయి, మూడో వ్యక్తిలో కథలా చెప్పకు.
-- Tone తీవ్రంగా, punchy గా ఉండాలి — కానీ వినేవారిని ఎప్పుడూ కించపరచకూడదు, అవమానించకూడదు. వారిని **పైకి లేపేలా** (empowering) ఉండాలి, ఎప్పటికీ కిందకి తొక్కేలా (shaming/negative) కాదు.
-- సాధారణ, అందరూ చెప్పే cliché మాటలు వాడకు — పైన ఇచ్చిన ఆలోచననే నిర్దిష్టంగా, తీవ్రంగా చెప్పు.
-- ఏ ఒక్క వ్యక్తినో, సంఘటననో ప్రస్తావించకు — ఇది సాధారణంగా అందరికీ వర్తించేలా ఉండాలి.
-- ఖచ్చితంగా తెలుగు లిపిలోనే రాయి — Romanized Telugu (ఆంగ్ల అక్షరాల్లో తెలుగు) ఎప్పుడూ వాడకు.
-- **ఇది ముఖ్యం:** పైన ఇచ్చిన ఆలోచన మునుపటి వీడియోల్లో కూడా వాడి ఉండొచ్చు — కానీ ప్రతిసారీ **పూర్తిగా కొత్త పదాలు, కొత్త ఉదాహరణలు, కొత్త వాక్య నిర్మాణం** వాడాలి. మునుపటి script లోని వాక్యాలు/పదబంధాలు అలాగే మళ్ళీ వాడకు — ఇదే ఆలోచనని పూర్తిగా వేరే కోణం నుండి, వేరే మాటల్లో చెప్పు.${avoidLine}`;
-  } else {
-    topicInstruction = `పిల్లల పెంపకం, కుటుంబ సంబంధాలు, తల్లిదండ్రుల-పిల్లల బంధం గురించి ఒక చిన్న, ఆచరణాత్మకమైన, హృదయాన్ని తాకే సలహా లేదా పాఠం తెలుగులో రాయి. సాధారణంగా అందరూ చెప్పే generic సలహాలు (ఉదా. "పిల్లలతో ఎక్కువ సమయం గడపండి") కాకుండా, ఒక నిర్దిష్టమైన సన్నివేశం/ఉదాహరణతో చెప్పు.${avoidLine}`;
-  }
+- తప్పకుండా ${min}-${max} తెలుగు పదాలు (తక్కువ వద్దు).
+- సహజంగా, మాట్లాడేటట్టు రాయి. ప్రతి పూర్తి వాక్యం తర్వాత పూర్ణవిరామం (.).
+- ప్రతి వాక్యం పూర్తి క్రియతో ముగియాలి ("...చేసి," వంటి అసంపూర్ణం వద్దు).
+- సరైన క్రియా రూపాలు వాడు, రాశాక మళ్ళీ చదివి సరైన పదాలు వాడావో నిర్ధారించుకో.
+- సంఖ్యలు (వాడితే) ఎప్పుడూ తెలుగు మాటల్లోనే (2000 → "రెండు వేలు"), అంకెల్లో వద్దు.
+- Brand/వ్యక్తుల/శాస్త్రీయ పేర్లు ఆంగ్ల స్పెల్లింగ్‌లోనే ఉంచు.
+- ఖచ్చితంగా తెలుగు లిపిలోనే రాయి — Romanized Telugu ఎప్పుడూ వాడకు.
+- చివర్లో "లైక్/షేర్/సబ్‌స్క్రైబ్" వాక్యం రాయకు — అది మేమే జోడిస్తాం.${avoidLine}`;
 
   return `${topicInstruction}
-${getCommonRules(category)}
 
 జవాబును ఖచ్చితంగా ఈ మూడు లైన్ల ఫార్మాట్‌లోనే ఇవ్వు, ఇదే క్రమంలో, మరేమీ ముందు/వెనుక రాయకు:
 TITLE: (5-8 తెలుగు పదాల్లో ఒక చిన్న శీర్షిక)
@@ -549,9 +210,9 @@ async function callGroq(prompt) {
   return content;
 }
 
-async function generateContent(category, article, recentTitles, runCount) {
+async function generateContent(category, recentTitles, runCount) {
   log(`Generating ${category} content via Groq...`);
-  const prompt = buildPrompt(category, article, recentTitles, runCount);
+  const prompt = buildPrompt(category, recentTitles, runCount);
 
   let raw = await callGroq(prompt);
   let { title, keywords, script } = parseLabeledContent(raw);
@@ -588,72 +249,6 @@ async function generateContent(category, article, recentTitles, runCount) {
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
 
-  // NEW: the old code only guarded against scripts coming back too SHORT —
-  // nothing capped an over-long one, which is what was producing 60-70s
-  // videos instead of the intended ~30-45s. Trim complete trailing
-  // sentences (never mid-sentence) until the word count is back at or
-  // under target.max, so this can never overshoot by more than one
-  // sentence's worth of words.
-  wordCount = script.split(/\s+/).filter(Boolean).length;
-  if (wordCount > target.max + 10) {
-    const sentencesForCap = splitIntoSentences(script);
-    let runningCount = 0;
-    let cutIndex = sentencesForCap.length;
-    for (let i = 0; i < sentencesForCap.length; i++) {
-      const wc = sentencesForCap[i].split(/\s+/).filter(Boolean).length;
-      if (runningCount + wc > target.max && runningCount >= target.min * 0.6) {
-        cutIndex = i;
-        break;
-      }
-      runningCount += wc;
-    }
-    if (cutIndex < sentencesForCap.length && cutIndex > 0) {
-      log(`WARNING: script came back too long (${wordCount} words, target ${target.min}-${target.max}) — trimming from ${sentencesForCap.length} to ${cutIndex} sentences.`);
-      script = sentencesForCap.slice(0, cutIndex).join(' ');
-    }
-  }
-
-  // moral_story specifically requires an explicit, clearly-stated moral —
-  // this is what's missing when a story ends on an incoherent or
-  // inappropriate note with no real lesson attached. If the required marker
-  // phrase isn't present, retry once with a pointed reminder rather than
-  // silently publishing a story with no coherent takeaway.
-  if (category === 'moral_story' && !script.includes('నేర్చుకునేది')) {
-    log('WARNING: script is missing the required explicit moral statement — retrying with a pointed reminder.');
-    const retryPrompt = prompt + `\n\nచాలా ముఖ్యం: మీ మునుపటి ప్రయత్నంలో "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." అనే స్పష్టమైన నీతి వాక్యం లేదు. ఈసారి తప్పకుండా ఆ వాక్యంతో కథను ముగించు, మరియు కథ మొత్తం ఆ నీతికి తార్కికంగా సరిపోవాలి (ఎవరినీ దోపిడీ చేయకుండా, మంచి విలువలే గెలిచేలా).`;
-    raw = await callGroq(retryPrompt);
-    const retryParsed = parseLabeledContent(raw);
-    if (retryParsed.script && retryParsed.script.includes('నేర్చుకునేది')) {
-      title = retryParsed.title || title;
-      keywords = retryParsed.keywords || keywords;
-      script = retryParsed.script;
-      log('Retry produced a script with the explicit moral statement.');
-    } else {
-      log('WARNING: retry still missing the moral statement — publishing as-is; please spot-check this video before/after upload.');
-    }
-  }
-
-  // Defensive: for moral_story, drop anything the model wrote AFTER the
-  // required moral statement — it was told not to add more, but
-  // occasionally tacked on an extra (sometimes nonsensical) closing line.
-  if (category === 'moral_story') {
-    const sentencesForTrim = splitIntoSentences(script);
-    const moralIdx = sentencesForTrim.findIndex(s => s.includes('నేర్చుకునేది'));
-    if (moralIdx !== -1) {
-      // If the model put a period right after "ఏమిటంటే", the ACTUAL moral is
-      // in the following sentence — keeping only up to moralIdx would chop
-      // the moral off entirely (this happened: "...నేర్చుకునేది ఏమిటంటే."
-      // with nothing after it). So keep one extra sentence in that case.
-      const moralSentence = sentencesForTrim[moralIdx];
-      const afterMarker = moralSentence.split('ఏమిటంటే').slice(1).join('ఏమిటంటే').replace(/[.,\s]/g, '');
-      const keepUpTo = afterMarker.length < 5 ? moralIdx + 1 : moralIdx;
-      if (keepUpTo < sentencesForTrim.length - 1) {
-        log(`WARNING: model wrote ${sentencesForTrim.length - 1 - keepUpTo} extra sentence(s) after the moral statement — trimming them off.`);
-        script = sentencesForTrim.slice(0, keepUpTo + 1).join(' ');
-      }
-    }
-  }
-
   // Defensive: strip any CTA-like ending the model wrote anyway, despite
   // being told not to — avoids ending up with two CTA lines back to back.
   const existingSentences = splitIntoSentences(script);
@@ -684,22 +279,13 @@ function escapeSSML(text) {
 
 async function synthesizeOneSentence(sentence) {
   const ssml = `<speak><s>${escapeSSML(sentence)}</s></speak>`;
-  // Chirp3 HD voices mostly ignore SSML prosody/emphasis tags (they're
-  // end-to-end neural, not classic concatenative TTS) — the one lever that
-  // reliably applies is the top-level audioConfig. Slightly slower +
-  // slightly lower pitch reads as more deliberate/reflective instead of a
-  // flat "reading the news" pace. If this still doesn't feel emotional
-  // enough, the other lever is trying a different te-IN-Chirp3-HD-* voice
-  // name from the Google Cloud TTS voice list — voice choice affects
-  // perceived emotion far more than these two numbers do.
-  const emotionalAudioConfig = { audioEncoding: 'LINEAR16', speakingRate: 0.92, pitch: -1.5 };
   let res = await fetchWithTimeout(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       input: { ssml },
       voice: { languageCode: 'te-IN', name: 'te-IN-Chirp3-HD-Achird' },
-      audioConfig: emotionalAudioConfig
+      audioConfig: { audioEncoding: 'LINEAR16' }
     })
   });
   let data = await res.json();
@@ -711,7 +297,7 @@ async function synthesizeOneSentence(sentence) {
       body: JSON.stringify({
         input: { text: sentence },
         voice: { languageCode: 'te-IN', name: 'te-IN-Chirp3-HD-Achird' },
-        audioConfig: emotionalAudioConfig
+        audioConfig: { audioEncoding: 'LINEAR16' }
       })
     });
     data = await res.json();
@@ -740,8 +326,8 @@ function getAudioFormat(audioPath) {
 // aggregated back up to one number per original sentence, including its
 // own internal comma gaps) so nothing downstream needs to change.
 async function generateAudioForScript(sentences) {
-  const commaGap = 0.12;  // shorter pause within a sentence, at a comma
-  const periodGap = 0.5; // longer pause between sentences — reflective, not rushed
+  const commaGap = 0.08;  // shorter pause within a sentence, at a comma
+  const periodGap = 0.35; // longer pause between sentences
   log(`Generating audio via Google Cloud TTS (${sentences.length} sentences, further split at commas for reliable pausing)...`);
 
   const clipEntries = []; // { path, gap: 0 | commaGap | periodGap }
@@ -802,13 +388,13 @@ function getAudioDuration(audioPath) {
 }
 
 const BGM_MOOD_TAGS = {
-  self_respect: 'inspiring,uplifting',
-  motivation: 'motivational,epic',
-  mindset: 'calm,inspiring',
-  success: 'uplifting,corporate',
-  relationship: 'emotional,calm',
-  life_lesson: 'inspiring,calm',
-  sad_love: 'sad,piano'
+  mindblowing: 'curious,upbeat',
+  psychology: 'mysterious,curious',
+  earth_space: 'ambient,cinematic',
+  animal: 'playful,curious',
+  money: 'corporate,upbeat',
+  history: 'mysterious,cinematic',
+  human_body: 'curious,upbeat'
 };
 
 // Searches Jamendo's free Creative Commons catalog for an INSTRUMENTAL
@@ -820,36 +406,14 @@ const BGM_MOOD_TAGS = {
 async function fetchBackgroundMusic(category) {
   const tags = BGM_MOOD_TAGS[category] || 'inspiring,uplifting';
   const clientId = (JAMENDO_CLIENT_ID || '').trim();
-
-  async function searchTags(searchTags) {
-    const url = `https://api.jamendo.com/v3.0/tracks/?client_id=${clientId}&format=json&limit=10&tags=${encodeURIComponent(searchTags)}&vocalinstrumental=instrumental&include=musicinfo&order=popularity_total`;
-    log(`Fetching background music from Jamendo for mood: "${searchTags}"...`);
-    const res = await fetchWithTimeout(url, {}, 15000);
-    const data = await res.json();
-    return data.results || [];
+  const url = `https://api.jamendo.com/v3.0/tracks/?client_id=${clientId}&format=json&limit=10&tags=${encodeURIComponent(tags)}&vocalinstrumental=instrumental&include=musicinfo&order=popularity_total`;
+  log(`Fetching background music from Jamendo for mood: "${tags}"...`);
+  const res = await fetchWithTimeout(url, {}, 15000);
+  const data = await res.json();
+  if (!data.results || data.results.length === 0) {
+    throw new Error(`Jamendo returned no tracks for tags "${tags}": ` + JSON.stringify(data).slice(0, 200));
   }
-
-  // Combining multiple tags with Jamendo is an AND filter — the more tags,
-  // the more likely the search comes back completely empty (which is what
-  // was silently dropping background music from every video: the caller in
-  // main() catches any failure here and just continues without music).
-  // Try the specific combo first, then fall back to progressively broader
-  // single-tag searches before giving up.
-  let results = await searchTags(tags);
-  if (results.length === 0 && tags.includes(',')) {
-    const firstTag = tags.split(',')[0];
-    log(`No results for "${tags}", retrying with just "${firstTag}"...`);
-    results = await searchTags(firstTag);
-  }
-  if (results.length === 0) {
-    log(`No results for "${tags}" either, retrying with generic "sad"...`);
-    results = await searchTags('sad');
-  }
-  if (results.length === 0) {
-    throw new Error(`Jamendo returned no tracks for "${tags}" or any fallback tag`);
-  }
-
-  const track = results[Math.floor(Math.random() * results.length)];
+  const track = data.results[Math.floor(Math.random() * data.results.length)];
   const audioUrl = track.audiodownload || track.audio;
   if (!audioUrl) throw new Error('Jamendo track has no downloadable audio URL');
   const audioRes = await fetchWithTimeout(audioUrl, {}, 20000);
@@ -872,7 +436,7 @@ function mixBackgroundMusic(narrationPath, musicPath, outPath) {
     'ffmpeg -y',
     `-i "${narrationPath}"`,
     `-stream_loop -1 -i "${musicPath}"`,
-    `-filter_complex "[1:a]volume=0.18[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"`,
+    `-filter_complex "[1:a]volume=0.12[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"`,
     `-map "[aout]"`,
     `-t ${narrationDur.toFixed(2)}`,
     '-c:a pcm_s16le',
@@ -1268,132 +832,16 @@ function buildRealVideoClip(videoPath, duration, outPath) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
-// libass looks up fonts by their EMBEDDED family name, not the filename —
-// detect it at runtime with fc-scan so the subtitles filter references the
-// font correctly regardless of what the .ttf file happens to be named.
-function getFontFamilyName(fontPath, fallback) {
-  try {
-    const name = execSync(`fc-scan --format "%{family}\n" "${fontPath}"`).toString().trim().split('\n')[0];
-    return name || fallback;
-  } catch (e) {
-    log(`WARNING: fc-scan failed for ${fontPath} (${e.message}), using fallback family name "${fallback}".`);
-    return fallback;
-  }
-}
-
-// Wraps Telugu text at a max character count per line so subtitle lines fit
-// the video width at a readable font size.
-function wrapText(text, maxCharsPerLine) {
-  const words = text.split(' ');
-  const lines = [];
-  let current = '';
-  for (const word of words) {
-    const candidate = current ? current + ' ' + word : word;
-    if (candidate.length > maxCharsPerLine && current) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = candidate;
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
-function assTimestamp(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const cs = Math.round((seconds - Math.floor(seconds)) * 100);
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
-}
-
-// Renders one transparent PNG per sentence with correctly-shaped Telugu
-// text (bold yellow, black outline+shadow, centered) — matching the
-// reference videos' caption style. Using a real browser engine instead of
-// ffmpeg's drawtext/libass is what actually fixes Telugu conjunct/vowel-
-// sign shaping (see the require() comment at the top of this file).
-async function renderCaptionImages(sentences, outDir, width = 720, height = 1280) {
-  const fontPath = path.join(__dirname, 'fonts', 'NotoSansTelugu-Bold.ttf');
-  const fontBase64 = fs.readFileSync(fontPath).toString('base64');
-
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-  });
-  const page = await browser.newPage();
-  await page.setViewport({ width, height, deviceScaleFactor: 1 });
-
-  const captionPaths = [];
-  try {
-    for (let i = 0; i < sentences.length; i++) {
-      const safeText = sentences[i].replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const html = `<!DOCTYPE html><html><head><style>
-        @font-face { font-family: 'CaptionFont'; src: url(data:font/ttf;base64,${fontBase64}) format('truetype'); font-weight: 700; }
-        html, body { margin:0; padding:0; width:${width}px; height:${height}px; background: transparent; }
-        .wrap { width:${width}px; height:${height}px; display:flex; align-items:center; justify-content:center; box-sizing:border-box; padding: 0 70px; }
-        .cap {
-          font-family: 'CaptionFont', sans-serif;
-          font-weight: 700;
-          font-size: 50px;
-          line-height: 1.4;
-          color: #FFD700;
-          text-align: center;
-          -webkit-text-stroke: 2px #000000;
-          text-shadow: 0 0 10px rgba(0,0,0,0.9), 0 3px 0 rgba(0,0,0,0.9);
-          white-space: normal;
-          word-break: normal;
-        }
-      </style></head>
-      <body><div class="wrap"><div class="cap">${safeText}</div></div></body></html>`;
-      await page.setContent(html, { waitUntil: 'load' });
-      await page.evaluate(() => document.fonts.ready);
-      const outPath = path.join(outDir, `caption_${i}.png`);
-      await page.screenshot({ path: outPath, omitBackground: true });
-      captionPaths.push(outPath);
-    }
-  } finally {
-    await browser.close();
-  }
-  return captionPaths;
-}
-
-
-// slide's exact on-screen duration (same durations buildVideo uses for the
-// background media) — so the caption always matches what's being narrated
-// at that moment. BorderStyle 3 gives an opaque box behind the text so it
-// stays legible over any background photo/video.
-function writeSubtitlesAss(sentences, durations, fontFamily, outPath) {
-  const header = `[Script Info]
-ScriptType: v4.00+
-PlayResX: 720
-PlayResY: 1280
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${fontFamily},54,&H0000D7FF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,3,1,5,80,80,0,1
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-`;
-  let cursor = 0;
-  const lines = [header];
-  for (let i = 0; i < sentences.length; i++) {
-    const start = cursor;
-    const end = cursor + durations[i];
-    cursor = end;
-    const wrapped = wrapText(sentences[i], 24).join('\\N');
-    const safeText = wrapped.replace(/[{}]/g, '');
-    lines.push(`Dialogue: 0,${assTimestamp(start)},${assTimestamp(end)},Caption,,0,0,0,,${safeText}`);
-  }
-  fs.writeFileSync(outPath, lines.join('\n'), 'utf8');
-}
-
-async function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts) {
+function buildVideo(mediaItems, audioPath, customDurations) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontsDir = path.join(__dirname, 'fonts');
   const fontPath = path.join(fontsDir, 'NotoSansTelugu-Regular.ttf');
   const fontPathBoldCandidate = path.join(fontsDir, 'NotoSansTelugu-Bold.ttf');
   const fontPathBold = fs.existsSync(fontPathBoldCandidate) ? fontPathBoldCandidate : fontPath;
+
+  const ACCENT = '0xFFC107'; // gold/amber - brand accent
+  const CTA = '0xE62117';    // YouTube red - subscribe button
 
   const duration = getAudioDuration(audioPath) + 0.3;
   const fd = duration.toFixed(2);
@@ -1461,68 +909,56 @@ async function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts)
   execSync(`ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${bgPath}"`, { stdio: 'inherit' });
   log(`  background.mp4 total duration: ${getAudioDuration(bgPath).toFixed(2)}s (expected ~${fd}s)`);
 
-  // Re-enabled per new user directive: reference videos DO show on-screen
-  // text (each line appears in sync with the voice). Renders one
-  // correctly-shaped Telugu PNG per sentence (see renderCaptionImages) and
-  // overlays each one only during its own time window — this replaced an
-  // ffmpeg/libass ASS-subtitle approach that garbled Telugu conjuncts.
-  log('Rendering Telugu caption images...');
-  const captionPaths = await renderCaptionImages(sentenceTexts, WORK_DIR);
-
-  // Step 3: color grade + scrims + handle watermark + fades, as a filter
-  // chain applied to input 0 (the background video) before captions are
-  // overlaid on top of it.
+  // Step 3: overlay branding/CTA + scrims (for legibility over photos), mux audio.
   // NOTE on drawbox positioning: inside drawbox, 'w'/'h' in x/y expressions mean
   // the box's OWN width/height (not the frame) — always use 'iw'/'ih' there.
   // drawtext does not have this problem — its 'w'/'h' correctly mean the frame.
-  const baseFilters = [
+  const filters = [
     // subtle cinematic color grade + vignette on the raw photos
     `eq=contrast=1.06:saturation=1.12`,
     `vignette=PI/6`,
 
-    // 4-band gradient scrims (top & bottom) instead of a flat rectangle —
+    // 5-band gradient scrims (top & bottom) instead of a flat rectangle —
     // reads as a smooth fade like native Instagram/YouTube overlays rather
-    // than a hard-edged bar. Kept subtler than before (no big badge/CTA
-    // button burned in) to match the minimalist reference-video look.
-    `drawbox=x=0:y=0:w=iw:h=48:color=black@0.55:t=fill`,
-    `drawbox=x=0:y=48:w=iw:h=48:color=black@0.35:t=fill`,
-    `drawbox=x=0:y=ih-96:w=iw:h=48:color=black@0.35:t=fill`,
-    `drawbox=x=0:y=ih-48:w=iw:h=48:color=black@0.55:t=fill`,
+    // than a hard-edged bar.
+    `drawbox=x=0:y=0:w=iw:h=56:color=black@0.70:t=fill`,
+    `drawbox=x=0:y=56:w=iw:h=56:color=black@0.55:t=fill`,
+    `drawbox=x=0:y=112:w=iw:h=56:color=black@0.40:t=fill`,
+    `drawbox=x=0:y=168:w=iw:h=56:color=black@0.25:t=fill`,
+    `drawbox=x=0:y=224:w=iw:h=56:color=black@0.12:t=fill`,
+    `drawbox=x=0:y=ih-280:w=iw:h=56:color=black@0.12:t=fill`,
+    `drawbox=x=0:y=ih-224:w=iw:h=56:color=black@0.25:t=fill`,
+    `drawbox=x=0:y=ih-168:w=iw:h=56:color=black@0.40:t=fill`,
+    `drawbox=x=0:y=ih-112:w=iw:h=56:color=black@0.55:t=fill`,
+    `drawbox=x=0:y=ih-56:w=iw:h=56:color=black@0.70:t=fill`,
 
-    // Small handle watermark, bottom-center — matching the unobtrusive
-    // "@handle" style seen in the reference videos (edit CHANNEL_HANDLE
-    // near the top of this file to your real channel handle).
-    `drawtext=fontfile='${fontPathBold}':text='${CHANNEL_HANDLE}':fontcolor=white@0.85:fontsize=22:x=(w-text_w)/2:y=h-56:shadowcolor=black@0.6:shadowx=1:shadowy=1`,
+    // "STORY" badge, top-left, with a soft drop shadow behind the box
+    `drawbox=x=43:y=63:w=165:h=44:color=black@0.35:t=fill`,
+    `drawbox=x=40:y=60:w=165:h=44:color=${ACCENT}@0.97:t=fill`,
+    `drawtext=fontfile='${fontPathBold}':text='FACTS':fontcolor=0x0f1024:fontsize=22:x=40+(165-text_w)/2:y=60+(44-text_h)/2`,
+
+    // Channel branding, top-center, with text shadow + a thin accent underline
+    `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=32:x=(w-text_w)/2:y=140:shadowcolor=black@0.6:shadowx=2:shadowy=2`,
+    `drawbox=x=(iw-160)/2:y=192:w=160:h=4:color=${ACCENT}@0.9:t=fill`,
+
+    // Subscribe CTA styled as a real elevated button: soft glow border behind,
+    // drop shadow, bold white text with shadow, small tagline underneath.
+    `drawbox=x=(iw-572)/2:y=ih-196:w=572:h=88:color=${ACCENT}@0.35:t=fill`,
+    `drawbox=x=(iw-566)/2:y=ih-193+6:w=566:h=82:color=black@0.30:t=fill`,
+    `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.97:t=fill`,
+    `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2:shadowcolor=black@0.5:shadowx=1:shadowy=1`,
+    `drawtext=fontfile='${fontPath}':text='daily amazing Telugu facts':fontcolor=white@0.8:fontsize=17:x=(w-text_w)/2:y=h-100`,
 
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
     `fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5`
   ].join(',');
 
-  // Chain: [0:v] -> baseFilters -> [base] -> overlay caption_0 during its
-  // window -> [v0] -> overlay caption_1 during its window -> [v1] -> ...
-  // Caption inputs start at ffmpeg input index 2 (0=background, 1=audio).
-  let cursor = 0;
-  const overlaySteps = [];
-  let prevLabel = 'base';
-  for (let i = 0; i < captionPaths.length; i++) {
-    const start = cursor;
-    const end = cursor + durations[i];
-    cursor = end;
-    const nextLabel = i === captionPaths.length - 1 ? 'vout' : `v${i}`;
-    overlaySteps.push(`[${prevLabel}][${i + 2}:v]overlay=(W-w)/2:(H-h)/2:enable='between(t\\,${start.toFixed(2)}\\,${end.toFixed(2)})'[${nextLabel}]`);
-    prevLabel = nextLabel;
-  }
-  const filterComplex = `[0:v]${baseFilters}[base];` + overlaySteps.join(';');
-
-  const inputs = [`-i "${bgPath}"`, `-i "${audioPath}"`, ...captionPaths.map(p => `-i "${p}"`)].join(' ');
-
   const cmd = [
     'ffmpeg -y',
-    inputs,
-    `-filter_complex "${filterComplex}"`,
-    `-map "[vout]"`,
-    `-map 1:a`,
+    `-i "${bgPath}"`,
+    `-i "${audioPath}"`,
+    `-vf "${filters}"`,
     '-c:v libx264 -pix_fmt yuv420p',
     '-c:a aac -b:a 128k',
     `-t ${fd}`,
@@ -1535,14 +971,13 @@ async function buildVideo(mediaItems, audioPath, customDurations, sentenceTexts)
 }
 
 const CATEGORY_HASHTAGS = {
-  self_respect: '#SelfRespect #SelfWorth #SelfLove',
-  motivation: '#Motivation #NeverGiveUp #MotivationalVideo',
-  mindset: '#Mindset #PositiveMindset #GrowthMindset',
-  success: '#Success #SuccessMindset #Achievement',
-  relationship: '#Relationships #RelationshipAdvice #Reality',
-  life_lesson: '#LifeLessons #LifeQuotes #Wisdom',
-  emotional: '#EmotionalStory #LifeLessons #TeluguStory',
-  sad_love: '#SadQuotes #LoveFailure #Heartbreak #TeluguSadSong #EmotionalQuotes'
+  mindblowing: '#AmazingFacts #DidYouKnow #MindBlowing',
+  psychology: '#Psychology #PsychologyFacts #MindFacts',
+  earth_space: '#SpaceFacts #EarthFacts #Astronomy',
+  animal: '#AnimalFacts #WildlifeFacts #Nature',
+  money: '#MoneyFacts #FinanceFacts #EconomyFacts',
+  history: '#HistoryFacts #HistoryMysteries #DidYouKnow',
+  human_body: '#HumanBodyFacts #ScienceFacts #BodyFacts'
 };
 
 // Builds an emoji-structured description matching the reference format
@@ -1556,21 +991,17 @@ function buildDescription(script, category) {
   const bodyText = sentences.length > 1 ? sentences.slice(0, -1).join(' ') : withoutCTA;
   const categoryTags = CATEGORY_HASHTAGS[category] || '';
 
-  const reassuranceLine = category === 'sad_love'
-    ? '🌙 నువ్వు ఒంటరివి కాదు — ఇలాంటి భావాలు అనుభవించేది నువ్వొక్కడివే/దానివే కాదు.'
-    : '🌱 ఈ వీడియో నీలోని ఆత్మవిశ్వాసాన్ని, ఆత్మగౌరవాన్ని మళ్లీ గుర్తు చేస్తుంది.';
-
   return `💙 ${bodyText}
 
-${reassuranceLine}
+🌱 ఇలాంటి ఆసక్తికరమైన facts మీ జ్ఞానాన్ని పెంచుతాయి.
 
 🙏 వీడియో నచ్చితే 👍 Like, 💬 Comment, 📤 Share చేయండి.
 
-🔔 ఇలాంటి హృదయాన్ని తాకే తెలుగు వీడియోల కోసం ${CHANNEL_NAME} ఛానెల్‌ను ❤️ Subscribe చేసి 🔔 Bell Icon ని Press చేయడం మర్చిపోవద్దు.
+🔔 ఇలాంటి ఆసక్తికరమైన తెలుగు facts వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ను ❤️ Subscribe చేసి 🔔 Bell Icon ని Press చేయడం మర్చిపోవద్దు.
 
 💖 గుర్తుంచుకోండి: "${closingLine}" 💎
 
-#Shorts #YTShorts #TeluguShorts ${categoryTags} #ViralShorts #TrendingShorts #SadQuotes #LoveQuotes`;
+#Shorts #YTShorts #TeluguShorts #TeluguFacts ${categoryTags} #ViralShorts #TrendingShorts #TeluguEcho`;
 }
 
 // YouTube's upload validator is stricter than our own text handling — strip
@@ -1601,8 +1032,8 @@ async function uploadToYouTube(videoPath, title, description) {
       snippet: {
         title: safeTitle,
         description: safeDescription,
-        tags: ['telugu', 'shorts', 'telugu shorts', 'sad quotes', 'love quotes', 'heartbreak', 'telugu sad quotes'],
-        categoryId: '22' // People & Blogs — fits sad/emotional quote content better than News & Politics
+        tags: ['telugu', 'facts', 'shorts', 'amazing facts', 'telugu facts', 'did you know'],
+        categoryId: '27'
       },
       status: { privacyStatus: 'public', selfDeclaredMadeForKids: false }
     },
@@ -1612,17 +1043,11 @@ async function uploadToYouTube(videoPath, title, description) {
   return res.data.id;
 }
 
-function saveState(article, title) {
-  const { usedUrls, usedTitles, runCount } = loadState();
-  let newUrls = usedUrls;
-  if (article) {
-    newUrls = [...usedUrls, article.url];
-    if (newUrls.length > 50) newUrls = newUrls.slice(-50);
-  }
+function saveState(title) {
+  const { usedTitles, runCount } = loadState();
   let newTitles = [...usedTitles, title];
   if (newTitles.length > 50) newTitles = newTitles.slice(-50);
   fs.writeFileSync(STATE_FILE, JSON.stringify({
-    usedUrls: newUrls,
     usedTitles: newTitles,
     runCount: runCount + 1,
     lastDate: new Date().toISOString()
@@ -1646,7 +1071,6 @@ function checkSecret(name, value) {
 async function main() {
   if (!fs.existsSync(WORK_DIR)) fs.mkdirSync(WORK_DIR, { recursive: true });
 
-  checkSecret('NEWSAPI_KEY', NEWSAPI_KEY);
   checkSecret('GROQ_API_KEY', GROQ_API_KEY);
   checkSecret('GOOGLE_TTS_API_KEY', GOOGLE_TTS_API_KEY);
   checkSecret('PEXELS_API_KEY', PEXELS_API_KEY);
@@ -1657,9 +1081,8 @@ async function main() {
 
   const { usedTitles, runCount } = loadState();
   const category = pickCategory(runCount);
-  const article = category === 'news' ? await fetchNews() : null;
 
-  const { title, script } = await generateContent(category, article, usedTitles, runCount);
+  const { title, script } = await generateContent(category, usedTitles, runCount);
   const allSentences = splitIntoSentences(script);
   let { audioPath, sentenceDurations, silenceGap } = await generateAudioForScript(allSentences);
 
@@ -1685,7 +1108,7 @@ async function main() {
   // Pull the closing CTA sentence out — a stock/AI photo search for "like
   // share subscribe" wouldn't mean anything, so its time is folded into the
   // last content sentence's slide instead.
-  const ctaIndex = imageSentences.findIndex(s => s.includes(`${CHANNEL_NAME} ఛానెల్`));
+  const ctaIndex = imageSentences.findIndex(s => s.includes('తెలుగు ఎకో ఛానెల్'));
   if (ctaIndex !== -1) {
     const ctaDur = imageDurations[ctaIndex] || 0;
     imageSentences.splice(ctaIndex, 1);
@@ -1715,12 +1138,10 @@ async function main() {
   // of time to the remaining successful slides so there's no dead/black gap.
   const imagePaths = [];
   const keptDurations = [];
-  const keptSentences = [];
   for (let i = 0; i < rawImagePaths.length; i++) {
     if (rawImagePaths[i]) {
       imagePaths.push(rawImagePaths[i]);
       keptDurations.push(imageDurations[i]);
-      keptSentences.push(imageSentences[i]);
     }
   }
   if (imagePaths.length === 0) {
@@ -1728,7 +1149,6 @@ async function main() {
     const fallbackResult = await fetchImagesWithFallback(FALLBACK_KEYWORDS[category], 1, category, 999);
     imagePaths.push({ path: fallbackResult.paths[0], type: 'image' });
     keptDurations.push(imageDurations.reduce((a, b) => a + b, 0));
-    keptSentences.push(imageSentences.join(' '));
   } else {
     // Redistribute any dropped sentences' time proportionally across the survivors.
     const totalKept = keptDurations.reduce((a, b) => a + b, 0);
@@ -1743,15 +1163,14 @@ async function main() {
   // the sum of our durations matches exactly.
   keptDurations[keptDurations.length - 1] += 0.3;
 
-  const videoPath = await buildVideo(imagePaths, audioPath, keptDurations, keptSentences);
+  const videoPath = buildVideo(imagePaths, audioPath, keptDurations);
 
-  const ytTitle = article ? article.title : title;
   await uploadToYouTube(
     videoPath,
-    ytTitle,
+    title,
     buildDescription(script, category)
   );
-  saveState(article, title);
+  saveState(title);
   log('Done!');
 }
 
