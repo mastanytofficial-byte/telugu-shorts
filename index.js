@@ -149,13 +149,13 @@ const FALLBACK_KEYWORDS = {
 
 // 85-100 words targets the 20-30s Amazing Facts Shorts format.
 const WORD_COUNT_TARGETS = {
-  mindblowing: { min: 85, max: 100 },
-  psychology: { min: 85, max: 100 },
-  earth_space: { min: 85, max: 100 },
-  animal: { min: 85, max: 100 },
-  money: { min: 85, max: 100 },
-  history: { min: 85, max: 100 },
-  human_body: { min: 85, max: 100 }
+  mindblowing: { min: 110, max: 130 },
+  psychology: { min: 110, max: 130 },
+  earth_space: { min: 110, max: 130 },
+  animal: { min: 110, max: 130 },
+  money: { min: 110, max: 130 },
+  history: { min: 110, max: 130 },
+  human_body: { min: 110, max: 130 }
 };
 
 // Shared formatting/voice rules appended to every category's prompt.
@@ -182,6 +182,8 @@ ${outline}
 3. **Twist:** పైన ఇచ్చిన twist నే విస్తరించి, చిన్న పదునైన వాక్యాల్లో, reveal చేస్తున్నట్టు చెప్పు.
 
 **చాలా ముఖ్యం:** ప్రతి వాక్యం పైన ఇచ్చిన fact లోని ఏదో ఒక భాగానికి నేరుగా సంబంధించి ఉండాలి. Hook ప్రశ్న అడిగి, దానికి సమాధానం ఇవ్వకుండా వేరే ప్రశ్న/వాక్యం వైపు వెళ్ళకూడదు. పైన ఇచ్చిన వివరణలో లేని కొత్త సంఖ్యలు/గణాంకాలు/వాస్తవాలు స్వయంగా జోడించకు — ఇచ్చినదాన్నే వివరణాత్మకంగా చెప్పు.
+
+**పదాల సంఖ్య ఎలా పెంచాలి:** అదే వాక్యాలు మళ్ళీ మళ్ళీ అనొద్దు (repetition వద్దు), కొత్త, verify చేయని విషయాలు కల్పించకు — బదులుగా, ఇచ్చిన fact ని **richer గా వర్ణించు**: ఆ దృశ్యాన్ని కళ్ళకు కట్టేలా వివరణ ఇవ్వు, పోలికలు (analogies) వాడు ("ఇది దాదాపు ఇంత పరిమాణంలో ఉంటుంది" లాంటివి), hook ని కొంచెం విస్తరించి ఆసక్తిని ఎక్కువసేపు నిలబెట్టు, "why is this important" అనే కోణం జోడించు.
 
 **Delivery style గురించి:** వాయిస్ tone ని మనం control చేయలేం, కాబట్టి టెక్స్ట్ లోనే ఉత్సాహం కనిపించాలి:
 - పొడవైన, flat వాక్యాలు వద్దు — చిన్న, పదునైన వాక్యాలు వాడు, ముఖ్యంగా twist దగ్గర.
