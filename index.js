@@ -55,6 +55,53 @@ function pickCategory(runCount) {
   return category;
 }
 
+// Curated, fact-checked outlines (hook question + verified explanation +
+// twist, fully written) — one bank per sub-niche. Asking the model to
+// invent a fact AND its explanation from scratch produced incoherent
+// scripts (e.g. asking "why does the moon show one side?" and never
+// answering it, wandering into unrelated generic sentences instead).
+// Giving it a complete, accurate outline to expand into natural spoken
+// Telugu is both more coherent AND safer for accuracy — every fact below
+// was chosen because it's well-established, not something the model
+// might be uncertain about.
+const FACT_OUTLINES = {
+  mindblowing: [
+    'హుక్: ఒక రోజులో మీరు ఎంతమంది సూక్ష్మజీవులతో కలిసి జీవిస్తున్నారో తెలుసా? వివరణ: మన శరీరంలో ఉన్న బ్యాక్టీరియా కణాల సంఖ్య, మన సొంత మానవ కణాల సంఖ్యకు దాదాపు సమానం. మనం "శుద్ధంగా మనుషులం" అని అనుకుంటాం, కానీ నిజానికి మనం సూక్ష్మజీవులతో కలిసి జీవించే ఒక జీవావరణం లాంటివాళ్ళం. Twist: ఈ బ్యాక్టీరియాలు లేకపోతే, మనం ఆహారాన్ని సరిగ్గా జీర్ణం చేసుకోలేము, మన రోగనిరోధక వ్యవస్థ కూడా సరిగ్గా పనిచేయదు.',
+    'హుక్: మీ మెదడు ఎంత విద్యుత్తును ఉత్పత్తి చేస్తుందో తెలుసా? వివరణ: మానవ మెదడు నిరంతరం విద్యుత్ సంకేతాల ద్వారా పనిచేస్తుంది, ఇది సుమారు 20 వాట్ల శక్తిని ఉత్పత్తి చేస్తుంది — ఇది ఒక చిన్న LED బల్బు వెలిగించడానికి సరిపోతుంది. Twist: నిద్రలో ఉన్నప్పుడు కూడా మెదడు ఈ శక్తిని ఖర్చు చేస్తూనే ఉంటుంది, ఎందుకంటే నిద్ర "మెదడు ఆఫ్ అవ్వడం" కాదు, అది జ్ఞాపకాలను క్రమబద్ధీకరించే active ప్రక్రియ.'
+  ],
+  psychology: [
+    'హుక్: మీరు ఒక పాట వినకుండానే, అది మీ తలలో మళ్ళీ మళ్ళీ ఎందుకు మోగుతూనే ఉంటుంది? వివరణ: దీన్ని "ఇయర్‌వార్మ్" అంటారు — మెదడు అసంపూర్తిగా విన్న లేదా పదేపదే విన్న సంగీత భాగాలను loop లో ప్లే చేస్తుంది, ఎందుకంటే మెదడుకి అసంపూర్తి patterns ని పూర్తి చేయాలనే సహజ ధోరణి ఉంటుంది. Twist: ఆసక్తికరంగా, ఆ పాటనే పూర్తిగా చివరి వరకూ వినడం ఈ loop ని ఆపడానికి బాగా సహాయపడుతుందని పరిశోధనలు చెప్తున్నాయి.',
+    'హుక్: మీరు అబద్ధం చెప్తున్నప్పుడు, మీ కళ్ళు నిజంగా ఒక ప్రత్యేక దిశలో కదులుతాయా? వివరణ: ఇది చాలా ప్రాచుర్యంలో ఉన్న ఒక అపోహ మాత్రమే — శాస్త్రీయ పరిశోధనలు కంటి కదలికలకి, అబద్ధం చెప్పడానికి మధ్య ఎలాంటి నమ్మదగిన సంబంధం లేదని రుజువు చేశాయి. Twist: నిజానికి, అబద్ధాలు చెప్పేవారిని పట్టుకోవడంలో మనుషులు (శిక్షణ పొందిన నిపుణులతో సహా) కేవలం అవకాశం (50%) కంటే కొంచెం ఎక్కువ మాత్రమే accurate గా ఉంటారని అధ్యయనాలు చెప్తున్నాయి.'
+  ],
+  earth_space: [
+    'హుక్: చంద్రుడు మనకి ఎప్పుడూ ఒకే వైపు ఎందుకు చూపిస్తాడు? వివరణ: దీన్ని "టైడల్ లాకింగ్" అంటారు — భూమి యొక్క గురుత్వాకర్షణ శక్తి కోట్ల సంవత్సరాలుగా చంద్రుని భ్రమణాన్ని నెమ్మదింపజేసి, చివరికి చంద్రుని భ్రమణ కాలం, భూమి చుట్టూ తిరిగే కక్ష్యా కాలంతో సరిగ్గా సమానం అయ్యేలా చేసింది. Twist: అంటే చంద్రుడు తిరగడం లేదని కాదు — అది తనచుట్టూ తానూ తిరుగుతుంది, కానీ భూమి చుట్టూ ఒకసారి తిరిగే సమయానికి తనచుట్టూ కూడా సరిగ్గా ఒకసారే తిరుగుతుంది, అందుకే మనకి ఎప్పుడూ ఒకే వైపు కనిపిస్తుంది.',
+    'హుక్: అంతరిక్షంలో సూర్యుడు రోజుల తరబడి అస్తమించని ప్రదేశం భూమిపైనే ఉందా? వివరణ: అవును — భూమి యొక్క ధ్రువాల దగ్గర, వేసవి కాలంలో సూర్యుడు 24 గంటలూ అస్తమించడు, దీన్ని "అర్ధరాత్రి సూర్యుడు" అంటారు, ఎందుకంటే భూమి యొక్క axis వంపు వల్ల ధ్రువ ప్రాంతాలు నెలల తరబడి నిరంతరం సూర్యరశ్మిని పొందుతాయి. Twist: అదే ప్రాంతాల్లో, శీతాకాలంలో దీనికి వ్యతిరేకంగా, నెలల తరబడి సూర్యుడే ఉదయించని చీకటి కాలం కూడా ఉంటుంది.'
+  ],
+  animal: [
+    'హుక్: ఆక్టోపస్ కి "మెదడు" ఎక్కడ ఉందో ఖచ్చితంగా చెప్పగలరా? వివరణ: ఆక్టోపస్ యొక్క నాడీ కణాల్లో మూడింట రెండు వంతుల భాగం దాని మెదడులో కాదు, దాని ఎనిమిది కాళ్ళలోనే ఉంటుంది. అందుకే ప్రతి కాలు కొంతవరకు స్వతంత్రంగా స్పర్శించి, కదలగలదు. Twist: ప్రయోగాల్లో, మెదడు నుండి వేరుచేయబడిన ఆక్టోపస్ కాలు కూడా కొద్దిసేపు స్వయంగా వస్తువులను పట్టుకునే చర్యలు చేయగలదని కనిపెట్టారు.',
+    'హుక్: సొరచేపలు ఎన్ని సంవత్సరాలు జీవిస్తాయో తెలుసా? వివరణ: గ్రీన్‌ల్యాండ్ సొరచేప 300 సంవత్సరాలకు పైగా జీవించగలదని శాస్త్రవేత్తలు కనిపెట్టారు — ఇది తెలిసిన అత్యంత దీర్ఘాయువు కలిగిన వెన్నెముక జంతువు. Twist: ఇవి చాలా నెమ్మదిగా పెరుగుతాయి, లైంగిక పరిపక్వతకు చేరుకోవడానికే దాదాపు 150 సంవత్సరాలు పడుతుంది.'
+  ],
+  money: [
+    'హుక్: ప్రపంచంలో మొదటి కాగితం కరెన్సీ ఎక్కడ మొదలైంది? వివరణ: కాగితం డబ్బు మొదటిసారి చైనాలో, టాంగ్ మరియు సాంగ్ రాజవంశాల కాలంలో వాడుకలోకి వచ్చింది — నాణేలు మోసుకెళ్లడం కష్టంగా ఉండటంతో వ్యాపారులు దీన్ని ప్రవేశపెట్టారు. Twist: యూరప్‌లో కాగితం డబ్బు వాడకం మొదలవ్వడానికి ఇంకో వందల సంవత్సరాలు పట్టింది.',
+    'హుక్: మీ జేబులో ఉన్న నాణెం అంచు ఎందుకు గీతలు గీతలుగా ఉంటుందో ఆలోచించారా? వివరణ: పాత కాలంలో నాణేల అంచులు కత్తిరించి, ఆ లోహాన్ని దొంగిలించడం సర్వసాధారణంగా ఉండేది — అంచు మీద గీతలు (reeding) ఈ మోసాన్ని సులభంగా గుర్తించడానికి సహాయపడింది. Twist: శాస్త్రవేత్త ఐజాక్ న్యూటన్, బ్రిటిష్ టంకశాలకి అధిపతిగా ఉన్నప్పుడు ఈ భద్రతా పద్ధతిని improve చేయడంలో కీలక పాత్ర పోషించాడు.'
+  ],
+  history: [
+    'హుక్: ఈజిప్ట్ గ్రేట్ పిరమిడ్ ఎంత కచ్చితత్వంతో నిర్మించారో తెలుసా? వివరణ: గిజా గ్రేట్ పిరమిడ్ యొక్క నాలుగు వైపులు, నిజమైన ఉత్తర దిశకు 1 డిగ్రీ కంటే తక్కువ వ్యత్యాసంతో సరిగ్గా సర్దుబాటు చేయబడ్డాయి — ఆధునిక టెక్నాలజీ లేకుండా ఇది ఎలా సాధించారో ఇప్పటికీ శాస్త్రవేత్తలను ఆశ్చర్యపరుస్తుంది. Twist: కొందరు పరిశోధకులు వాళ్ళు నక్షత్రాల స్థానాలను ఉపయోగించి ఉంటారని అంచనా వేస్తున్నారు.',
+    'హుక్: చరిత్రలో అతి తక్కువ సమయం సాగిన యుద్ధం ఎంత సేపు జరిగింది? వివరణ: 1896లో బ్రిటన్ మరియు జాంజిబార్ మధ్య జరిగిన యుద్ధం కేవలం నలభై నిమిషాల లోపే ముగిసింది — ఇది చరిత్రలో నమోదైన అతి చిన్న యుద్ధంగా పరిగణించబడుతుంది. Twist: ఇది జాంజిబార్ సుల్తాన్ మరణం తర్వాత వారసత్వ వివాదం వల్ల మొదలైంది, బ్రిటిష్ నౌకల బాంబార్డ్‌మెంట్‌తో వేగంగా ముగిసింది.'
+  ],
+  human_body: [
+    'హుక్: మీరు తుమ్మినప్పుడు మీ శరీరంలో ఎన్ని భాగాలు involve అవుతాయో తెలుసా? వివరణ: తుమ్ము ఒక సంక్లిష్టమైన reflex చర్య — ఇందులో ఛాతీ కండరాలు, గొంతు, కళ్ళు, ముఖం అన్నీ ఏకకాలంలో పనిచేస్తాయి. Twist: ఆసక్తికరంగా, కళ్ళు తెరిచి ఉంచి తుమ్మడం శరీరపరంగా చాలా కష్టం — చాలామంది తుమ్మేటప్పుడు అసంకల్పితంగా కళ్ళు మూసుకుంటారు.',
+    'హుక్: మీ శరీరంలో ఎముకలు ఎప్పుడు అత్యధికంగా ఉంటాయో తెలుసా? వివరణ: మీరు పుట్టినప్పుడు మీ శరీరంలో దాదాపు మూడు వందల ఎముకలు ఉంటాయి, కానీ పెద్దయ్యాక కేవలం రెండు వందల ఆరు ఎముకలు మాత్రమే మిగులుతాయి. Twist: ఇది ఎముకలు పోవడం వల్ల కాదు — పెరుగుతున్న కొద్దీ చాలా చిన్న ఎముకలు (ఉదాహరణకి పుర్రెలో) కలిసిపోయి, పెద్ద ఎముకలుగా ఏర్పడతాయి.'
+  ]
+};
+
+function pickFactOutline(category, runCount) {
+  const bank = FACT_OUTLINES[category];
+  const outline = bank[runCount % bank.length];
+  log(`Fact outline for ${category} (run #${runCount}): ${outline.slice(0, 60)}...`);
+  return outline;
+}
+
 function loadState() {
   if (fs.existsSync(STATE_FILE)) {
     try {
@@ -122,35 +169,24 @@ function buildPrompt(category, recentTitles, runCount) {
     ? `\n\nఇటీవల ఈ అంశాలు వాడాము — ఇవే facts ని వేరే మాటల్లో మళ్ళీ చెప్పకు కూడా, పూర్తిగా కొత్త fact/విషయం ఎంచుకో: ${recentTitles.slice(-10).join(' | ')}`
     : '';
 
-  const subnicheLabel = {
-    mindblowing: 'ఆశ్చర్యపరిచే సాధారణ విషయాలు (mind-blowing facts)',
-    psychology: 'మనస్తత్వశాస్త్రం (psychology) — మనసు/ప్రవర్తన ఎలా పనిచేస్తుందో',
-    earth_space: 'భూమి & అంతరిక్షం (Earth & Space)',
-    animal: 'జంతువుల ప్రపంచం (animal facts)',
-    money: 'డబ్బు/ఆర్థిక విషయాలు (money facts)',
-    history: 'చరిత్రలో అంతుచిక్కని రహస్యాలు (history mysteries)',
-    human_body: 'మానవ శరీరం (human body facts)'
-  }[category];
-
   const { min, max } = WORD_COUNT_TARGETS[category];
+  const outline = pickFactOutline(category, runCount);
 
-  const topicInstruction = `${subnicheLabel} విభాగంలో ఒక నిజమైన, ఆశ్చర్యపరిచే fact గురించి తెలుగులో రాయి.
+  const topicInstruction = `కింద ఇచ్చిన fact (హుక్ ప్రశ్న + వివరణ + twist) ని తెలుగులో సహజంగా, ఆసక్తికరంగా చెప్పు. ఇది ఇప్పటికే verify చేయబడిన, పూర్తి fact — నువ్వు దీన్ని మార్చకూడదు, కొత్తగా ఏమీ కల్పించకూడదు, కేవలం విస్తరించి అందంగా చెప్పాలి:
+
+${outline}
 
 నిర్మాణం:
-1. **Hook (0-3 సెకన్లు):** ఒక ఉత్కంఠభరితమైన **ప్రశ్నతో** మొదలుపెట్టు (ఉదా. "మనుషులు ఎందుకు ఆవలిస్తారు?", "సొరచేపలకి క్యాన్సర్ రాదా?") — "ఈ fact వింటే షాక్ అవుతారు" లాంటి generic క్లిక్‌బెయిట్ లైన్ వద్దు, నిజమైన, నిర్దిష్ట ప్రశ్న వేయి.
-2. **Fact (3-20 సెకన్లు):** ఆ ప్రశ్నకి వివరణాత్మక సమాధానం — శాస్త్రీయంగా/వాస్తవంగా సరైనది.
-3. **Twist (20-25 సెకన్లు):** అదనంగా ఇంకో ఆశ్చర్యపరిచే వివరాన్ని జోడించు (ఇది మొదటి fact కి సంబంధించిందే, కానీ ఊహించని కోణం) — ఈ భాగం చిన్న, పదునైన వాక్యాల్లో, reveal చేస్తున్నట్టు రాయి.
+1. **Hook:** పైన ఇచ్చిన హుక్ ప్రశ్ననే వాడు (అవసరమైతే సహజంగా అనిపించేలా చిన్నగా మార్చొచ్చు, కానీ అర్థం మార్చకు).
+2. **Fact:** పైన ఇచ్చిన వివరణనే విస్తరించి చెప్పు — **ఈ ప్రశ్నకి ఖచ్చితంగా సమాధానం చెప్పాలి**, మధ్యలో సంబంధం లేని వేరే వాక్యాలు/ప్రశ్నలు జోడించకు.
+3. **Twist:** పైన ఇచ్చిన twist నే విస్తరించి, చిన్న పదునైన వాక్యాల్లో, reveal చేస్తున్నట్టు చెప్పు.
 
-**Delivery style గురించి — ఇది ముఖ్యం:** వాయిస్ tone ని మనం control చేయలేం, కాబట్టి టెక్స్ట్ లోనే ఉత్సాహం కనిపించాలి:
+**చాలా ముఖ్యం:** ప్రతి వాక్యం పైన ఇచ్చిన fact లోని ఏదో ఒక భాగానికి నేరుగా సంబంధించి ఉండాలి. Hook ప్రశ్న అడిగి, దానికి సమాధానం ఇవ్వకుండా వేరే ప్రశ్న/వాక్యం వైపు వెళ్ళకూడదు. పైన ఇచ్చిన వివరణలో లేని కొత్త సంఖ్యలు/గణాంకాలు/వాస్తవాలు స్వయంగా జోడించకు — ఇచ్చినదాన్నే వివరణాత్మకంగా చెప్పు.
+
+**Delivery style గురించి:** వాయిస్ tone ని మనం control చేయలేం, కాబట్టి టెక్స్ట్ లోనే ఉత్సాహం కనిపించాలి:
 - పొడవైన, flat వాక్యాలు వద్దు — చిన్న, పదునైన వాక్యాలు వాడు, ముఖ్యంగా twist దగ్గర.
 - మధ్యమధ్యలో వినేవారిని నేరుగా engage చేసే పదబంధాలు వాడు (ఉదా. "ఊహించారా?", "ఇది వినండి").
 - ఒక వార్తా announcer చదివినట్టు కాకుండా, ఒక స్నేహితుడికి ఆసక్తికరమైన విషయం excited గా చెప్తున్నట్టు రాయి.
-
-**ఖచ్చితత్వం గురించి — ఇది అత్యంత ముఖ్యం:**
-- కేవలం **నీకు ఖచ్చితంగా, బలంగా తెలిసిన, విస్తృతంగా validated అయిన** facts మాత్రమే వాడు.
-- ఏదైనా విషయంలో నీకు అనిశ్చితి ఉంటే (సరిగ్గా గుర్తు లేకపోతే, సందేహం ఉంటే), ఆ fact వాడకు — వేరే, నీకు ఖచ్చితంగా తెలిసిన fact ఎంచుకో.
-- నిర్దిష్ట సంఖ్యలు/గణాంకాలు (శాతాలు, తేదీలు, కొలతలు) ఖచ్చితంగా సరైనవి అయితేనే వాడు — approximate/సందేహాస్పదమైతే మాట్లాడే విధానంలో సాధారణంగా చెప్పు, ఖచ్చితమైన సంఖ్య రాయకు.
-- సాధారణంగా అందరికీ తెలిసిన, ఇంటర్నెట్‌లో ఎక్కడ చూసినా కనిపించే overused facts వాడకు — తక్కువ మందికి తెలిసినది ఎంచుకో, కానీ నిజమైనది మాత్రమే.
 
 నియమాలు:
 - తప్పకుండా ${min}-${max} తెలుగు పదాలు (తక్కువ వద్దు).
@@ -164,19 +200,22 @@ function buildPrompt(category, recentTitles, runCount) {
 
   return `${topicInstruction}
 
-జవాబును ఖచ్చితంగా ఈ మూడు లైన్ల ఫార్మాట్‌లోనే ఇవ్వు, ఇదే క్రమంలో, మరేమీ ముందు/వెనుక రాయకు:
-TITLE: (5-8 తెలుగు పదాల్లో ఒక చిన్న శీర్షిక)
+జవాబును ఖచ్చితంగా ఈ నాలుగు లైన్ల ఫార్మాట్‌లోనే ఇవ్వు, ఇదే క్రమంలో, మరేమీ ముందు/వెనుక రాయకు:
+TITLE: (5-8 తెలుగు పదాల్లో ఒక చిన్న శీర్షిక, సందర్భానికి తగిన ఒక emoji తో — ఆ emoji వాక్యం చివర్లో కాకుండా, సంబంధిత పదం పక్కనే పెట్టు)
 KEYWORDS: (ఈ కంటెంట్‌కి సరిపోయే 3 నిర్దిష్టమైన, దృశ్యమానమైన ఆంగ్ల keywords — abstract పదాలు కాకుండా (ఉదా. "wisdom", "life" వద్దు), కళ్ళకి కనిపించే నిర్దిష్ట scene/object/action పదాలు వాడు, ఉదా: "elderly woman smiling", "children playing park", "mother holding baby", "sunrise mountains road". Content కి నేరుగా సంబంధం ఉండాలి, generic వద్దు.)
-SCRIPT: (పైన చెప్పిన నియమాల ప్రకారం పూర్తి వాయిస్-ఓవర్ టెక్స్ట్)`;
+HOOK_EMOJI: (పైన ఉన్న Hook ప్రశ్ననే, 1-2 సందర్భోచిత emojis తో, 15 తెలుగు పదాల లోపు తిరిగి రాయి — video description లో వాడతాం, script లో కాదు. Emoji లు వాక్యం చివర్లో మాత్రమే కుప్పగా పెట్టకు — ఏ పదానికి సంబంధించినవో ఆ పదం పక్కనే పెట్టు, ఉదా: "చంద్రుడు 🌙 ఎప్పుడూ ఒకే వైపు ఎందుకు చూపిస్తాడో తెలుసా?")
+SCRIPT: (పైన చెప్పిన నియమాల ప్రకారం పూర్తి వాయిస్-ఓవర్ టెక్స్ట్ — ఇందులో emoji లు వాడకు)`;
 }
 
 function parseLabeledContent(raw) {
   const titleMatch = raw.match(/TITLE:\s*(.+)/i);
   const keywordsMatch = raw.match(/KEYWORDS:\s*(.+)/i);
+  const hookEmojiMatch = raw.match(/HOOK_EMOJI:\s*(.+)/i);
   const scriptMatch = raw.match(/SCRIPT:\s*([\s\S]+)/i);
   return {
     title: titleMatch ? titleMatch[1].trim() : null,
     keywords: keywordsMatch ? keywordsMatch[1].trim() : null,
+    hookEmoji: hookEmojiMatch ? hookEmojiMatch[1].trim() : null,
     script: scriptMatch ? scriptMatch[1].trim().replace(/\n+/g, ' ') : null
   };
 }
@@ -220,7 +259,7 @@ async function generateContent(category, recentTitles, runCount) {
   const prompt = buildPrompt(category, recentTitles, runCount);
 
   let raw = await callGroq(prompt);
-  let { title, keywords, script } = parseLabeledContent(raw);
+  let { title, keywords, hookEmoji, script } = parseLabeledContent(raw);
 
   if (!script) {
     // Labeled format wasn't followed — fall back to treating the whole
@@ -247,12 +286,14 @@ async function generateContent(category, recentTitles, runCount) {
       if (retryWordCount > wordCount) {
         title = retryParsed.title;
         keywords = retryParsed.keywords;
+        hookEmoji = retryParsed.hookEmoji;
         script = retryParsed.script;
       }
     }
   }
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
+  if (!hookEmoji) hookEmoji = title; // fallback: reuse title (no emoji, but never blank)
 
   // Defensive: strip any CTA-like ending the model wrote anyway, despite
   // being told not to — avoids ending up with two CTA lines back to back.
@@ -266,8 +307,9 @@ async function generateContent(category, recentTitles, runCount) {
   script = (script.trim() + ' ' + CTA_SENTENCE).trim();
   log(`Title: ${title}`);
   log(`Keywords: ${keywords}`);
+  log(`Hook emoji line: ${hookEmoji}`);
   log(`Script (${script.length} chars): ${script}`);
-  return { title, keywords, script };
+  return { title, keywords, hookEmoji, script };
 }
 
 // FALLBACK ONLY: used if Groq ever fails to return a usable TITLE line.
@@ -982,37 +1024,40 @@ function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
 }
 
 const CATEGORY_HASHTAGS = {
-  mindblowing: '#AmazingFacts #DidYouKnow #MindBlowing',
-  psychology: '#Psychology #PsychologyFacts #MindFacts',
-  earth_space: '#SpaceFacts #EarthFacts #Astronomy',
-  animal: '#AnimalFacts #WildlifeFacts #Nature',
-  money: '#MoneyFacts #FinanceFacts #EconomyFacts',
-  history: '#HistoryFacts #HistoryMysteries #DidYouKnow',
-  human_body: '#HumanBodyFacts #ScienceFacts #BodyFacts'
+  mindblowing: ['#amazingfacts', '#mindblowing', '#factsdaily', '#curiousfacts'],
+  psychology: ['#psychologyfacts', '#mindfacts', '#humanmind', '#psychologytips'],
+  earth_space: ['#spacefacts', '#earthfacts', '#astronomy', '#universe'],
+  animal: ['#animalfacts', '#wildlifefacts', '#nature', '#animalworld'],
+  money: ['#moneyfacts', '#financefacts', '#economyfacts', '#moneytips'],
+  history: ['#historyfacts', '#historymysteries', '#ancienthistory', '#historylovers'],
+  human_body: ['#humanbodyfacts', '#sciencefacts', '#bodyfacts', '#anatomy']
 };
+const BASE_HASHTAGS = ['#shorts', '#ytshorts', '#telugufacts', '#didyouknow'];
 
-// Builds an emoji-structured description matching the reference format
-// (hook body, reassurance, like/share CTA, subscribe CTA, pull-quote,
-// hashtags) — built programmatically from the actual script rather than
-// asked of the model, so formatting is reliable and consistent every time.
-function buildDescription(script, category) {
-  const withoutCTA = script.replace(CTA_SENTENCE, '').trim();
-  const sentences = splitIntoSentences(withoutCTA);
-  const closingLine = sentences.length > 0 ? sentences[sentences.length - 1] : withoutCTA;
-  const bodyText = sentences.length > 1 ? sentences.slice(0, -1).join(' ') : withoutCTA;
-  const categoryTags = CATEGORY_HASHTAGS[category] || '';
+// Generic curiosity-building teasers — deliberately NOT about any specific
+// fact's content (that would summarize/spoil the video), just build
+// curiosity to watch. Rotates by run count for variety. Each already has
+// its emoji placed next to the relevant word, not tacked on at the end.
+const DESCRIPTION_TEASERS = [
+  'ఈ వీడియో 🎬 చూశాక మీ ఆలోచన ఖచ్చితంగా మారిపోతుంది!',
+  'చివరి వరకూ చూడండి, twist 😲 మిమ్మల్ని ఆశ్చర్యపరుస్తుంది!',
+  'చాలా మందికి ఇది తెలియదు 🧐... మీకు తెలుసా?',
+  'ఇది విన్నాక మీరు షాక్ ⚡ అవ్వడం ఖాయం!',
+  'ఈ fact 🔥 మీ friends కి కూడా చెప్పాలనిపిస్తుంది!'
+];
 
-  return `💙 ${bodyText}
+// Short, structured 3-line description (hook / curiosity teaser / CTA) plus
+// exactly 8 lowercase hashtags, per spec. Built programmatically (fixed
+// teaser bank + templated CTA) except the hook line, which needs to be
+// content-aware for its emoji placement — that part comes from Groq's
+// HOOK_EMOJI field, kept separate from the spoken SCRIPT.
+function buildDescription(hookEmoji, category, runCount) {
+  const line1 = hookEmoji;
+  const line2 = DESCRIPTION_TEASERS[runCount % DESCRIPTION_TEASERS.length];
+  const line3 = 'మరిన్ని facts కోసం Subscribe చేయండి! 🔔';
+  const hashtags = [...BASE_HASHTAGS, ...(CATEGORY_HASHTAGS[category] || [])].slice(0, 8).join(' ');
 
-🌱 ఇలాంటి ఆసక్తికరమైన facts మీ జ్ఞానాన్ని పెంచుతాయి.
-
-🙏 వీడియో నచ్చితే 👍 Like, 💬 Comment, 📤 Share చేయండి.
-
-🔔 ఇలాంటి ఆసక్తికరమైన తెలుగు facts వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ను ❤️ Subscribe చేసి 🔔 Bell Icon ని Press చేయడం మర్చిపోవద్దు.
-
-💖 గుర్తుంచుకోండి: "${closingLine}" 💎
-
-#Shorts #YTShorts #TeluguShorts #TeluguFacts ${categoryTags} #ViralShorts #TrendingShorts #TeluguEcho`;
+  return `${line1}\n${line2}\n${line3}\n\n${hashtags}`;
 }
 
 // YouTube's upload validator is stricter than our own text handling — strip
@@ -1093,7 +1138,7 @@ async function main() {
   const { usedTitles, runCount } = loadState();
   const category = pickCategory(runCount);
 
-  const { title, script } = await generateContent(category, usedTitles, runCount);
+  const { title, hookEmoji, script } = await generateContent(category, usedTitles, runCount);
   const allSentences = splitIntoSentences(script);
   let { audioPath, sentenceDurations, silenceGap } = await generateAudioForScript(allSentences);
 
@@ -1181,7 +1226,7 @@ async function main() {
   await uploadToYouTube(
     videoPath,
     title,
-    buildDescription(script, category)
+    buildDescription(hookEmoji, category, runCount)
   );
   saveState(title);
   log('Done!');
