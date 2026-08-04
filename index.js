@@ -115,11 +115,11 @@ const WORD_COUNT_TARGETS = {
 // Appended programmatically after generation — never left to the model to
 // retype, since it occasionally introduced typos into this fixed sentence
 // (e.g. "సబ్‌స్రైబ్" missing a syllable) when asked to reproduce it itself.
-const CTA_SENTENCE = 'మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.';
+const CTA_SENTENCE = 'మరిన్ని ఇలాంటి amazing facts కోసం ఫాలో అవ్వండి, లైక్ షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.';
 
 function buildPrompt(category, recentTitles, runCount) {
   const avoidLine = recentTitles.length
-    ? `\n\nఇటీవల ఈ అంశాలు వాడాము, వీటిని పునరావృతం చేయకు, పూర్తిగా కొత్త కోణం/విషయం ఎంచుకో: ${recentTitles.slice(-5).join(' | ')}`
+    ? `\n\nఇటీవల ఈ అంశాలు వాడాము — ఇవే facts ని వేరే మాటల్లో మళ్ళీ చెప్పకు కూడా, పూర్తిగా కొత్త fact/విషయం ఎంచుకో: ${recentTitles.slice(-10).join(' | ')}`
     : '';
 
   const subnicheLabel = {
@@ -139,7 +139,12 @@ function buildPrompt(category, recentTitles, runCount) {
 నిర్మాణం:
 1. **Hook (0-3 సెకన్లు):** ఒక ఉత్కంఠభరితమైన **ప్రశ్నతో** మొదలుపెట్టు (ఉదా. "మనుషులు ఎందుకు ఆవలిస్తారు?", "సొరచేపలకి క్యాన్సర్ రాదా?") — "ఈ fact వింటే షాక్ అవుతారు" లాంటి generic క్లిక్‌బెయిట్ లైన్ వద్దు, నిజమైన, నిర్దిష్ట ప్రశ్న వేయి.
 2. **Fact (3-20 సెకన్లు):** ఆ ప్రశ్నకి వివరణాత్మక సమాధానం — శాస్త్రీయంగా/వాస్తవంగా సరైనది.
-3. **Twist (20-25 సెకన్లు):** అదనంగా ఇంకో ఆశ్చర్యపరిచే వివరాన్ని జోడించు (ఇది మొదటి fact కి సంబంధించిందే, కానీ ఊహించని కోణం).
+3. **Twist (20-25 సెకన్లు):** అదనంగా ఇంకో ఆశ్చర్యపరిచే వివరాన్ని జోడించు (ఇది మొదటి fact కి సంబంధించిందే, కానీ ఊహించని కోణం) — ఈ భాగం చిన్న, పదునైన వాక్యాల్లో, reveal చేస్తున్నట్టు రాయి.
+
+**Delivery style గురించి — ఇది ముఖ్యం:** వాయిస్ tone ని మనం control చేయలేం, కాబట్టి టెక్స్ట్ లోనే ఉత్సాహం కనిపించాలి:
+- పొడవైన, flat వాక్యాలు వద్దు — చిన్న, పదునైన వాక్యాలు వాడు, ముఖ్యంగా twist దగ్గర.
+- మధ్యమధ్యలో వినేవారిని నేరుగా engage చేసే పదబంధాలు వాడు (ఉదా. "ఊహించారా?", "ఇది వినండి").
+- ఒక వార్తా announcer చదివినట్టు కాకుండా, ఒక స్నేహితుడికి ఆసక్తికరమైన విషయం excited గా చెప్తున్నట్టు రాయి.
 
 **ఖచ్చితత్వం గురించి — ఇది అత్యంత ముఖ్యం:**
 - కేవలం **నీకు ఖచ్చితంగా, బలంగా తెలిసిన, విస్తృతంగా validated అయిన** facts మాత్రమే వాడు.
@@ -252,7 +257,7 @@ async function generateContent(category, recentTitles, runCount) {
   // Defensive: strip any CTA-like ending the model wrote anyway, despite
   // being told not to — avoids ending up with two CTA lines back to back.
   const existingSentences = splitIntoSentences(script);
-  if (existingSentences.length > 0 && existingSentences[existingSentences.length - 1].includes('ఛానెల్')) {
+  if (existingSentences.length > 0 && existingSentences[existingSentences.length - 1].includes('సబ్‌స్క్రైబ్')) {
     existingSentences.pop();
     script = existingSentences.join(' ');
   }
@@ -832,7 +837,7 @@ function buildRealVideoClip(videoPath, duration, outPath) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
-function buildVideo(mediaItems, audioPath, customDurations) {
+function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontsDir = path.join(__dirname, 'fonts');
@@ -846,6 +851,12 @@ function buildVideo(mediaItems, audioPath, customDurations) {
   const duration = getAudioDuration(audioPath) + 0.3;
   const fd = duration.toFixed(2);
   log(`Audio duration: ${fd}s — video length set to match`);
+
+  // The CTA button only appears while the CTA line is actually being
+  // spoken (the closing few seconds), not for the whole video — computed
+  // from the CTA sentence's own measured audio duration.
+  const ctaStartTime = ctaDuration ? Math.max(0, duration - ctaDuration) : duration; // fallback: never shown if unknown
+  log(`CTA button will appear starting at ${ctaStartTime.toFixed(2)}s`);
 
   const n = mediaItems.length;
   if (n === 0) {
@@ -943,11 +954,11 @@ function buildVideo(mediaItems, audioPath, customDurations) {
 
     // Subscribe CTA styled as a real elevated button: soft glow border behind,
     // drop shadow, bold white text with shadow, small tagline underneath.
-    `drawbox=x=(iw-572)/2:y=ih-196:w=572:h=88:color=${ACCENT}@0.35:t=fill`,
-    `drawbox=x=(iw-566)/2:y=ih-193+6:w=566:h=82:color=black@0.30:t=fill`,
-    `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.97:t=fill`,
-    `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2:shadowcolor=black@0.5:shadowx=1:shadowy=1`,
-    `drawtext=fontfile='${fontPath}':text='daily amazing Telugu facts':fontcolor=white@0.8:fontsize=17:x=(w-text_w)/2:y=h-100`,
+    `drawbox=x=(iw-572)/2:y=ih-196:w=572:h=88:color=${ACCENT}@0.35:t=fill:enable='gte(t,${ctaStartTime.toFixed(2)})'`,
+    `drawbox=x=(iw-566)/2:y=ih-193+6:w=566:h=82:color=black@0.30:t=fill:enable='gte(t,${ctaStartTime.toFixed(2)})'`,
+    `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.97:t=fill:enable='gte(t,${ctaStartTime.toFixed(2)})'`,
+    `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2:shadowcolor=black@0.5:shadowx=1:shadowy=1:enable='gte(t,${ctaStartTime.toFixed(2)})'`,
+    `drawtext=fontfile='${fontPath}':text='daily amazing Telugu facts':fontcolor=white@0.8:fontsize=17:x=(w-text_w)/2:y=h-100:enable='gte(t,${ctaStartTime.toFixed(2)})'`,
 
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
@@ -1108,9 +1119,11 @@ async function main() {
   // Pull the closing CTA sentence out — a stock/AI photo search for "like
   // share subscribe" wouldn't mean anything, so its time is folded into the
   // last content sentence's slide instead.
-  const ctaIndex = imageSentences.findIndex(s => s.includes('తెలుగు ఎకో ఛానెల్'));
+  let ctaAudioDuration = 0; // used later to time-gate the on-screen CTA button
+  const ctaIndex = imageSentences.findIndex(s => s.includes('సబ్‌స్క్రైబ్'));
   if (ctaIndex !== -1) {
     const ctaDur = imageDurations[ctaIndex] || 0;
+    ctaAudioDuration = ctaDur;
     imageSentences.splice(ctaIndex, 1);
     imageDurations.splice(ctaIndex, 1);
     if (imageDurations.length > 0) {
@@ -1163,7 +1176,7 @@ async function main() {
   // the sum of our durations matches exactly.
   keptDurations[keptDurations.length - 1] += 0.3;
 
-  const videoPath = buildVideo(imagePaths, audioPath, keptDurations);
+  const videoPath = buildVideo(imagePaths, audioPath, keptDurations, ctaAudioDuration);
 
   await uploadToYouTube(
     videoPath,
