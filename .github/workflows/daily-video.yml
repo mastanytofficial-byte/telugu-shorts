@@ -1,4 +1,4 @@
-name: Daily Telugu News Short
+name: Daily Telugu Amazing Facts Short
 
 on:
   schedule:
@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,8 +34,8 @@ jobs:
         timeout-minutes: 1
         run: ffmpeg -version
 
-      - name: Install dependencies (includes Puppeteer's bundled Chromium)
-        timeout-minutes: 5
+      - name: Install dependencies
+        timeout-minutes: 3
         run: npm install
 
       - name: Install Python bridge for experimental HF Space video tier
@@ -44,9 +44,8 @@ jobs:
         run: pip install --break-system-packages gradio_client
 
       - name: Generate and upload video
-        timeout-minutes: 18
+        timeout-minutes: 15
         env:
-          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GOOGLE_TTS_API_KEY: ${{ secrets.GOOGLE_TTS_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -56,10 +55,10 @@ jobs:
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
         run: node index.js
 
-      - name: Save state (avoid duplicate news next run)
+      - name: Save state (avoid duplicate facts next run)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add last-article.json
-          git diff --staged --quiet || git commit -m "Update last used article [skip ci]"
+          git add state.json
+          git diff --staged --quiet || git commit -m "Update state [skip ci]"
           git push
