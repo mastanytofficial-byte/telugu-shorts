@@ -12,9 +12,10 @@
     "చంద్రుని ఉపరితలం గురించి మనకి ఎంత తెలుసు 🌙",
     "మన శరీరంలోని సూక్ష్మజీవులు 🐟",
     "ఇయర్‌వార్మ్ రహస్యం 🧠",
-    "చంద్రుని రహస్యం 🌌"
+    "చంద్రుని రహస్యం 🌌",
+    "అక్టోపస్ మెదడు మరియు కాళ్ల రహస్యం 🐾"
   ],
-  "runCount": 13,
+  "runCount": 14,
   "categoryRunCounts": {
     "human_body": 1,
     "technology": 1,
@@ -22,8 +23,9 @@
     "ocean": 1,
     "mindblowing": 1,
     "psychology": 1,
-    "earth_space": 1
+    "earth_space": 1,
+    "animal": 1
   },
   "discoveredFacts": {},
-  "lastDate": "2026-08-06T10:41:19.687Z"
+  "lastDate": "2026-08-06T11:31:16.177Z"
 }
