@@ -419,12 +419,26 @@ async function callGroq(prompt, attempt = 1) {
   });
   const data = await res.json();
   if (!data.choices || !data.choices[0]) {
+    const errorMessage = (data.error && data.error.message) || '';
+    const isDailyLimit = /tokens per day|TPD/i.test(errorMessage);
+    const isRateLimit = data.error && data.error.code === 'rate_limit_exceeded';
+
+    if (isRateLimit && isDailyLimit) {
+      // Daily budget genuinely exhausted — the reset window can be hours
+      // away (message here said "try again in 3m31s", but that's still
+      // far longer than our per-minute retry backoff is designed for, and
+      // could be much longer depending on how close to the boundary we
+      // are). Retrying here would just waste time before failing anyway —
+      // fail fast with a clear message instead of silently burning the
+      // step's time budget on retries that can't succeed.
+      throw new Error(`Groq DAILY token limit reached (not a transient per-minute limit) — this run cannot continue. ${errorMessage}`);
+    }
+
     // Groq's per-minute token limit (TPM) is a short-lived, transient
     // limit that resets within seconds — the auto-growth fact system
     // (extra generate+verify calls) can occasionally push a run over it.
     // A brief wait and retry succeeds almost every time, versus failing
     // the whole run over a limit that's already gone by the next request.
-    const isRateLimit = data.error && data.error.code === 'rate_limit_exceeded';
     if (isRateLimit && attempt <= 3) {
       const waitMs = 15000 * attempt; // 15s, 30s, 45s — long enough to reliably cross a full TPM reset window, even with several of our own calls firing in the same run
       log(`WARNING: Groq rate limit hit (attempt ${attempt}/3) — waiting ${waitMs / 1000}s before retrying.`);
@@ -474,7 +488,24 @@ async function generateContent(category, recentTitles, outline, ctaSentence) {
 
   for (let retryAttempt = 1; wordCount < target.min - 15 && retryAttempt <= 2; retryAttempt++) {
     log(`WARNING: script came back too short (${wordCount} words, need ${target.min}-${target.max}) — retry ${retryAttempt}/2 with a stronger word-count reminder.`);
-    const retryPrompt = prompt + `\n\nచాలా ముఖ్యం: మీ మునుపటి ప్రయత్నం చాలా చిన్నగా (${wordCount} పదాలు మాత్రమే) వచ్చింది. ఈసారి ఖచ్చితంగా ${target.min}-${target.max} తెలుగు పదాలు ఉండేలా SCRIPT రాయి — అవసరమైతే మరిన్ని వివరాలు/ఉదాహరణలు జోడించి పొడిగించు.`;
+    // Compact, purpose-built retry prompt — NOT the full original prompt
+    // (~1000 tokens with all rules/instructions embedded). Resending that
+    // in full on every retry was multiplying token cost up to ~5x on a
+    // short script (original + 2 retries, each duplicating the whole
+    // thing) — a real contributor to hitting Groq's daily token limit.
+    // This keeps only what retry genuinely needs: the outline (grounding)
+    // and the essential format/accuracy rules.
+    const retryPrompt = `కింద ఇచ్చిన fact ని తెలుగులో వివరణాత్మకంగా చెప్పు — ఖచ్చితంగా ${target.min}-${target.max} తెలుగు పదాలు ఉండాలి (మీ మునుపటి ప్రయత్నం కేవలం ${wordCount} పదాలు మాత్రమే వచ్చింది, ఇది చాలా తక్కువ, padding చేయకుండా fact ని పూర్తిగా వివరించి ఈ నిడివికి చేరుకో):
+
+${outline}
+
+నియమాలు: ఇచ్చిన fact నే విస్తరించి చెప్పు, కొత్త కల్పితం/సంఖ్యలు జోడించకు. ఖచ్చితంగా తెలుగు లిపిలోనే రాయి (Romanized వద్దు). ప్రతి వాక్యం పూర్తి క్రియతో ముగియాలి. CTA/emoji వద్దు.
+
+జవాబు ఫార్మాట్:
+TITLE: (5-8 పదాల శీర్షిక, emoji వద్దు)
+KEYWORDS: (3 నిర్దిష్ట, దృశ్యమానమైన ఆంగ్ల keywords)
+HOOK: (hook ప్రశ్న, 15 పదాల లోపు, emoji వద్దు)
+SCRIPT: (పూర్తి వాయిస్-ఓవర్ టెక్స్ట్, emoji/CTA వద్దు)`;
     raw = await callGroq(retryPrompt);
     const retryParsed = parseLabeledContent(raw);
     if (retryParsed.script) {
