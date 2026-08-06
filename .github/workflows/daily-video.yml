@@ -6,6 +6,15 @@ on:
     - cron: '30 13 * * *'   # 7:00 PM IST every day (13:30 UTC)
   workflow_dispatch: {}     # allows manual "Run workflow" button too
 
+# Queues overlapping runs instead of letting them execute in parallel —
+# prevents the state.json git-push race condition at its source (two runs
+# both reading the same categoryRunCounts, one push winning and silently
+# discarding the other's increment, causing an outline to repeat sooner
+# than intended). Never cancels an in-progress run — it just waits.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -61,5 +70,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add state.json
-          git diff --staged --quiet || git commit -m "Update state [skip ci]"
-          git push
+          if git diff --staged --quiet; then
+            echo "No state changes to commit."
+            exit 0
+          fi
+          git commit -m "Update state [skip ci]"
+          for i in 1 2 3 4 5; do
+            if git push; then
+              echo "State pushed successfully (attempt $i)."
+              exit 0
+            fi
+            echo "Push failed (attempt $i/5) — likely a concurrent run (we now run 2x/day). Pulling latest and retrying..."
+            git pull --rebase -X theirs origin main
+            sleep $((5 * i))
+          done
+          echo "::error::Failed to push state after 5 attempts — next run may reuse an outline sooner than intended, but the video itself uploaded fine."
+          exit 1
