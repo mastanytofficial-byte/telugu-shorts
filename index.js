@@ -1,5 +1,5 @@
 // Telugu Amazing Facts Shorts — fully automated, runs on GitHub Actions
-// Rotates weekly through 7 fact sub-niches: mindblowing, psychology, earth_space, animal, money, history, human_body
+// Rotates through 10 fact sub-niches: mindblowing, psychology, earth_space, animal, money, history, human_body, technology, food, ocean
 // Topic/Script (Groq) -> Voice (Google TTS) -> Images/Video (Pexels/AI) -> Music (Jamendo) -> Video (FFmpeg) -> YouTube
 
 const fs = require('fs');
@@ -203,10 +203,21 @@ Fact: ${outline}
 async function getOrGrowFactOutline(category, categoryRunCounts, discoveredFacts) {
   const bank = getCombinedBank(category, discoveredFacts);
   const categoryCount = categoryRunCounts[category] || 0;
-  const aboutToRepeat = categoryCount > 0 && categoryCount % bank.length === 0;
+
+  // Trigger cadence uses the FIXED curated-only length, not the combined
+  // (ever-growing) bank length. Using the combined length here caused a
+  // runaway retrigger: right after a successful growth, bank.length
+  // catches up to exactly categoryCount+1, so the same "count % length ===
+  // 0" condition fires again on the very next occurrence of this category
+  // — growth would then attempt on every single appearance instead of
+  // once per full cycle. The curated length never changes, so this stays
+  // a stable, predictable cadence regardless of how many facts have been
+  // discovered so far.
+  const curatedLength = (FACT_OUTLINES[category] || []).length;
+  const aboutToRepeat = categoryCount > 0 && categoryCount % curatedLength === 0;
 
   if (aboutToRepeat) {
-    log(`"${category}" bank (${bank.length} facts) is about to repeat — attempting to grow it with a fresh, verified fact first.`);
+    log(`"${category}" bank (${bank.length} facts, ${curatedLength} curated) is at a growth checkpoint — attempting to grow it with a fresh, verified fact first.`);
     try {
       const candidate = await generateNewFactOutline(category, bank);
       if (candidate) {
@@ -222,6 +233,8 @@ async function getOrGrowFactOutline(category, categoryRunCounts, discoveredFacts
     log(`  Growth attempt did not produce a usable fact — reusing an existing one this time.`);
   }
 
+  // Indexing still uses the FULL combined bank (curated + discovered) so
+  // every outline — old and newly grown — gets its turn without repeats.
   const outline = bank[categoryCount % bank.length];
   log(`Fact outline for ${category} (its run #${categoryCount}): ${outline.slice(0, 60)}...`);
   return { outline, newlyDiscovered: null };
@@ -297,7 +310,8 @@ const FALLBACK_KEYWORDS = {
   ocean: 'ocean underwater sea waves'
 };
 
-// 85-100 words targets the 20-30s Amazing Facts Shorts format.
+// 110-130 words targets a fuller, more complete Amazing Facts Shorts format
+// (short scripts were leaving facts feeling incomplete/rushed).
 const WORD_COUNT_TARGETS = {
   mindblowing: { min: 110, max: 130 },
   psychology: { min: 110, max: 130 },
@@ -311,10 +325,6 @@ const WORD_COUNT_TARGETS = {
   ocean: { min: 110, max: 130 }
 };
 
-// Shared formatting/voice rules appended to every category's prompt.
-// Appended programmatically after generation — never left to the model to
-// retype, since it occasionally introduced typos into this fixed sentence
-// (e.g. "సబ్‌స్రైబ్" missing a syllable) when asked to reproduce it itself.
 // Rotating, warmer CTA variations — a single fixed robotic "follow, like,
 // share, subscribe" checklist repeated identically on every video starts
 // to feel templated to a returning viewer. These read more like a genuine,
@@ -514,7 +524,14 @@ SCRIPT: (పూర్తి వాయిస్-ఓవర్ టెక్స్�
       log(`  Retry ${retryAttempt} produced ${retryWordCount} words.`);
       wordCount = retryWordCount;
       script = retryParsed.script;
-      if (retryWordCount > bestWordCount) {
+      // Prefer whichever attempt is CLOSEST to the target range, not just
+      // "longer than before" — the old check only compared lengths, so a
+      // retry that overshot to e.g. 180 words (the model over-correcting
+      // on "add more detail") would still replace a 40-word original
+      // simply for being longer, producing a video noticeably longer than
+      // intended (measured: 80s instead of the expected ~55-63s).
+      const distance = (wc) => wc < target.min ? target.min - wc : (wc > target.max ? wc - target.max : 0);
+      if (distance(retryWordCount) < distance(bestWordCount)) {
         bestScript = retryParsed.script;
         bestTitle = retryParsed.title;
         bestKeywords = retryParsed.keywords;
@@ -525,6 +542,8 @@ SCRIPT: (పూర్తి వాయిస్-ఓవర్ టెక్స్�
   }
   if (bestWordCount < target.min - 15) {
     log(`⚠️ WARNING: after all retries, script is still short (${bestWordCount} words, target ${target.min}-${target.max}) — using the best attempt available. Video will be shorter than intended this time.`);
+  } else if (bestWordCount > target.max + 20) {
+    log(`⚠️ WARNING: script came back longer than intended (${bestWordCount} words, target ${target.min}-${target.max}) — video will be a bit longer than usual this time.`);
   }
   title = bestTitle; keywords = bestKeywords; hookEmoji = bestHookEmoji; script = bestScript;
   if (!title) title = deriveHeadline(script);
@@ -699,7 +718,10 @@ const BGM_MOOD_TAGS = {
   animal: 'playful,curious',
   money: 'corporate,upbeat',
   history: 'mysterious,cinematic',
-  human_body: 'curious,upbeat'
+  human_body: 'curious,upbeat',
+  technology: 'modern,upbeat',
+  food: 'playful,upbeat',
+  ocean: 'ambient,calm'
 };
 
 // Searches Jamendo's free Creative Commons catalog for an INSTRUMENTAL
@@ -976,11 +998,18 @@ const POLLINATIONS_BASE = 'https://image.pollinations.ai/prompt/';
 // character — same starting noise pattern nudges the diffusion model
 // toward a more visually similar result each time (not a true character
 // lock, but the closest free lever available).
-async function generateAIImage(prompt, savePath, seed) {
-  const styledPrompt = `${prompt}, cinematic photo, high quality, realistic, vertical portrait composition`;
+async function generateAIImage(prompt, savePath, seed, style = 'photo') {
+  const styleModifier = style === 'illustration'
+    ? 'scientific illustration, concept visualization, glowing highlights, detailed digital art, vertical portrait composition'
+    : 'cinematic photo, high quality, realistic, vertical portrait composition';
+  const styledPrompt = `${prompt}, ${styleModifier}`;
   const finalSeed = seed !== undefined ? seed : Math.floor(Math.random() * 100000);
-  const url = `${POLLINATIONS_BASE}${encodeURIComponent(styledPrompt)}?width=768&height=1365&nologo=true&seed=${finalSeed}`;
-  const res = await fetchWithTimeout(url, {}, 15000);
+  // enhance=true lets Pollinations improve/expand our prompt internally
+  // before generation — aimed at getting closer to the concept-specific,
+  // well-composed images seen in reference/competitor videos, instead of a
+  // literal-but-flat rendering of our exact prompt text.
+  const url = `${POLLINATIONS_BASE}${encodeURIComponent(styledPrompt)}?width=768&height=1365&nologo=true&enhance=true&seed=${finalSeed}`;
+  const res = await fetchWithTimeout(url, {}, 20000); // enhance adds a processing pass, so a bit more time than before
   if (!res.ok) {
     throw new Error(`Pollinations returned HTTP ${res.status}`);
   }
@@ -1069,7 +1098,8 @@ async function fetchImagesPerSentence(sentences, category, outline) {
     };
     const tryAIImage = async () => {
       const aiPath = path.join(WORK_DIR, `ai_image_${i}.jpg`);
-      await generateAIImage(scene, aiPath, characterSeed);
+      const style = preferAIImageFirst ? 'illustration' : 'photo';
+      await generateAIImage(scene, aiPath, characterSeed, style);
       log(`  -> AI-generated image succeeded for sentence ${i}.`);
       clips.push({ path: aiPath, type: 'image' });
     };
@@ -1380,7 +1410,7 @@ function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
     `drawbox=x=0:y=ih-112:w=iw:h=56:color=black@0.55:t=fill`,
     `drawbox=x=0:y=ih-56:w=iw:h=56:color=black@0.70:t=fill`,
 
-    // "STORY" badge, top-left, with a soft drop shadow behind the box
+    // "FACTS" badge, top-left, with a soft drop shadow behind the box
     `drawbox=x=43:y=63:w=165:h=44:color=black@0.35:t=fill`,
     `drawbox=x=40:y=60:w=165:h=44:color=${ACCENT}@0.97:t=fill`,
     `drawtext=fontfile='${fontPathBold}':text='FACTS':fontcolor=0x0f1024:fontsize=22:x=40+(165-text_w)/2:y=60+(44-text_h)/2`,
@@ -1450,10 +1480,10 @@ const DESCRIPTION_TEASERS = [
 ];
 
 // Short, structured 3-line description (hook / curiosity teaser / CTA) plus
-// exactly 8 lowercase hashtags, per spec. Built programmatically (fixed
-// teaser bank + templated CTA) except the hook line, which needs to be
-// content-aware for its emoji placement — that part comes from Groq's
-// HOOK_EMOJI field, kept separate from the spoken SCRIPT.
+// 5 lowercase hashtags (2026 best-practice range), per spec. Built
+// programmatically (fixed teaser bank + templated CTA) except the hook
+// line, which needs to be content-aware for its emoji placement — that
+// part comes from Groq's HOOK field, kept separate from the spoken SCRIPT.
 function buildDescription(hookEmoji, category, runCount) {
   const line1 = hookEmoji;
   const line2 = DESCRIPTION_TEASERS[runCount % DESCRIPTION_TEASERS.length];
@@ -1494,7 +1524,7 @@ async function uploadToYouTube(videoPath, title, description, category) {
         tags: ['telugu', 'shorts', 'amazing facts', 'telugu facts', ...(CATEGORY_HASHTAGS[category] || []).map(h => h.replace('#', ''))],
         categoryId: '27'
       },
-      status: { privacyStatus: 'public', selfDeclaredMadeForKids: false }
+      status: { privacyStatus: 'public', selfDeclaredMadeForKids: false, containsSyntheticMedia: true }
     },
     media: { body: fs.createReadStream(videoPath) }
   });
@@ -1576,9 +1606,16 @@ async function main() {
 
   // Pull the closing CTA sentence out — a stock/AI photo search for "like
   // share subscribe" wouldn't mean anything, so its time is folded into the
-  // last content sentence's slide instead.
+  // last content sentence's slide instead. The CTA is always the actual
+  // LAST sentence (appended programmatically in generateContent) — check
+  // that specific position first, rather than findIndex's first-match,
+  // which could misfire if the model ever mentions "సబ్‌స్క్రైబ్" earlier
+  // in the script despite being told not to.
   let ctaAudioDuration = 0; // used later to time-gate the on-screen CTA button
-  const ctaIndex = imageSentences.findIndex(s => s.includes('సబ్‌స్క్రైబ్'));
+  const lastIdx = imageSentences.length - 1;
+  const ctaIndex = (lastIdx >= 0 && imageSentences[lastIdx].includes('సబ్‌స్క్రైబ్'))
+    ? lastIdx
+    : imageSentences.findIndex(s => s.includes('సబ్‌స్క్రైబ్'));
   if (ctaIndex !== -1) {
     const ctaDur = imageDurations[ctaIndex] || 0;
     ctaAudioDuration = ctaDur;
@@ -1615,54 +1652,4 @@ async function main() {
   const keptDurations = [];
   for (let i = 0; i < rawImagePaths.length; i++) {
     if (rawImagePaths[i]) {
-      imagePaths.push(rawImagePaths[i]);
-      keptDurations.push(imageDurations[i]);
-    }
-  }
-  if (imagePaths.length === 0) {
-    log('WARNING: every per-sentence image failed — falling back to one generic image for the whole video.');
-    const fallbackResult = await fetchImagesWithFallback(FALLBACK_KEYWORDS[category], 1, category, 999);
-    imagePaths.push({ path: fallbackResult.paths[0], type: 'image' });
-    keptDurations.push(imageDurations.reduce((a, b) => a + b, 0));
-  } else {
-    // Redistribute any dropped sentences' time proportionally across the survivors.
-    const totalKept = keptDurations.reduce((a, b) => a + b, 0);
-    const totalIntended = imageDurations.reduce((a, b) => a + b, 0);
-    if (totalKept > 0 && totalKept < totalIntended) {
-      const scale = totalIntended / totalKept;
-      for (let i = 0; i < keptDurations.length; i++) keptDurations[i] *= scale;
-    }
-  }
-  // buildVideo internally targets getAudioDuration(audioPath) + 0.3 as the
-  // total video length — add that same small buffer to the last slide so
-  // the sum of our durations matches exactly.
-  keptDurations[keptDurations.length - 1] += 0.3;
-
-  const videoPath = buildVideo(imagePaths, audioPath, keptDurations, ctaAudioDuration);
-
-  const videoId = await uploadToYouTube(
-    videoPath,
-    title,
-    buildDescription(hookEmoji, category, runCount),
-    category
-  );
-
-  // Custom thumbnail is a nice-to-have on top of an already-successful
-  // upload — any failure here (build error, unverified channel, etc.)
-  // must never be treated as the run failing.
-  try {
-    const thumbnailPath = path.join(WORK_DIR, 'thumbnail.jpg');
-    buildThumbnail(imagePaths[0].path, imagePaths[0].type, hookEmoji, thumbnailPath);
-    await uploadThumbnail(videoId, thumbnailPath);
-  } catch (e) {
-    log(`WARNING: thumbnail generation failed (${e.message}) — video is live with YouTube's auto-selected thumbnail instead.`);
-  }
-
-  saveState(title, category, newlyDiscovered);
-  log('Done!');
-}
-
-main().catch(err => {
-  console.error('FAILED:', err);
-  process.exit(1);
-});
+      imagePaths.pus
