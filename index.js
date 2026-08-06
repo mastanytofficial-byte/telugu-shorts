@@ -812,27 +812,29 @@ function parseNumberedSection(text, sectionHeader, n) {
 // to photos that already exist (unlike Pexels search), so a detailed,
 // exact-scene prompt gets meaningfully closer to a true "matches the script
 // exactly" image than a generic 3-5 word keyword ever can.
-async function getSentenceKeywords(sentences) {
+async function getSentenceKeywords(sentences, outline) {
   const numbered = sentences.map((s, i) => `${i + 1}. ${s}`).join('\n');
-  const prompt = `ఈ కథ కోసం మూడు విభాగాలు ఇవ్వు.
+  const outlineContext = outline ? `\n\nమూలం (అసలైన, verify చేయబడిన fact — దీనిలోని నిర్దిష్ట పేర్లు/వస్తువులు/ప్రదేశాలనే image keywords లో వాడు, స్క్రిప్ట్ వాక్యాలు దీన్నే paraphrase చేసినవి): ${outline}` : '';
+  const prompt = `ఈ fact video కోసం మూడు విభాగాలు ఇవ్వు.
 
-CHARACTER: ప్రధాన పాత్ర రూపం, ఒక లైన్‌లో (వయసు, దుస్తులు, ప్రత్యేకతలు — 15-20 పదాలు, ఆంగ్లంలో). ఇదే వర్ణన ప్రతి scene లోనూ వాడతాం, పాత్ర consistent గా కనిపించడానికి. ఉదా: "elderly Indian man, thin build, white beard, traditional cream dhoti, kind eyes".
+SUBJECT: ఈ fact యొక్క ప్రధాన విషయం ఏమిటో ఒక లైన్‌లో ఇవ్వు (ఒక జంతువు/వస్తువు/ప్రదేశం/వ్యక్తి — ఏదైతే అది, నిర్దిష్టంగా, ఆంగ్లంలో). ఇదే వర్ణన ప్రతి scene లోనూ వాడతాం, visual consistency కోసం. ఉదా: "Greenland shark, dark grey skin, slow-moving, deep ocean" లేదా "Great Pyramid of Giza, limestone blocks, desert".
 
-KEYWORDS: ప్రతి వాక్యానికి 3-5 పదాల Pexels-సెర్చ్ keyword.
+KEYWORDS: ప్రతి వాక్యానికి 3-5 పదాల Pexels-సెర్చ్ keyword — ఇది ఒక **real video/photo footage లో ఉండే అవకాశం ఉన్న**, నిర్దిష్ట, documentary-style దృశ్యం కావాలి.
 
-SCENES: ప్రతి వాక్యానికి 15-25 పదాల దృశ్య వర్ణన (ఆంగ్లంలో) — action, expression, స్థలం. పాత్ర ప్రస్తావిస్తే CHARACTER లోని అదే పదాలు వాడు.
+SCENES: ప్రతి వాక్యానికి 15-25 పదాల దృశ్య వర్ణన (ఆంగ్లంలో) — AI image generation కోసం, scientific/documentary/educational style లో, realistic గా. SUBJECT ప్రస్తావిస్తే అదే వర్ణన వాడు.
 
 నియమాలు:
-- పదాలు direct గా అనువదించకు, నిజమైన దృశ్యం రాయి (ఉదా. వైద్య "గుండె" కి "heart" వద్దు — romance ఫోటోలు వస్తాయి — "doctor checking heart with stethoscope" రాయి). భావోద్వేగాలను (courage, wisdom) మాటలుగా వాడకు, దృశ్యంగా చూపించు.
-- దేశం చెప్పకపోతే ఎప్పుడూ "Indian"/"South Indian" నేపథ్యం వాడు, Western look వద్దు.
+- పైన ఇచ్చిన **మూలం fact లోని నిర్దిష్ట పేర్లు/వస్తువులు/సంఖ్యలనే** వాడు — స్క్రిప్ట్ వాక్యం అస్పష్టంగా ఉన్నా, మూలం fact లో ఉన్న నిర్దిష్ట విషయాన్నే keyword/scene లో పెట్టు (ఉదా. మూలంలో "గ్రీన్‌ల్యాండ్ సొరచేప" అని ఉంటే, కేవలం "shark" అని కాకుండా "Greenland shark" అనే వాడు).
+- పదాలు direct గా అనువదించకు, నిజమైన దృశ్యం రాయి (ఉదా. వైద్య "గుండె" కి "heart" వద్దు — romance ఫోటోలు వస్తాయి — "doctor checking heart with stethoscope" రాయి). భావోద్వేగాలను/నైరూప్య భావనలను (mystery, importance) మాటలుగా వాడకు, దృశ్యంగా చూపించు.
+- మనుషులు కనిపించే scene అయితే, దేశం చెప్పకపోతే ఎప్పుడూ "Indian"/"South Indian" నేపథ్యం వాడు, Western look వద్దు. (జంతువులు/వస్తువులు/ప్రదేశాలకి ఇది వర్తించదు — అవి ఎక్కడివైతే అక్కడివే చూపించు.)${outlineContext}
 
 వాక్యాలు:
 ${numbered}
 
 ఖచ్చితంగా ఈ ఫార్మాట్‌లో, ఇదే క్రమంలో ఇవ్వు:
 
-CHARACTER:
-1. character description
+SUBJECT:
+1. subject description
 
 KEYWORDS:
 1. keyword phrase
@@ -846,7 +848,7 @@ SCENES:
 
   const raw = await callGroq(prompt);
   log(`Raw sentence-keywords/scenes response from Groq:\n${raw}`);
-  const character = parseNumberedSection(raw, 'CHARACTER:', 1)[0];
+  const character = parseNumberedSection(raw, 'SUBJECT:', 1)[0];
   const keywords = parseNumberedSection(raw, 'KEYWORDS:', sentences.length);
   const scenes = parseNumberedSection(raw, 'SCENES:', sentences.length);
   log(`  main character: ${character || '(none parsed)'}`);
@@ -906,10 +908,10 @@ function generateHFSpaceVideo(prompt, savePath, timeoutMs = 40000) {
 // photo, in that order. Returns {path, type: 'video'|'image'} per sentence
 // (or null on total failure) so buildVideo knows whether to loop/trim a
 // real clip or apply a Ken-Burns pan/zoom to a still.
-async function fetchImagesPerSentence(sentences, category) {
+async function fetchImagesPerSentence(sentences, category, outline) {
   let character, keywords, scenes;
   try {
-    const result = await getSentenceKeywords(sentences);
+    const result = await getSentenceKeywords(sentences, outline);
     character = result.character;
     keywords = result.keywords;
     scenes = result.scenes;
@@ -1027,6 +1029,106 @@ function buildRealVideoClip(videoPath, duration, outPath) {
     `"${outPath}"`
   ].join(' ');
   execSync(cmd, { stdio: 'inherit' });
+}
+
+// libass/drawtext look up fonts by their EMBEDDED family name, not the
+// filename — detect it at runtime with fc-scan so text rendering works
+// regardless of what the .ttf file happens to be named.
+function getFontFamilyName(fontPath, fallback) {
+  try {
+    const name = execSync(`fc-scan --format "%{family}\n" "${fontPath}"`).toString().trim().split('\n')[0];
+    return name || fallback;
+  } catch (e) {
+    log(`WARNING: fc-scan failed for ${fontPath} (${e.message}), using fallback family name "${fallback}".`);
+    return fallback;
+  }
+}
+
+// Wraps text at a max character count per line so thumbnail text fits the
+// frame width at a large, readable size.
+function wrapText(text, maxCharsPerLine) {
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? current + ' ' + word : word;
+    if (candidate.length > maxCharsPerLine && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+// Builds a custom thumbnail: a frame from the video's own first slide
+// (image or video) with bold, high-contrast hook-text overlaid — shown
+// ONLY in YouTube's feed/search preview, never during playback (kept
+// completely separate from the on-screen-text-free video itself).
+//
+// Uses the subtitles/libass rendering path, NOT drawtext — testing showed
+// drawtext produces corrupted/overlapping glyphs for some Telugu conjuncts
+// (e.g. "చంద్రుడు" rendering with a garbled ending), the same class of bug
+// from this project's original on-screen-text era. libass (via harfbuzz)
+// shapes Telugu conjuncts correctly, which is why the disabled subtitle
+// feature used it too.
+function buildThumbnail(mediaPath, mediaType, hookText, outPath) {
+  const fontsDir = path.join(__dirname, 'fonts');
+  const fontPathBoldCandidate = path.join(fontsDir, 'NotoSansTelugu-Bold.ttf');
+  const fontPathBold = fs.existsSync(fontPathBoldCandidate) ? fontPathBoldCandidate : path.join(fontsDir, 'NotoSansTelugu-Regular.ttf');
+  const fontFamily = getFontFamilyName(fontPathBold, 'Noto Sans Telugu');
+
+  // Strip emoji before wrapping — libass can't render most emoji glyphs
+  // reliably either, and they'd show as tofu boxes on the thumbnail.
+  const cleanText = hookText.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim();
+  const lines = wrapText(cleanText, 24);
+  const assText = lines.join('\\N');
+
+  const frameOut = path.join(WORK_DIR, 'thumb_frame.jpg');
+  if (mediaType === 'video') {
+    execSync(`ffmpeg -y -i "${mediaPath}" -ss 1 -vf "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280" -frames:v 1 "${frameOut}"`, { stdio: 'inherit' });
+  } else {
+    execSync(`ffmpeg -y -i "${mediaPath}" -vf "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280" -frames:v 1 "${frameOut}"`, { stdio: 'inherit' });
+  }
+
+  const assPath = path.join(WORK_DIR, 'thumbnail.ass');
+  const assContent = `[Script Info]
+ScriptType: v4.00+
+PlayResX: 720
+PlayResY: 1280
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Thumb,${fontFamily},54,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,3,0,2,2,50,50,500,1
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:05.00,Thumb,,0,0,0,,${assText}
+`;
+  fs.writeFileSync(assPath, assContent, 'utf8');
+
+  const filters = `eq=contrast=1.1:saturation=1.15,subtitles='${assPath}':fontsdir='${fontsDir}'`;
+  execSync(`ffmpeg -y -i "${frameOut}" -vf "${filters}" -frames:v 1 -update 1 -q:v 2 "${outPath}"`, { stdio: 'inherit' });
+  log(`Thumbnail built: ${outPath} (font family "${fontFamily}")`);
+  return outPath;
+}
+
+async function uploadThumbnail(videoId, thumbnailPath) {
+  try {
+    const oauth2Client = new google.auth.OAuth2(YT_CLIENT_ID, YT_CLIENT_SECRET);
+    oauth2Client.setCredentials({ refresh_token: YT_REFRESH_TOKEN });
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+    await youtube.thumbnails.set({
+      videoId,
+      media: { body: fs.createReadStream(thumbnailPath) }
+    });
+    log('Custom thumbnail uploaded successfully.');
+  } catch (e) {
+    // Custom thumbnails require a phone-verified YouTube account — if that
+    // isn't done yet, this fails but the video itself already uploaded
+    // fine with YouTube's auto-selected thumbnail as a fallback.
+    log(`WARNING: thumbnail upload failed (${e.message}) — video is still live with YouTube's auto-selected thumbnail. (Custom thumbnails require a phone-verified channel — verify at youtube.com/verify if this keeps failing.)`);
+  }
 }
 
 function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
@@ -1352,7 +1454,7 @@ async function main() {
   }
 
   log(`Fetching one content-matched image per sentence (${imageSentences.length} sentences)...`);
-  const rawImagePaths = await fetchImagesPerSentence(imageSentences, category);
+  const rawImagePaths = await fetchImagesPerSentence(imageSentences, category, outline);
 
   // Drop any sentence whose image totally failed, redistributing its share
   // of time to the remaining successful slides so there's no dead/black gap.
@@ -1385,11 +1487,23 @@ async function main() {
 
   const videoPath = buildVideo(imagePaths, audioPath, keptDurations, ctaAudioDuration);
 
-  await uploadToYouTube(
+  const videoId = await uploadToYouTube(
     videoPath,
     title,
     buildDescription(hookEmoji, category, runCount)
   );
+
+  // Custom thumbnail is a nice-to-have on top of an already-successful
+  // upload — any failure here (build error, unverified channel, etc.)
+  // must never be treated as the run failing.
+  try {
+    const thumbnailPath = path.join(WORK_DIR, 'thumbnail.jpg');
+    buildThumbnail(imagePaths[0].path, imagePaths[0].type, hookEmoji, thumbnailPath);
+    await uploadThumbnail(videoId, thumbnailPath);
+  } catch (e) {
+    log(`WARNING: thumbnail generation failed (${e.message}) — video is live with YouTube's auto-selected thumbnail instead.`);
+  }
+
   saveState(title, category, newlyDiscovered);
   log('Done!');
 }
