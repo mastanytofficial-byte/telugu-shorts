@@ -395,7 +395,16 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function callGroq(prompt, attempt = 1) {
+const PRIMARY_MODEL = 'llama-3.3-70b-versatile';
+// Free-tier daily quotas are tracked SEPARATELY per model under the same
+// API key (verified June 2026: llama-3.3-70b-versatile=100K TPD,
+// gpt-oss-120b=200K TPD) — falling back to a different model when the
+// primary's daily limit is hit gets us a genuinely separate free budget,
+// no payment needed. gpt-oss-120b's known reasoning-leak issue is already
+// covered by the <think> tag stripping below.
+const FALLBACK_MODEL = 'openai/gpt-oss-120b';
+
+async function callGroq(prompt, attempt = 1, model = PRIMARY_MODEL) {
   const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -403,17 +412,7 @@ async function callGroq(prompt, attempt = 1) {
       'Authorization': `Bearer ${GROQ_API_KEY}`
     },
     body: JSON.stringify({
-      // Back to llama-3.3-70b-versatile. Deprecated by Groq (2026-06-17) but
-      // still serving. Rationale: its known weakness was story LOGIC, which
-      // the STORY_OUTLINES approach now handles for it — and that combination
-      // was never actually tested together, since outlines and the model
-      // switch landed at the same time. Its replacements each brought worse
-      // problems no prompt could fix: gpt-oss-120b leaked reasoning text and
-      // hallucinated plot details; qwen3.6-27b emitted corrupted Telugu
-      // (English fragments spliced mid-word, e.g. "భయంతremover").
-      // If Groq fully removes this model, revisit — gpt-oss-120b is the
-      // documented replacement.
-      model: 'llama-3.3-70b-versatile',
+      model,
       messages: [{ role: 'user', content: prompt }]
     })
   });
@@ -424,14 +423,16 @@ async function callGroq(prompt, attempt = 1) {
     const isRateLimit = data.error && data.error.code === 'rate_limit_exceeded';
 
     if (isRateLimit && isDailyLimit) {
-      // Daily budget genuinely exhausted — the reset window can be hours
-      // away (message here said "try again in 3m31s", but that's still
-      // far longer than our per-minute retry backoff is designed for, and
-      // could be much longer depending on how close to the boundary we
-      // are). Retrying here would just waste time before failing anyway —
-      // fail fast with a clear message instead of silently burning the
-      // step's time budget on retries that can't succeed.
-      throw new Error(`Groq DAILY token limit reached (not a transient per-minute limit) — this run cannot continue. ${errorMessage}`);
+      if (model === PRIMARY_MODEL) {
+        // Primary model's daily budget is exhausted — try the fallback
+        // model instead, which has its own separate daily quota.
+        log(`WARNING: "${PRIMARY_MODEL}" daily token limit reached — switching to fallback model "${FALLBACK_MODEL}" for the rest of this run (it has a separate free daily quota).`);
+        return callGroq(prompt, 1, FALLBACK_MODEL);
+      }
+      // Fallback model's daily budget is ALSO exhausted — genuinely out of
+      // free capacity today. The reset window can be hours away, so
+      // retrying here would just waste time before failing anyway.
+      throw new Error(`Groq DAILY token limit reached on both "${PRIMARY_MODEL}" and fallback "${FALLBACK_MODEL}" — this run cannot continue today. ${errorMessage}`);
     }
 
     // Groq's per-minute token limit (TPM) is a short-lived, transient
@@ -443,13 +444,13 @@ async function callGroq(prompt, attempt = 1) {
       const waitMs = 15000 * attempt; // 15s, 30s, 45s — long enough to reliably cross a full TPM reset window, even with several of our own calls firing in the same run
       log(`WARNING: Groq rate limit hit (attempt ${attempt}/3) — waiting ${waitMs / 1000}s before retrying.`);
       await sleep(waitMs);
-      return callGroq(prompt, attempt + 1);
+      return callGroq(prompt, attempt + 1, model);
     }
     throw new Error('Groq did not return content: ' + JSON.stringify(data));
   }
-  // Defensive safety net: strip any <think>...</think> block, in case a
-  // future model swap brings back a reasoning model whose planning text
-  // would otherwise leak straight into the script.
+  // Defensive safety net: strip any <think>...</think> block — gpt-oss-120b
+  // (the fallback model) is known to leak its reasoning/planning text into
+  // the response without this.
   let content = data.choices[0].message.content.trim();
   content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   // Small proactive spacing after every call — a single run can make up to
