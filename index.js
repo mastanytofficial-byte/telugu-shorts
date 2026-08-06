@@ -389,7 +389,7 @@ async function callGroq(prompt, attempt = 1) {
     // the whole run over a limit that's already gone by the next request.
     const isRateLimit = data.error && data.error.code === 'rate_limit_exceeded';
     if (isRateLimit && attempt <= 3) {
-      const waitMs = 3000 * attempt; // 3s, 6s, 9s — growing backoff
+      const waitMs = 15000 * attempt; // 15s, 30s, 45s — long enough to reliably cross a full TPM reset window, even with several of our own calls firing in the same run
       log(`WARNING: Groq rate limit hit (attempt ${attempt}/3) — waiting ${waitMs / 1000}s before retrying.`);
       await sleep(waitMs);
       return callGroq(prompt, attempt + 1);
@@ -401,6 +401,12 @@ async function callGroq(prompt, attempt = 1) {
   // would otherwise leak straight into the script.
   let content = data.choices[0].message.content.trim();
   content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  // Small proactive spacing after every call — a single run can make up to
+  // ~6 Groq calls (script + retries + keywords + auto-growth generate and
+  // verify) in quick succession; this naturally throttles our own request
+  // rate so we're less likely to burst past the TPM limit in the first
+  // place, not just react to it after the fact.
+  await sleep(1500);
   return content;
 }
 
