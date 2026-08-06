@@ -354,7 +354,11 @@ function parseLabeledContent(raw) {
   };
 }
 
-async function callGroq(prompt) {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function callGroq(prompt, attempt = 1) {
   const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -378,6 +382,18 @@ async function callGroq(prompt) {
   });
   const data = await res.json();
   if (!data.choices || !data.choices[0]) {
+    // Groq's per-minute token limit (TPM) is a short-lived, transient
+    // limit that resets within seconds — the auto-growth fact system
+    // (extra generate+verify calls) can occasionally push a run over it.
+    // A brief wait and retry succeeds almost every time, versus failing
+    // the whole run over a limit that's already gone by the next request.
+    const isRateLimit = data.error && data.error.code === 'rate_limit_exceeded';
+    if (isRateLimit && attempt <= 3) {
+      const waitMs = 3000 * attempt; // 3s, 6s, 9s — growing backoff
+      log(`WARNING: Groq rate limit hit (attempt ${attempt}/3) — waiting ${waitMs / 1000}s before retrying.`);
+      await sleep(waitMs);
+      return callGroq(prompt, attempt + 1);
+    }
     throw new Error('Groq did not return content: ' + JSON.stringify(data));
   }
   // Defensive safety net: strip any <think>...</think> block, in case a
