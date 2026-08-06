@@ -1007,6 +1007,17 @@ async function fetchImagesPerSentence(sentences, category, outline) {
     log(`  character seed: ${characterSeed} (for: "${character}")`);
   }
 
+  // Categories whose facts are typically about abstract/conceptual/
+  // molecular subjects (energy transfer, brain processes, space phenomena)
+  // essentially never have matching real stock footage — Pexels Video
+  // searches for these tend to return generic, mismatched results rather
+  // than failing cleanly, which is worse than skipping straight to a
+  // purpose-generated AI image. Concrete/filmable categories (animal,
+  // ocean, food, money, history) keep real video as the first try since
+  // actual footage often exists and looks more dynamic than a still.
+  const ABSTRACT_CATEGORIES = new Set(['mindblowing', 'psychology', 'earth_space', 'human_body', 'technology']);
+  const preferAIImageFirst = ABSTRACT_CATEGORIES.has(category);
+
   const clips = [];
   const usedVideoIds = new Set();
   const usedPexelsIds = new Set(); // avoid repeating the same stock photo within this video
@@ -1016,41 +1027,65 @@ async function fetchImagesPerSentence(sentences, category, outline) {
     const scene = character ? `${character}. ${sceneBase}` : sceneBase;
     log(`Sentence ${i} ("${sentences[i].slice(0, 40)}...") -> keyword: "${keyword}" | AI scene: "${scene.slice(0, 60)}..."`);
 
-    // 1) Real stock video footage — tried first.
-    try {
+    const tryPexelsVideo = async () => {
       const result = await fetchPexelsVideo(keyword, i, usedVideoIds);
       usedVideoIds.add(result.id);
       log(`  -> Pexels video succeeded for sentence ${i}.`);
       clips.push({ path: result.path, type: 'video' });
-      continue;
-    } catch (e) {
-      log(`  WARNING: Pexels video search failed for sentence ${i} (${e.message}), trying experimental AI video.`);
-    }
-
-    // 1.5) EXPERIMENTAL: AI-generated video via a Hugging Face Space — best
-    // shot at real motion for scenes that no stock library will ever have
-    // (mythological/fantastical moments). No SLA; expected to fail often.
-    const hfVideoPath = path.join(WORK_DIR, `hf_video_${i}.mp4`);
-    try {
-      generateHFSpaceVideo(scene, hfVideoPath);
-      const probe = execSync(`ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "${hfVideoPath}"`).toString().trim();
-      if (probe !== 'video') throw new Error('no video stream in output file');
-      log(`  -> Experimental HF Space video succeeded for sentence ${i}.`);
-      clips.push({ path: hfVideoPath, type: 'video' });
-      continue;
-    } catch (e) {
-      log(`  (expected, often fails) HF Space video generation failed for sentence ${i} (${e.message}), falling back to AI image.`);
-    }
-
-    // 2) AI-generated image (exact-scene prompt, character-consistent).
-    const aiPath = path.join(WORK_DIR, `ai_image_${i}.jpg`);
-    try {
+    };
+    const tryAIImage = async () => {
+      const aiPath = path.join(WORK_DIR, `ai_image_${i}.jpg`);
       await generateAIImage(scene, aiPath, characterSeed);
       log(`  -> AI-generated image succeeded for sentence ${i}.`);
       clips.push({ path: aiPath, type: 'image' });
-      continue;
-    } catch (e) {
-      log(`  WARNING: AI image generation failed for sentence ${i} (${e.message}), falling back to Pexels photo.`);
+    };
+
+    if (preferAIImageFirst) {
+      // 1) AI-generated image first — abstract concept, real footage unlikely.
+      try {
+        await tryAIImage();
+        continue;
+      } catch (e) {
+        log(`  WARNING: AI image generation failed for sentence ${i} (${e.message}), trying Pexels video instead.`);
+      }
+      // 1.5) Pexels video as fallback, in case a concrete visual works after all.
+      try {
+        await tryPexelsVideo();
+        continue;
+      } catch (e) {
+        log(`  WARNING: Pexels video also failed for sentence ${i} (${e.message}), falling back to Pexels photo.`);
+      }
+    } else {
+      // 1) Real stock video footage — tried first.
+      try {
+        await tryPexelsVideo();
+        continue;
+      } catch (e) {
+        log(`  WARNING: Pexels video search failed for sentence ${i} (${e.message}), trying experimental AI video.`);
+      }
+
+      // 1.5) EXPERIMENTAL: AI-generated video via a Hugging Face Space — best
+      // shot at real motion for scenes that no stock library will ever have
+      // (mythological/fantastical moments). No SLA; expected to fail often.
+      const hfVideoPath = path.join(WORK_DIR, `hf_video_${i}.mp4`);
+      try {
+        generateHFSpaceVideo(scene, hfVideoPath);
+        const probe = execSync(`ffprobe -v error -select_streams v:0 -show_entries stream=codec_type -of csv=p=0 "${hfVideoPath}"`).toString().trim();
+        if (probe !== 'video') throw new Error('no video stream in output file');
+        log(`  -> Experimental HF Space video succeeded for sentence ${i}.`);
+        clips.push({ path: hfVideoPath, type: 'video' });
+        continue;
+      } catch (e) {
+        log(`  (expected, often fails) HF Space video generation failed for sentence ${i} (${e.message}), falling back to AI image.`);
+      }
+
+      // 2) AI-generated image (exact-scene prompt, character-consistent).
+      try {
+        await tryAIImage();
+        continue;
+      } catch (e) {
+        log(`  WARNING: AI image generation failed for sentence ${i} (${e.message}), falling back to Pexels photo.`);
+      }
     }
 
     // 3) Pexels stock photo — last resort.
