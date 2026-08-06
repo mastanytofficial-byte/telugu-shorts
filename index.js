@@ -264,6 +264,26 @@ function ensureSentenceBreaks(text, maxLen = 140) {
   return fixed.join(' ').replace(/\s+/g, ' ').trim();
 }
 
+// Fixed, guaranteed-correct emoji per category — the model was asked to
+// freely choose a "contextually fitting" emoji before, but even with a
+// corrective example already in the prompt (explicitly: bacteria fact ->
+// 🦠, not 🐟), it still picked wrong ones. A model apparently can't be
+// prompted into reliable word-to-emoji matching for Telugu content, so
+// this is deterministic instead — category-level relevance, zero risk of
+// a wrong pick.
+const CATEGORY_EMOJI = {
+  mindblowing: '🤯',
+  psychology: '🧠',
+  earth_space: '🌌',
+  animal: '🐾',
+  money: '💰',
+  history: '🏛️',
+  human_body: '🩺',
+  technology: '💻',
+  food: '🍽️',
+  ocean: '🌊'
+};
+
 const FALLBACK_KEYWORDS = {
   mindblowing: 'science mystery curious object closeup',
   psychology: 'human brain mind thinking illustration',
@@ -295,7 +315,22 @@ const WORD_COUNT_TARGETS = {
 // Appended programmatically after generation — never left to the model to
 // retype, since it occasionally introduced typos into this fixed sentence
 // (e.g. "సబ్‌స్రైబ్" missing a syllable) when asked to reproduce it itself.
-const CTA_SENTENCE = 'మరిన్ని ఇలాంటి amazing facts కోసం ఫాలో అవ్వండి, లైక్ షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.';
+// Rotating, warmer CTA variations — a single fixed robotic "follow, like,
+// share, subscribe" checklist repeated identically on every video starts
+// to feel templated to a returning viewer. These read more like a genuine,
+// appreciative invitation than a command list. Each still contains
+// 'సబ్‌స్క్రైబ్' (Telugu script) so the existing CTA-detection/trim logic
+// (which checks for that substring) keeps working across all variants.
+const CTA_VARIATIONS = [
+  'ఇలాంటి ఆసక్తికరమైన facts ఇంకా కావాలంటే, సబ్‌స్క్రైబ్ చేసేయండి.',
+  'నచ్చిందా? ఇలాంటి facts రోజూ కావాలంటే, ఫాలో అవ్వండి, సబ్‌స్క్రైబ్ చేయండి.',
+  'మీకు నచ్చితే, ఒక్క సబ్‌స్క్రైబ్ చాలు — ఇంకా ఇలాంటివి తెస్తాను.',
+  'ఇలాంటి facts miss అవ్వకూడదంటే, సబ్‌స్క్రైబ్ చేసుకోండి.'
+];
+
+function pickCTA(runCount) {
+  return CTA_VARIATIONS[runCount % CTA_VARIATIONS.length];
+}
 
 function buildPrompt(category, recentTitles, outline) {
   const avoidLine = recentTitles.length
@@ -335,16 +370,16 @@ ${outline}
   return `${topicInstruction}
 
 జవాబును ఖచ్చితంగా ఈ నాలుగు లైన్ల ఫార్మాట్‌లోనే ఇవ్వు, ఇదే క్రమంలో, మరేమీ ముందు/వెనుక రాయకు:
-TITLE: (5-8 తెలుగు పదాల్లో ఒక చిన్న శీర్షిక, సందర్భానికి తగిన ఒక emoji తో — ఆ emoji వాక్యం చివర్లో కాకుండా, సంబంధిత పదం పక్కనే పెట్టు)
+TITLE: (5-8 తెలుగు పదాల్లో ఒక చిన్న శీర్షిక — ఇందులో emoji వాడకు, మేమే జోడిస్తాం)
 KEYWORDS: (ఈ కంటెంట్‌కి సరిపోయే 3 నిర్దిష్టమైన, దృశ్యమానమైన ఆంగ్ల keywords — abstract పదాలు కాకుండా (ఉదా. "wisdom", "life" వద్దు), కళ్ళకి కనిపించే నిర్దిష్ట scene/object/action పదాలు వాడు, ఉదా: "elderly woman smiling", "children playing park", "mother holding baby", "sunrise mountains road". Content కి నేరుగా సంబంధం ఉండాలి, generic వద్దు.)
-HOOK_EMOJI: (పైన ఉన్న Hook ప్రశ్ననే, 1-2 సందర్భోచిత emojis తో, 15 తెలుగు పదాల లోపు తిరిగి రాయి — video description లో వాడతాం, script లో కాదు. Emoji లు వాక్యం చివర్లో మాత్రమే కుప్పగా పెట్టకు — ఏ పదానికి సంబంధించినవో ఆ పదం పక్కనే పెట్టు, ఉదా: "చంద్రుడు 🌙 ఎప్పుడూ ఒకే వైపు ఎందుకు చూపిస్తాడో తెలుసా?")
+HOOK: (పైన ఉన్న Hook ప్రశ్ననే, 15 తెలుగు పదాల లోపు తిరిగి రాయి — video description లో వాడతాం. ఇందులో emoji వాడకు, మేమే జోడిస్తాం.)
 SCRIPT: (పైన చెప్పిన నియమాల ప్రకారం పూర్తి వాయిస్-ఓవర్ టెక్స్ట్ — ఇందులో emoji లు వాడకు)`;
 }
 
 function parseLabeledContent(raw) {
   const titleMatch = raw.match(/TITLE:\s*(.+)/i);
   const keywordsMatch = raw.match(/KEYWORDS:\s*(.+)/i);
-  const hookEmojiMatch = raw.match(/HOOK_EMOJI:\s*(.+)/i);
+  const hookEmojiMatch = raw.match(/HOOK:\s*(.+)/i);
   const scriptMatch = raw.match(/SCRIPT:\s*([\s\S]+)/i);
   return {
     title: titleMatch ? titleMatch[1].trim() : null,
@@ -410,7 +445,7 @@ async function callGroq(prompt, attempt = 1) {
   return content;
 }
 
-async function generateContent(category, recentTitles, outline) {
+async function generateContent(category, recentTitles, outline, ctaSentence) {
   log(`Generating ${category} content via Groq...`);
   const prompt = buildPrompt(category, recentTitles, outline);
 
@@ -460,7 +495,11 @@ async function generateContent(category, recentTitles, outline) {
   title = bestTitle; keywords = bestKeywords; hookEmoji = bestHookEmoji; script = bestScript;
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
-  if (!hookEmoji) hookEmoji = title; // fallback: reuse title (no emoji, but never blank)
+  if (!hookEmoji) hookEmoji = title; // fallback: reuse title text (emoji still added below)
+
+  const categoryEmoji = CATEGORY_EMOJI[category] || '';
+  title = `${title} ${categoryEmoji}`.trim();
+  hookEmoji = `${hookEmoji} ${categoryEmoji}`.trim();
 
   // Defensive: strip any CTA-like ending the model wrote anyway, despite
   // being told not to — avoids ending up with two CTA lines back to back.
@@ -471,7 +510,7 @@ async function generateContent(category, recentTitles, outline) {
   }
 
   script = ensureSentenceBreaks(script);
-  script = (script.trim() + ' ' + CTA_SENTENCE).trim();
+  script = (script.trim() + ' ' + ctaSentence).trim();
   log(`Title: ${title}`);
   log(`Keywords: ${keywords}`);
   log(`Hook emoji line: ${hookEmoji}`);
@@ -1310,19 +1349,24 @@ function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
   return outPath;
 }
 
+// 2026 research consensus: 3-5 highly relevant hashtags perform BEST —
+// exceeding 5 can trigger spam-signal dilution in the recommendation
+// engine, and only the first 3 in a description show as clickable links
+// above the title anyway. #shorts first (Shorts-shelf categorization),
+// #telugufacts second (language/niche targeting), then 3 specific tags.
 const CATEGORY_HASHTAGS = {
-  mindblowing: ['#amazingfacts', '#mindblowing', '#factsdaily', '#curiousfacts'],
-  psychology: ['#psychologyfacts', '#mindfacts', '#humanmind', '#psychologytips'],
-  earth_space: ['#spacefacts', '#earthfacts', '#astronomy', '#universe'],
-  animal: ['#animalfacts', '#wildlifefacts', '#nature', '#animalworld'],
-  money: ['#moneyfacts', '#financefacts', '#economyfacts', '#moneytips'],
-  history: ['#historyfacts', '#historymysteries', '#ancienthistory', '#historylovers'],
-  human_body: ['#humanbodyfacts', '#sciencefacts', '#bodyfacts', '#anatomy'],
-  technology: ['#techfacts', '#technology', '#gadgets', '#innovation'],
-  food: ['#foodfacts', '#foodie', '#cookingfacts', '#foodlovers'],
-  ocean: ['#oceanfacts', '#marinelife', '#seacreatures', '#underwater']
+  mindblowing: ['#amazingfacts', '#mindblowing', '#curiousfacts'],
+  psychology: ['#psychologyfacts', '#mindfacts', '#humanmind'],
+  earth_space: ['#spacefacts', '#astronomy', '#universe'],
+  animal: ['#animalfacts', '#wildlifefacts', '#nature'],
+  money: ['#moneyfacts', '#financefacts', '#economyfacts'],
+  history: ['#historyfacts', '#historymysteries', '#ancienthistory'],
+  human_body: ['#humanbodyfacts', '#sciencefacts', '#anatomy'],
+  technology: ['#techfacts', '#technology', '#innovation'],
+  food: ['#foodfacts', '#foodie', '#cookingfacts'],
+  ocean: ['#oceanfacts', '#marinelife', '#underwater']
 };
-const BASE_HASHTAGS = ['#shorts', '#ytshorts', '#telugufacts', '#didyouknow'];
+const BASE_HASHTAGS = ['#shorts', '#telugufacts'];
 
 // Generic curiosity-building teasers — deliberately NOT about any specific
 // fact's content (that would summarize/spoil the video), just build
@@ -1345,7 +1389,7 @@ function buildDescription(hookEmoji, category, runCount) {
   const line1 = hookEmoji;
   const line2 = DESCRIPTION_TEASERS[runCount % DESCRIPTION_TEASERS.length];
   const line3 = 'మరిన్ని facts కోసం Subscribe చేయండి! 🔔';
-  const hashtags = [...BASE_HASHTAGS, ...(CATEGORY_HASHTAGS[category] || [])].slice(0, 8).join(' ');
+  const hashtags = [...BASE_HASHTAGS, ...(CATEGORY_HASHTAGS[category] || [])].slice(0, 5).join(' ');
 
   return `${line1}\n${line2}\n${line3}\n\n${hashtags}`;
 }
@@ -1361,7 +1405,7 @@ function sanitizeForYouTube(text, maxLen) {
   return cleaned.slice(0, maxLen).trim();
 }
 
-async function uploadToYouTube(videoPath, title, description) {
+async function uploadToYouTube(videoPath, title, description, category) {
   log('Uploading to YouTube...');
   const oauth2Client = new google.auth.OAuth2(YT_CLIENT_ID, YT_CLIENT_SECRET);
   oauth2Client.setCredentials({ refresh_token: YT_REFRESH_TOKEN });
@@ -1378,7 +1422,7 @@ async function uploadToYouTube(videoPath, title, description) {
       snippet: {
         title: safeTitle,
         description: safeDescription,
-        tags: ['telugu', 'facts', 'shorts', 'amazing facts', 'telugu facts', 'did you know'],
+        tags: ['telugu', 'shorts', 'amazing facts', 'telugu facts', ...(CATEGORY_HASHTAGS[category] || []).map(h => h.replace('#', ''))],
         categoryId: '27'
       },
       status: { privacyStatus: 'public', selfDeclaredMadeForKids: false }
@@ -1437,7 +1481,8 @@ async function main() {
   const category = pickCategory(runCount);
   const { outline, newlyDiscovered } = await getOrGrowFactOutline(category, categoryRunCounts, discoveredFacts);
 
-  const { title, hookEmoji, script } = await generateContent(category, usedTitles, outline);
+  const ctaSentence = pickCTA(runCount);
+  const { title, hookEmoji, script } = await generateContent(category, usedTitles, outline, ctaSentence);
   const allSentences = splitIntoSentences(script);
   let { audioPath, sentenceDurations, silenceGap } = await generateAudioForScript(allSentences);
 
@@ -1478,10 +1523,14 @@ async function main() {
     }
   }
 
-  // Cap distinct images at 6 (Pexels/Pollinations call budget + render
+  // Cap distinct images at 10 (Pexels/Pollinations call budget + render
   // time) — merge any extra trailing sentences' screen time into the last
   // kept slide. Each sentence's own audio was still generated naturally.
-  const MAX_SLIDES = 6;
+  // Raised from 6 (set when videos ran ~25-30s) now that videos run
+  // ~55-63s with typically 8-10 sentences — the old cap forced ~9-10s per
+  // scene, well past the 2-3s pacing that retention research favors for
+  // Shorts. 10 lets a typical script's sentences each get their own visual.
+  const MAX_SLIDES = 10;
   if (imageSentences.length > MAX_SLIDES) {
     const extraDuration = imageDurations.slice(MAX_SLIDES - 1).reduce((a, b) => a + b, 0);
     imageSentences = imageSentences.slice(0, MAX_SLIDES - 1).concat([imageSentences[imageSentences.length - 1]]);
@@ -1525,7 +1574,8 @@ async function main() {
   const videoId = await uploadToYouTube(
     videoPath,
     title,
-    buildDescription(hookEmoji, category, runCount)
+    buildDescription(hookEmoji, category, runCount),
+    category
   );
 
   // Custom thumbnail is a nice-to-have on top of an already-successful
