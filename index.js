@@ -420,27 +420,38 @@ async function generateContent(category, recentTitles, outline) {
 
   // The many formatting/punctuation rules can sometimes cause the model to
   // under-shoot the word count badly (seen once: ~16s of audio instead of
-  // ~25-30s). One retry with the word count called out more forcefully
-  // fixes this far more often than not — cheap insurance against a
-  // noticeably-too-short video.
+  // ~25-30s). Retry (up to 2 extra attempts) with the word count called out
+  // more forcefully — and critically, keep retrying until the target is
+  // actually met, not just "longer than the previous attempt" (a bug: a
+  // 40-word retry over a 20-word original passed the old "improved" check
+  // while still being far short of a 110-130 word target).
   const target = WORD_COUNT_TARGETS[category];
   let wordCount = script.split(/\s+/).filter(Boolean).length;
-  if (wordCount < target.min - 15) {
-    log(`WARNING: script came back too short (${wordCount} words, need ${target.min}-${target.max}) — retrying with a stronger word-count reminder.`);
+  let bestScript = script, bestTitle = title, bestKeywords = keywords, bestHookEmoji = hookEmoji, bestWordCount = wordCount;
+
+  for (let retryAttempt = 1; wordCount < target.min - 15 && retryAttempt <= 2; retryAttempt++) {
+    log(`WARNING: script came back too short (${wordCount} words, need ${target.min}-${target.max}) — retry ${retryAttempt}/2 with a stronger word-count reminder.`);
     const retryPrompt = prompt + `\n\nచాలా ముఖ్యం: మీ మునుపటి ప్రయత్నం చాలా చిన్నగా (${wordCount} పదాలు మాత్రమే) వచ్చింది. ఈసారి ఖచ్చితంగా ${target.min}-${target.max} తెలుగు పదాలు ఉండేలా SCRIPT రాయి — అవసరమైతే మరిన్ని వివరాలు/ఉదాహరణలు జోడించి పొడిగించు.`;
     raw = await callGroq(retryPrompt);
     const retryParsed = parseLabeledContent(raw);
     if (retryParsed.script) {
       const retryWordCount = retryParsed.script.split(/\s+/).filter(Boolean).length;
-      log(`Retry produced ${retryWordCount} words.`);
-      if (retryWordCount > wordCount) {
-        title = retryParsed.title;
-        keywords = retryParsed.keywords;
-        hookEmoji = retryParsed.hookEmoji;
-        script = retryParsed.script;
+      log(`  Retry ${retryAttempt} produced ${retryWordCount} words.`);
+      wordCount = retryWordCount;
+      script = retryParsed.script;
+      if (retryWordCount > bestWordCount) {
+        bestScript = retryParsed.script;
+        bestTitle = retryParsed.title;
+        bestKeywords = retryParsed.keywords;
+        bestHookEmoji = retryParsed.hookEmoji;
+        bestWordCount = retryWordCount;
       }
     }
   }
+  if (bestWordCount < target.min - 15) {
+    log(`⚠️ WARNING: after all retries, script is still short (${bestWordCount} words, target ${target.min}-${target.max}) — using the best attempt available. Video will be shorter than intended this time.`);
+  }
+  title = bestTitle; keywords = bestKeywords; hookEmoji = bestHookEmoji; script = bestScript;
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
   if (!hookEmoji) hookEmoji = title; // fallback: reuse title (no emoji, but never blank)
@@ -522,6 +533,19 @@ function getAudioFormat(audioPath) {
 // {audioPath, sentenceDurations, silenceGap} shape as before (durations
 // aggregated back up to one number per original sentence, including its
 // own internal comma gaps) so nothing downstream needs to change.
+// Google TTS adds its own small leading/trailing silence to short
+// utterances (more noticeable the shorter the clause) — left untrimmed,
+// this compounds with our own explicitly-inserted gap and produces pauses
+// far longer than designed (measured up to ~1s instead of 0.35s in a real
+// video). Strips it down to a small natural buffer before we add our own
+// exact gap on top.
+function trimSilence(clipPath) {
+  const trimmedPath = clipPath.replace('.wav', '_trimmed.wav');
+  const filter = 'silenceremove=start_periods=1:start_duration=0:start_threshold=-35dB:start_silence=0.05,areverse,silenceremove=start_periods=1:start_duration=0:start_threshold=-35dB:start_silence=0.05,areverse';
+  execSync(`ffmpeg -y -i "${clipPath}" -af "${filter}" -c:a pcm_s16le "${trimmedPath}"`, { stdio: 'pipe' });
+  fs.renameSync(trimmedPath, clipPath);
+}
+
 async function generateAudioForScript(sentences) {
   const commaGap = 0.08;  // shorter pause within a sentence, at a comma
   const periodGap = 0.35; // longer pause between sentences
@@ -537,6 +561,11 @@ async function generateAudioForScript(sentences) {
       const buf = await synthesizeOneSentence(clauses[ci]);
       const p = path.join(WORK_DIR, `clip_${si}_${ci}.wav`);
       fs.writeFileSync(p, buf);
+      try {
+        trimSilence(p);
+      } catch (e) {
+        log(`  WARNING: silence-trim failed for clip ${si}_${ci} (${e.message}) — using untrimmed clip.`);
+      }
       const dur = getAudioDuration(p);
       sentenceDur += dur;
       const isLastClauseInSentence = ci === clauses.length - 1;
