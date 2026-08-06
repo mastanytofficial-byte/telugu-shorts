@@ -318,14 +318,16 @@ const WORD_COUNT_TARGETS = {
 // Rotating, warmer CTA variations — a single fixed robotic "follow, like,
 // share, subscribe" checklist repeated identically on every video starts
 // to feel templated to a returning viewer. These read more like a genuine,
-// appreciative invitation than a command list. Each still contains
-// 'సబ్‌స్క్రైబ్' (Telugu script) so the existing CTA-detection/trim logic
-// (which checks for that substring) keeps working across all variants.
+// appreciative invitation than a command list, while still covering
+// like/share/subscribe (matching the on-screen LIKE/SHARE/SUBSCRIBE
+// button). Each still contains 'సబ్‌స్క్రైబ్' (Telugu script) so the
+// existing CTA-detection/trim logic (which checks for that substring)
+// keeps working across all variants.
 const CTA_VARIATIONS = [
-  'ఇలాంటి ఆసక్తికరమైన facts ఇంకా కావాలంటే, సబ్‌స్క్రైబ్ చేసేయండి.',
-  'నచ్చిందా? ఇలాంటి facts రోజూ కావాలంటే, ఫాలో అవ్వండి, సబ్‌స్క్రైబ్ చేయండి.',
-  'మీకు నచ్చితే, ఒక్క సబ్‌స్క్రైబ్ చాలు — ఇంకా ఇలాంటివి తెస్తాను.',
-  'ఇలాంటి facts miss అవ్వకూడదంటే, సబ్‌స్క్రైబ్ చేసుకోండి.'
+  'ఇలాంటి ఆసక్తికరమైన facts ఇంకా కావాలంటే, లైక్ చేసి సబ్‌స్క్రైబ్ చేసేయండి.',
+  'నచ్చిందా? Like చేసి, మీ friends కి Share చేయండి, ఇలాంటి facts కోసం సబ్‌స్క్రైబ్ చేయండి.',
+  'మీకు నచ్చితే, Like, Share చేసి — ఒక్క సబ్‌స్క్రైబ్ చాలు, ఇంకా ఇలాంటివి తెస్తాను.',
+  'ఇలాంటి facts miss అవ్వకూడదంటే, Like చేసి సబ్‌స్క్రైబ్ చేసుకోండి.'
 ];
 
 function pickCTA(runCount) {
