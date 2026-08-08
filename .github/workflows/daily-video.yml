@@ -37,14 +37,10 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Apply duplicate-prevention guard
-        run: node dedupe_guard_v2.js
-
       - name: Validate automation source
         run: |
-          node --check runtime_llm_router_v5.js
+          node --check runtime_llm_router_v7.js
           node --check index.js
-          node --check dedupe_guard_v2.js
 
       - name: Generate and upload video
         env:
