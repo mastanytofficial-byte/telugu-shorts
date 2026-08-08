@@ -4,7 +4,7 @@
   "description": "Automated Telugu daily sad/emotional love quotes YouTube Shorts generator",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node quality_patch.js && node index.js"
   },
   "dependencies": {
     "googleapis": "^140.0.0",
