@@ -90,7 +90,7 @@ async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRu
     throw new Error('Groq returned an empty response (finish_reason: ' + finishReason + ', model: ' + model + ').');
   }
 
-  content = content.replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();
+  content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   if (!content) {
     if (finishReason === 'length' && maxTokens > 1200) {
       log('WARNING: Groq output became empty after <think> removal — retrying compactly.');
