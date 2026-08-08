@@ -1,0 +1,144 @@
+--- a/index.js
++++ b/index.js
+@@ -397,25 +397,64 @@
+ // problem instead of guessing at more prompt wording.
+ function buildNarrationPrompt(category, recentTitles, outline, beats) {
+   const avoidLine = recentTitles.length
+-    ? `\n\nఇటీవల ఈ అంశాలు వాడాము — ఇవే facts ని వేరే మాటల్లో మళ్ళీ చెప్పకు కూడా, పూర్తిగా కొత్త fact/విషయం ఎంచుకో: ${recentTitles.slice(-10).join(' | ')}`
++    ? `\n\nఇటీవల వాడిన వీడియోల title/hook patterns ఇవి — వాటి sentence pattern, opening, comparison, twist లేదా ending ని copy చేయకు: ${recentTitles.slice(-10).join(' | ')}`
+     : '';
+   const { min, max } = WORD_COUNT_TARGETS[category];
+   const beatsJSON = JSON.stringify(beats);
+ 
+-  return `కింద ఇచ్చిన JSON లో story beats ఉన్నాయి (ఇదే క్రమంలో వాడు, కొత్తవి కల్పించకు):
++  return `కింద ఇచ్చిన VERIFIED FACT మరియు STORY BEATS ఆధారంగా ఒక original Telugu YouTube Shorts narration రాయి.
++
++STORY BEATS:
+ ${beatsJSON}
+ 
+-(గ్రౌండింగ్ కోసం అసలైన fact: ${compactOutlineForGrounding(outline)})
++VERIFIED FACT — ACCURACY GROUNDING:
++${compactOutlineForGrounding(outline)}
+ 
+-నువ్వు ఒక professional YouTube Shorts storyteller వి — ఈ beats ని తెలుగు narration గా విస్తరించు. Personal scenario తో మొదలుపెట్టు (viewer ప్రతిరోజూ చేసేదానితో connect చేయి), assumption→correction technique వాడు ("...అనుకుంటున్నారా? కాదు..."), ప్రతి సంఖ్యకీ ఒక పోలిక ఇవ్వు, consequence తో ముగించు. ప్రతి వాక్యంలో ఒక్క idea మాత్రమే, "..." తో pause.
++నీ ROLE:
++నువ్వు ఒక top Telugu YouTube Shorts storyteller. Fact ని textbook, documentary లేదా news-reader లాగా explain చేయకూడదు. Viewer ఒక friend దగ్గర ఒక unbelievable fact వింటున్నట్టు, natural conversation లాగా చెప్పాలి.
+ 
+-నియమాలు:
+-- **ఖచ్చితంగా ${min}-${max} తెలుగు పదాలు**.
+-- పూర్ణవిరామం (.) ఎప్పుడూ వాక్యం మధ్యలో, క్రియకి ముందు, లేదా ఒక పదబంధం మధ్యలో వద్దు — "..." pause కి, period వాక్యాంతానికే. తప్పు ఉదాహరణ: "అన్ని రకాల ఆహార. పదార్థాలు కొద్ది రోజుల్లో..." (ఇక్కడ "ఆహార పదార్థాలు" ఒకే పదబంధం, మధ్యలో period తప్పు). ప్రతి వాక్యం పూర్తి, అర్థవంతమైన ఆలోచనతోనే ముగియాలి.
+-- సంఖ్యలు 1000+ ఉంటే తెలుగు మాటల్లోనే (10000 → "పది వేలు"). 1000 కన్నా తక్కువ అంకెల్లో వాడొచ్చు.
+-- తెలుగు లిపిలోనే — Romanized వద్దు. CTA రాయకు.${avoidLine}
++TARGET PRESENTATION STYLE:
++- చిన్న, punchy spoken lines.
++- Hook వెంటనే curiosity create చేయాలి.
++- Answer వెంటనే చెప్పకూడదు; reveal కి ముందు curiosity పెంచాలి.
++- అవసరమైన చోట మాత్రమే "కానీ...", "అసలు విషయం ఏంటంటే...", "ఇంకా షాక్ ఏంటంటే..." వంటి natural transitions వాడు.
++- ప్రతి sentence తర్వాత viewer కి "తర్వాత ఏమిటి?" అనిపించేలా రాయి.
++- Fact ని ఒకేసారి dump చేయకుండా, ఒక్కో piece గా reveal చేయి.
++- చివర్లో strongest surprising detail లేదా memorable takeaway తో ముగించు.
++
++IMPORTANT:
++- Personal scenario **తప్పనిసరి కాదు**. Fact కి సహజంగా సరిపోతే మాత్రమే వాడు. Forced daily-life examples, food/drink examples, family examples లేదా invented situations వద్దు.
++- Assumption→correction technique **అవసరమైనప్పుడు మాత్రమే** వాడు. ప్రతి script లో "అనుకుంటున్నారా? కాదు..." repeat చేయవద్దు.
++- Number ఉంటే మాత్రమే, అది viewer కి imagine చేయడం కష్టంగా ఉన్నప్పుడు simple comparison ఇవ్వు. ప్రతి సంఖ్యకీ comparison ఇవ్వకూడదు.
++- Fact కి natural consequence లేకపోతే consequence కల్పించవద్దు. Strongest takeaway/reveal తో ముగించు.
++- కొత్త fact, number, example, location, person, comparison లేదా claim కల్పించకూడదు.
++- Story beats లో లేని filler explanation వద్దు.
++- "గణనీయంగా", "సామర్థ్యం", "ఇది సూచిస్తుంది", "అందువల్ల", "దీనివల్ల" వంటి textbook wording అవసరం లేకపోతే వాడవద్దు.
++- Same sentence pattern repeatedly వాడవద్దు.
++- Source fact లో ఉన్న terminology ని తప్పుగా simplify చేయవద్దు.
++
++RETENTION RULE:
++ప్రతి line తర్వాత వచ్చే line కి curiosity ఉండాలి. ఒక sentence ని తీసేసినా story మీద ప్రభావం లేకపోతే ఆ sentence ని rewrite చేయి.
++
++PUNCTUATION:
++- "." = పూర్తి thought ముగిసినప్పుడు మాత్రమే.
++- "," = చిన్న natural breath.
++- "..." = suspense, reveal లేదా emotional pause కోసం మాత్రమే.
++- "..." ని ప్రతి line కి పెట్టవద్దు; సాధారణంగా 2-3 sentences కి ఒకసారి కంటే ఎక్కువ కాదు.
++- Line breaks ని spoken rhythm కోసం ఉపయోగించవచ్చు.
++
++LENGTH:
++- ఖచ్చితంగా ${min}-${max} తెలుగు పదాలు.
++- 85-115 words target range లో content complete గా, rushed కాకుండా ఉండాలి.
++- 8 పదాల fragments మాత్రమే అని force చేయవద్దు; natural short sentences వాడు.
++
++LANGUAGE:
++- సహజమైన మాట్లాడే తెలుగు.
++- Telugu script మాత్రమే; Romanized Telugu వద్దు.
++- CTA, title, labels, emoji, markdown వద్దు.
++${avoidLine}
+ 
+-**కేవలం తెలుగు narration టెక్స్ట్ మాత్రమే ఇవ్వు — టైటిల్ వద్దు, లేబుల్స్ వద్దు, మార్క్‌డౌన్ వద్దు, ఇంకేమీ ముందు/వెనుక రాయకు.**`;
++కేవలం final narration text మాత్రమే ఇవ్వు.`;
+ }
+ 
+ // CALL B of Stage 2: metadata extraction from the ALREADY-FINISHED
+@@ -488,8 +527,8 @@
+ // deprecation date on Groq) — we have direct prior experience with
+ // gpt-oss-120b successfully producing valid output, even though it needs
+ // the <think>-stripping below. Our narration prompt already carries the
+-// specific storytelling techniques (personal-scenario grounding,
+-// assumption→correction, mandatory number-comparisons, paired example)
++// specific storytelling techniques (fact-specific curiosity,
++// reveal pacing, natural spoken Telugu, and no forced scenarios)
+ // that actually drive output style — switching providers doesn't change
+ // this prompt, which is intentional per explicit user discussion.
+ const GROQ_MODEL = 'openai/gpt-oss-120b';
+@@ -575,23 +614,39 @@
+ // simplified Stage 2 prompt it enables (which no longer needs to explain
+ // structure from scratch, only delivery style).
+ async function generateStoryBeats(outline) {
+-  const prompt = `కింద ఇచ్చిన fact నుండి story beats ని JSON గా ఇవ్వు. ప్రతి value 3-6 అతి చిన్న తెలుగు పదాల పదబంధం మాత్రమే (పూర్తి వాక్యం కాదు, script అస్సలు కాదు):
++  const prompt = `కింద ఇచ్చిన VERIFIED FACT నుండి Telugu YouTube Shorts కోసం STORY BEATS తయారు చేయి.
+ 
++VERIFIED FACT:
+ ${outline}
+ 
+-ఖచ్చితంగా ఈ JSON object మాత్రమే ఇవ్వు — ముందు/వెనుక ఏమీ రాయకు, కోడ్ బ్లాక్ (\`\`\`) వద్దు, వివరణ వద్దు:
+-{"hook": "...", "question": "...", "reveal": "...", "twist": "...", "ending": "..."}`;
++ఇది fact summary కాదు. ఒక viewer మొదటి line నుంచి చివరి line వరకు వినేలా curiosity-driven story skeleton తయారు చేయాలి.
++
++5 beats మాత్రమే:
++- hook: మొదటి 1-2 seconds లో attention ఆపే surprising idea. Fact ని పూర్తిగా reveal చేయకు.
++- question: viewer కి సహజంగా వచ్చే "ఎందుకు? ఎలా? నిజమేనా?" అనే curiosity.
++- reveal: అసలు verified fact యొక్క core answer.
++- twist: అదే fact లో అత్యంత unexpected, genuinely interesting detail.
++- ending: strongest memorable takeaway. Artificial consequence లేదా generic moral వద్దు.
++
++RULES:
++- ప్రతి value 3-8 చిన్న తెలుగు పదాల phrase మాత్రమే; పూర్తి sentence/script కాదు.
++- ప్రతి beat తర్వాత వచ్చే beat వినాలనే curiosity ఉండాలి.
++- Personal scenario అవసరం లేదు; fact కి సహజంగా సరిపోతే మాత్రమే సూచించు.
++- ప్రతి number కి comparison అవసరం లేదు.
++- కొత్త facts, numbers, examples, names లేదా claims కల్పించకు.
++- hook లోనే answer మొత్తం చెప్పవద్దు.
++- generic phrases เช่น "ఇది మనల్ని ఆశ్చర్యపరుస్తుంది", "ఇది చాలా ఆసక్తికరం" వద్దు.
++- textbook explanation వద్దు.
++
++ఖచ్చితంగా ఈ JSON object మాత్రమే ఇవ్వు — ముందు/వెనుక ఏమీ రాయకు:
++{"hook":"...","question":"...","reveal":"...","twist":"...","ending":"..."}`;
+ 
+   let raw = await callLLM(prompt);
+   let beats = tryParseStoryBeatsJSON(raw);
+ 
+-  // One retry with a stricter, shorter reminder before accepting the
+-  // degraded single-beat fallback — a malformed reply here collapses
+-  // Stage-2 into near one-beat narration (only "hook" populated), which is
+-  // a much bigger quality hit than the cost of one extra Groq call.
+   if (!beats) {
+     log('WARNING: story beats response was not valid JSON — retrying once with a stricter reminder.');
+-    const retryPrompt = `${prompt}\n\nనీ మునుపటి జవాబు valid JSON కాదు. ఖచ్చితంగా ఈ 5 keys తోనే ఒక్క JSON object ఇవ్వు, మరేమీ రాయకు: {"hook": "...", "question": "...", "reveal": "...", "twist": "...", "ending": "..."}`;
++    const retryPrompt = `${prompt}\n\nనీ మునుపటి జవాబు valid JSON కాదు. ఖచ్చితంగా 5 keys ఉన్న ఒక్క JSON object మాత్రమే ఇవ్వు: {"hook":"...","question":"...","reveal":"...","twist":"...","ending":"..."}`;
+     raw = await callLLM(retryPrompt);
+     beats = tryParseStoryBeatsJSON(raw);
+   }
+@@ -667,7 +722,7 @@
+ 
+ ${beatsJSON}
+ 
+-నియమాలు: JSON లోని beats క్రమాన్నే విస్తరించి చెప్పు, కొత్త కల్పితం/సంఖ్యలు జోడించకు. Personal scenario తో connect చేయి, assumption→correction technique వాడు ("...అనుకుంటున్నారా? కాదు..."), ప్రతి సంఖ్యకీ ఒక comparison ఇవ్వు, consequence తో ముగించు. ఖచ్చితంగా తెలుగు లిపిలోనే రాయి (Romanized వద్దు). "..." తో dramatic pause ఇస్తూ, 8 పదాల లోపు చిన్న వాక్యఖండాలతో, న్యూలైన్‌లతో రాయి (ఉదా: "కానీ...\nఅది నిజం కాదు!") — flat, పొడవైన వాక్యాలు వద్దు. **Period (.) ఎప్పుడూ క్రియకి ముందు/వాక్యం మధ్యలో పెట్టకు — పూర్తి ఆలోచన ముగిసిన చోటే.** CTA/emoji/టైటిల్/లేబుల్స్ వద్దు — కేవలం narration టెక్స్ట్ మాత్రమే ఇవ్వు.`;
++నియమాలు: JSON beats క్రమాన్నే విస్తరించి చెప్పు, కానీ వాటిని verbatim గా repeat చేయకు. కొత్త కల్పితం/సంఖ్యలు/examples జోడించకు. Personal scenario fact కి సహజంగా సరిపోతే మాత్రమే వాడు; forced examples వద్దు. Assumption→correction, number comparison, consequence — అవసరమైనప్పుడు మాత్రమే. ప్రతి line తర్వాత curiosity ఉండాలి. Natural spoken Telugu లో short, punchy sentences వాడు. "..." suspense/reveal కోసం మాత్రమే; ప్రతి line కి వద్దు. Period పూర్తి thought ముగిసిన చోటే. CTA/emoji/టైటిల్/లేబుల్స్ వద్దు — కేవలం narration text మాత్రమే ఇవ్వు.`;
+     const retryScript = (await callLLM(retryPrompt)).trim();
+     const retryWordCount = retryScript.split(/\s+/).filter(Boolean).length;
