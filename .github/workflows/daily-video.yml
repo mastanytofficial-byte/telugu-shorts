@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: daily-video-main
+  cancel-in-progress: false
+
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
@@ -15,6 +19,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -30,6 +36,15 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Validate automation patch files
+        run: |
+          node --check quality_patch.js
+          node --check quality_patch_v4.js
+          node --check quality_patch_v6.js
+          node --check quality_patch_v7.js
+          node --check quality_patch_v8.js
+          node --check index.js
+
       - name: Generate and upload video
         env:
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
@@ -44,19 +59,37 @@ jobs:
         run: npm start
 
       - name: Save state (avoid duplicate news next run)
+        shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add last-article.json
-          git diff --staged --quiet || git commit -m "Update last used article [skip ci]"
+          set -euo pipefail
+          test -f last-article.json || { echo 'last-article.json was not generated'; exit 1; }
+          cp last-article.json /tmp/last-article.json.generated
 
-          # Another workflow/manual run may have updated main while this job
-          # was generating the video. Rebase our tiny state commit before push.
-          git fetch origin main
-          if ! git rebase origin/main; then
-            echo "State-file conflict detected; keeping this run's generated state."
-            git checkout --theirs last-article.json
+          for attempt in 1 2 3 4 5; do
+            echo "Saving state (attempt ${attempt}/5)..."
+            git fetch origin main
+            git checkout -B main origin/main
+            cp /tmp/last-article.json.generated last-article.json
             git add last-article.json
-            GIT_EDITOR=true git rebase --continue
-          fi
-          git push origin HEAD:main
+
+            if git diff --cached --quiet; then
+              echo 'No state change to commit.'
+              exit 0
+            fi
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "Update last used article [skip ci]"
+
+            if git push origin HEAD:main; then
+              echo 'State saved successfully.'
+              exit 0
+            fi
+
+            echo 'Push raced with another update; retrying from latest main...'
+            git reset --hard origin/main
+            sleep $((attempt * 2))
+          done
+
+          echo 'Failed to save state after 5 attempts.'
+          exit 1
