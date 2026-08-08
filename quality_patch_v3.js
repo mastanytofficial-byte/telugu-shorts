@@ -11,17 +11,12 @@ if (s.includes("// QUALITY_PATCH_V3_DIRECT")) {
 
 const oldBeats = /[ \t]*const beats = await generateStoryBeats\(outline\);/;
 if (oldBeats.test(s)) {
-  s = s.replace(
-    oldBeats,
-    '\n  // QUALITY_PATCH_V3_DIRECT: verified outline is the only factual source.\n  const beats = {};'
-  );
+  s = s.replace(oldBeats, '\n  // QUALITY_PATCH_V3_DIRECT: verified outline is the only factual source.\n  const beats = {};');
 }
 
 const marker = "function buildNarrationPrompt(category, recentTitles, outline, beats) {";
 const start = s.indexOf(marker);
-if (start < 0) {
-  throw new Error("QUALITY_PATCH_V3_DIRECT: buildNarrationPrompt not found");
-}
+if (start < 0) throw new Error("QUALITY_PATCH_V3_DIRECT: buildNarrationPrompt not found");
 
 let depth = 0;
 let inString = null;
@@ -31,48 +26,23 @@ let end = -1;
 for (let i = start; i < s.length; i++) {
   const ch = s[i];
   const next = s[i + 1];
-
   if (inString) {
-    if (escaped) {
-      escaped = false;
-    } else if (ch === "\\") {
-      escaped = true;
-    } else if (ch === inString) {
-      inString = null;
-    }
+    if (escaped) escaped = false;
+    else if (ch === "\\") escaped = true;
+    else if (ch === inString) inString = null;
     continue;
   }
-
-  if (ch === '"' || ch === "'" || ch === "`") {
-    inString = ch;
-    continue;
-  }
-
-  if (ch === "/" && next === "/") {
-    const nl = s.indexOf("\n", i + 2);
-    i = nl < 0 ? s.length : nl;
-    continue;
-  }
-
-  if (ch === "/" && next === "*") {
-    const close = s.indexOf("*/", i + 2);
-    i = close < 0 ? s.length : close + 1;
-    continue;
-  }
-
+  if (ch === '"' || ch === "'" || ch === "`") { inString = ch; continue; }
+  if (ch === "/" && next === "/") { const nl = s.indexOf("\n", i + 2); i = nl < 0 ? s.length : nl; continue; }
+  if (ch === "/" && next === "*") { const close = s.indexOf("*/", i + 2); i = close < 0 ? s.length : close + 1; continue; }
   if (ch === "{") depth++;
   if (ch === "}") {
     depth--;
-    if (depth === 0) {
-      end = i + 1;
-      break;
-    }
+    if (depth === 0) { end = i + 1; break; }
   }
 }
 
-if (end < 0) {
-  throw new Error("QUALITY_PATCH_V3_DIRECT: could not find end of buildNarrationPrompt");
-}
+if (end < 0) throw new Error("QUALITY_PATCH_V3_DIRECT: could not find end of buildNarrationPrompt");
 
 const newFunction = [
   "function buildNarrationPrompt(category, recentTitles, outline, beats) {",
@@ -80,7 +50,6 @@ const newFunction = [
   "  const recent = recentTitles.length",
   "    ? '\\n\\nఇటీవల వాడిన titles/hooks: ' + recentTitles.slice(-10).join(' | ') + '\\nవాటి wording, opening pattern, twist లేదా ending pattern ని copy చేయకు.'",
   "    : '';",
-  "",
   "  const prompt = [",
   "    'VERIFIED FACT — THIS IS THE ONLY SOURCE OF TRUTH:',",
   "    compactOutlineForGrounding(outline),",
@@ -128,13 +97,11 @@ const newFunction = [
   "    '',",
   "    'కేవలం final narration text మాత్రమే ఇవ్వు.'",
   "  ].join('\\n');",
-  "",
   "  return prompt;",
   "}"
 ].join("\n");
 
 s = s.slice(0, start) + newFunction + s.slice(end);
 s = s.replace(/min:\s*85,\s*max:\s*115/g, "min: 70, max: 100");
-
 fs.writeFileSync(file, s, "utf8");
 console.log("QUALITY_PATCH_V3_DIRECT applied successfully.");
