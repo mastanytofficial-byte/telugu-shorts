@@ -60,33 +60,69 @@ const providerReplacement = `async function callLLM(prompt) {
   ].filter(p => p.key && !callLLM.disabledProviders.has(p.name));
   if (!providers.length) throw new Error('LLM_PROVIDER_EXHAUSTED: no healthy configured provider remains for this run.');
   const failures = [];
+
   for (const p of providers) {
     try {
       log('LLM provider: ' + p.name + ' (' + p.model + ')');
       let content = '';
+
       if (p.kind === 'gemini') {
         const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + p.model + ':generateContent';
-        const res = await fetchWithTimeout(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.25, maxOutputTokens: 1800, thinkingConfig: { thinkingBudget: 0 } }) }, 30000);
-        let data = {}; try { data = await res.json(); } catch (_) {}
+        const requestBody = {
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.25,
+            maxOutputTokens: 1800,
+            thinkingConfig: { thinkingBudget: 0 }
+          }
+        };
+        const res = await fetchWithTimeout(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
+          body: JSON.stringify(requestBody)
+        }, 30000);
+        let data = {};
+        try { data = await res.json(); } catch (_) {}
         if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + ((data.error && data.error.message) || 'Gemini request failed'));
         const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
         content = Array.isArray(parts) ? parts.map(x => x && x.text).filter(Boolean).join('') : '';
       } else {
         let url = 'https://api.openai.com/v1/chat/completions';
         const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + p.key };
-        if (p.kind === 'openrouter') { url = 'https://openrouter.ai/api/v1/chat/completions'; headers['HTTP-Referer'] = 'https://github.com/mastanytofficial-byte/telugu-shorts'; headers['X-Title'] = 'Telugu Amazing Facts Shorts'; }
-        else if (p.kind === 'huggingface') url = 'https://router.huggingface.co/v1/chat/completions';
-        else if (p.kind === 'groq') url = 'https://api.groq.com/openai/v1/chat/completions';
-        const body = { model: p.model, messages: [{ role: 'system', content: 'Return only the requested answer. No hidden reasoning, markdown fences, or commentary.' }, { role: 'user', content: prompt }], temperature: 0.25 };
+        if (p.kind === 'openrouter') {
+          url = 'https://openrouter.ai/api/v1/chat/completions';
+          headers['HTTP-Referer'] = 'https://github.com/mastanytofficial-byte/telugu-shorts';
+          headers['X-Title'] = 'Telugu Amazing Facts Shorts';
+        } else if (p.kind === 'huggingface') {
+          url = 'https://router.huggingface.co/v1/chat/completions';
+        } else if (p.kind === 'groq') {
+          url = 'https://api.groq.com/openai/v1/chat/completions';
+        }
+
+        const body = {
+          model: p.model,
+          messages: [
+            { role: 'system', content: 'Return only the requested answer. No hidden reasoning, markdown fences, or commentary.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.25
+        };
         if (p.kind === 'openai') body.max_completion_tokens = 1800;
         else body.max_tokens = p.name === 'groq-20b' ? 1400 : 1800;
-        const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(body) }, 30000);
-        let data = {}; try { data = await res.json(); } catch (_) {}
+
+        const res = await fetchWithTimeout(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body)
+        }, 30000);
+        let data = {};
+        try { data = await res.json(); } catch (_) {}
         if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + ((data.error && (data.error.message || data.error.code)) || 'provider request failed'));
         const choice = data && data.choices && data.choices[0];
         content = choice && choice.message && choice.message.content ? String(choice.message.content) : '';
         if (!content.trim()) throw new Error('empty response (finish_reason: ' + ((choice && choice.finish_reason) || 'unknown') + ')');
       }
+
       content = String(content).replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();
       if (!content) throw new Error('empty cleaned response');
       log('LLM provider success: ' + p.name);
@@ -97,6 +133,7 @@ const providerReplacement = `async function callLLM(prompt) {
       log('WARNING: ' + p.name + ' failed — disabled for this run. ' + e.message);
     }
   }
+
   throw new Error('LLM_PROVIDER_EXHAUSTED: ' + failures.join(' | '));
 }`;
 
@@ -108,29 +145,49 @@ const factReplacement = `async function getOrGrowFactOutline(category, discovere
   let bestCandidate = null;
   let bestScore = -1;
   let bestTopic = null;
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const topicPrompt = 'You are selecting a topic for a Telugu Amazing Facts Shorts channel. Category: ' + category + '. Generate ONE genuinely interesting, specific, established topic that is not among these previously used topics/facts: ' + seen.slice(-9000) + '. Do not use a generic category name. Do not repeat or paraphrase a previous topic. Return only the topic name in English, 2-6 words.';
     const topicRaw = await callLLM(topicPrompt);
     const topic = topicRaw.replace(/^[\\s-*#]+|[\\s]+$/g, '').split(/\\n/)[0].trim();
     if (!topic || topic.length < 3 || topic.length > 100) continue;
-    if (previousTopics.some(t => t.toLowerCase() === topic.toLowerCase())) { log('  Duplicate topic rejected: ' + topic); continue; }
+    if (previousTopics.some(t => t.toLowerCase() === topic.toLowerCase())) {
+      log('  Duplicate topic rejected: ' + topic);
+      continue;
+    }
+
     log('Picked fresh online topic for ' + category + ': "' + topic + '"');
     try {
       const candidate = await generateNewFactOutline(category, topic, previousFacts);
       if (!candidate) continue;
       const normCandidate = candidate.toLowerCase().replace(/\\s+/g, ' ').trim();
-      if (previousFacts.some(f => { const n = f.toLowerCase().replace(/\\s+/g, ' ').trim(); return n.includes(normCandidate.slice(0, 100)) || normCandidate.includes(n.slice(0, 100)); })) { log('  Duplicate fact rejected.'); continue; }
+      if (previousFacts.some(f => {
+        const n = f.toLowerCase().replace(/\\s+/g, ' ').trim();
+        return n.includes(normCandidate.slice(0, 100)) || normCandidate.includes(n.slice(0, 100));
+      })) {
+        log('  Duplicate fact rejected.');
+        continue;
+      }
+
       const { verified, score } = await verifyFactOutline(candidate);
       if (!verified) continue;
       const existingResults = await checkFactSaturation(candidate);
-      if (existingResults > 50) { log('  Fact is oversaturated; trying another fresh topic.'); continue; }
-      if (score > bestScore) { bestCandidate = candidate; bestScore = score; bestTopic = topic; }
+      if (existingResults > 50) {
+        log('  Fact is oversaturated; trying another fresh topic.');
+        continue;
+      }
+      if (score > bestScore) {
+        bestCandidate = candidate;
+        bestScore = score;
+        bestTopic = topic;
+      }
       if (score >= 75) return { outline: candidate, newlyDiscovered: candidate, topic };
     } catch (e) {
       if (String(e.message || '').startsWith('LLM_PROVIDER_EXHAUSTED')) throw e;
       log('  WARNING: fresh topic attempt failed: ' + e.message);
     }
   }
+
   if (bestCandidate) return { outline: bestCandidate, newlyDiscovered: bestCandidate, topic: bestTopic };
   throw new Error('Could not generate a verified fresh fact for ' + category + ' after ' + maxAttempts + ' fresh-topic attempts.');
 }`;
@@ -141,8 +198,8 @@ source = replaceFunction(source, 'async function getOrGrowFactOutline(', factRep
 
 fs.writeFileSync(RUNTIME, source, 'utf8');
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
-console.log('LLM_ROUTER_V8: clean multi-provider fallback + fresh online topics + duplicate prevention applied successfully.');
-for (const name of ['OPENAI_API_KEY','GEMINI_API_KEY','OPENROUTER_API_KEY','HF_TOKEN','GROQ_API_KEY']) {
+console.log('LLM_ROUTER_V8: syntax-safe multi-provider fallback + fresh topics + duplicate prevention applied successfully.');
+for (const name of ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY', 'HF_TOKEN', 'GROQ_API_KEY']) {
   const value = (process.env[name] || '').trim();
   console.log(name + ': ' + (value ? 'present, length=' + value.length : 'missing'));
 }
