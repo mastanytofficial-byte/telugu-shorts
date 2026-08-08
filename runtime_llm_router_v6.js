@@ -21,31 +21,27 @@ routerSource = routerSource.replace(
   "const SOURCE = path.join(__dirname, '.index.source.v6.js');"
 );
 
-const oldStyle = '- Natural spoken Telugu, preferably Telugu script.\\n' +
-  '    `- Start with the most surprising detail as a curiosity hook.\\n` +';
-const newStyle = '- Natural spoken Telugu, preferably Telugu script.\\n' +
-  '    `- Keep crop/animal/chemical/scientific names semantically correct; NEVER translate one entity into a different entity. In particular, barley is బార్లీ/యవలు, while sorghum/jowar is జొన్న/జొన్నలు.\\n` +\n' +
-  '    `- Preserve the exact meaning of the SOURCE OF TRUTH. If a term is ambiguous, keep the English term rather than guessing a Telugu equivalent.\\n` +\n' +
-  '    `- Write every date, year, quantity and number using Telugu words or natural spoken Telugu words. Do NOT output ASCII digits such as 10000, 10,000, 2026, or 10,000 BCE.\\n` +\n' +
-  '    `- Do not state "world\'s first", "first ever", "oldest", "most ancient", or similar absolute claims unless that exact claim is explicitly present in the SOURCE OF TRUTH.\\n` +\n' +
-  '    `- Start with the most surprising detail as a curiosity hook.\\n` +';
+const oldStyle = "    `- Natural spoken Telugu, preferably Telugu script.\\n` +";
+const newStyle = "    `- Natural spoken Telugu, preferably Telugu script.\\n` +\n" +
+  "    `- Keep crop/animal/chemical/scientific names semantically correct; NEVER translate one entity into a different entity. Barley = బార్లీ/యవలు; sorghum/jowar = జొన్న/జొన్నలు.\\n` +\n" +
+  "    `- Preserve the exact meaning of the SOURCE OF TRUTH. If a term is ambiguous, keep the English term rather than guessing a Telugu equivalent.\\n` +\n" +
+  "    `- Write every date, year, quantity and number using Telugu words. Do NOT output ASCII digits such as 10000, 10,000, 2026, or 10,000 BCE.\\n` +\n" +
+  "    `- Do not state world-first, first-ever, oldest, most-ancient, or similar absolute claims unless that exact claim is explicitly present in the SOURCE OF TRUTH.\\n` +";
 if (!routerSource.includes(oldStyle)) throw new Error('V6: narration style anchor not found');
 routerSource = routerSource.replace(oldStyle, newStyle);
 
-// Add a targeted final safety gate. If a provider creates the known barley/jowar
-// entity collision or outputs ASCII digits, ask the next provider for a corrected
-// narration instead of sending the bad text to TTS.
-const oldAfterCall = "  let script = (await callLLM(prompt)).trim();\n  script = script.replace(/^\\`\\`\\`(?:text|telugu)?\\\\s*/i, '').replace(/\\`\\`\\`$/i, '').trim();";
-const newAfterCall = "  let script = (await callLLM(prompt)).trim();\n  script = script.replace(/^\\`\\`\\`(?:text|telugu)?\\\\s*/i, '').replace(/\\`\\`\\`$/i, '').trim();\n\n  const terminologyCollision = /బార్లీ.{0,30}(?:అంటే|అనగా).{0,30}జొన్న|జొన్న.{0,30}(?:అంటే|అనగా).{0,30}బార్లీ/i.test(script);\n  const asciiNumber = /\\b\\d+(?:,\\d{3})*(?:\\.\\d+)?\\b/.test(script);\n  if (terminologyCollision || asciiNumber) {\n    log('WARNING: final narration failed V6 fact/number safety gate — requesting a corrected narration.');\n    const correctionPrompt = `SOURCE OF TRUTH — VERIFIED FACT OUTLINE:\\n${outline}\\n\\nRewrite the final Telugu narration again. The previous draft failed a safety check.\\nSTRICT: preserve every entity correctly; barley = బార్లీ/యవలు, sorghum/jowar = జొన్న/జొన్నలు. Never treat them as synonyms. Do not output ASCII digits. Write all dates and numbers in Telugu words. Do not add any fact not present in the source. No title, labels, JSON, emoji, markdown or CTA. Return only 7–11 natural spoken Telugu lines.`;\n    script = (await callLLM(correctionPrompt)).trim();\n  }";
-if (!routerSource.includes(oldAfterCall)) throw new Error('V6: post-call safety anchor not found');
-routerSource = routerSource.replace(oldAfterCall, newAfterCall);
+// Final safety gate: if the generated narration contains the known barley/jowar
+// entity collision or ASCII numbers, ask the provider again with a correction prompt.
+const oldScriptLine = "  let script = (await callLLM(prompt)).trim();";
+const newScriptLine = "  let script = (await callLLM(prompt)).trim();\n  const terminologyCollision = /బార్లీ.{0,30}(?:అంటే|అనగా).{0,30}జొన్న|జొన్న.{0,30}(?:అంటే|అనగా).{0,30}బార్లీ/i.test(script);\n  const asciiNumber = /\\b\\d+(?:,\\d{3})*(?:\\.\\d+)?\\b/.test(script);\n  if (terminologyCollision || asciiNumber) {\n    log('WARNING: V6 fact/number safety gate rejected the first narration; requesting a corrected version.');\n    const correctionPrompt = `SOURCE OF TRUTH — VERIFIED FACT OUTLINE:\\n${outline}\\n\\nRewrite only the spoken Telugu narration. The previous draft failed a safety check. Keep every entity semantically correct: barley = బార్లీ/యవలు; sorghum/jowar = జొన్న/జొన్నలు. Never treat them as synonyms. Write all dates and numbers in Telugu words, never ASCII digits. Add no fact not present in the source. Return only 7–11 natural Telugu lines, no title, labels, JSON, emoji, markdown or CTA.`;\n    script = (await callLLM(correctionPrompt)).trim();\n  }";
+if (!routerSource.includes(oldScriptLine)) throw new Error('V6: script-call anchor not found');
+routerSource = routerSource.replace(oldScriptLine, newScriptLine);
 
-// Ensure the generated runtime is syntax-checked before execution, as in V5.
+routerSource = routerSource.replace(".index.runtime.v5.js", ".index.runtime.v6.js");
 routerSource = routerSource.replace(
   "console.log('LLM_ROUTER_V5: clean provider router + fact-locked Telugu script + preflight syntax check applied successfully.');",
   "console.log('LLM_ROUTER_V6: provider fallback + terminology safety + Telugu-number TTS safety + fact-locked narration applied successfully.');"
 );
-routerSource = routerSource.replace(".index.runtime.v5.js", ".index.runtime.v6.js");
 
 const runtimeRouter = path.join(__dirname, '.runtime_llm_router.v6.generated.js');
 fs.writeFileSync(runtimeRouter, routerSource, 'utf8');
