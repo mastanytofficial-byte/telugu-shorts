@@ -16,8 +16,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Patch prompts
-        shell: python
+        shell: bash
         run: |
+          python3 <<'PY'
           from pathlib import Path
           import re
 
@@ -185,6 +186,7 @@ ${avoidLine}
 
           p.write_text(s3, encoding='utf-8')
           print('Prompt blocks replaced:', n1, n2)
+          PY
 
       - name: Validate and commit
         shell: bash
