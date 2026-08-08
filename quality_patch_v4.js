@@ -70,4 +70,3 @@ function buildNarrationPrompt(category, recentTitles, outline, beats) {
 s = s.slice(0, start) + newFn + s.slice(end);
 fs.writeFileSync(file, s, 'utf8');
 console.log('QUALITY_PATCH_V4_COMPACT applied successfully.');
-`;
