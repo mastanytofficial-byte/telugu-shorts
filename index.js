@@ -1,13 +1,12 @@
-// Telugu Daily Shorts — fully automated, runs on GitHub Actions
-// Rotates through 4 content types daily: news, moral stories, facts, parenting tips
-// Topic/Script (Groq) -> Voice (Google TTS) -> Images (Pexels) -> Video (FFmpeg) -> YouTube
+// Telugu Romantic Quotes Shorts — fully automated, runs on GitHub Actions
+// Tenglish romantic quote (Groq) -> Telugu voice (Google TTS) -> Visuals (Pexels/AI)
+// -> Text overlay + Video (FFmpeg) -> YouTube
 
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { google } = require('googleapis');
 
-const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY;
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
@@ -41,16 +40,11 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
   }
 }
 
-const CATEGORIES = ['news', 'moral_story', 'fact', 'parenting'];
+const CATEGORY = 'romantic_quote';
 
-// Replaced by user directive: full switch to "Telugu Motivational/
-// Self-Respect Shorts" — direct-address inspirational monologue, matching
-// the reference videos provided. Single category (like moral_story was),
-// rotating through MOTIVATIONAL_THEMES by run count instead of genre.
 function pickCategory(runCount) {
-  const category = 'motivational';
-  log(`Today's category: ${category} (run #${runCount})`);
-  return category;
+  log(`Today's category: ${CATEGORY} (run #${runCount})`);
+  return CATEGORY;
 }
 
 function loadState() {
@@ -65,27 +59,6 @@ function loadState() {
     } catch (e) {}
   }
   return { usedUrls: [], usedTitles: [], runCount: 0 };
-}
-
-async function fetchNews() {
-  log('Fetching news from NewsAPI...');
-  // pageSize raised 10 -> 20 to give the dedup check more room to find a fresh article
-  const url = `https://newsapi.org/v2/everything?q=India&language=en&sortBy=publishedAt&pageSize=20&apiKey=${NEWSAPI_KEY}`;
-  const res = await fetchWithTimeout(url);
-  const data = await res.json();
-  if (!data.articles || data.articles.length === 0) {
-    throw new Error('No articles found from NewsAPI');
-  }
-
-  // Load history of previously used article URLs (last 50 runs), not just the last one.
-  const { usedUrls } = loadState();
-
-  const article = data.articles.find(a => !usedUrls.includes(a.url)) || data.articles[0];
-  if (usedUrls.includes(article.url)) {
-    log('WARNING: every fetched article was already used in the last 50 runs — reusing the newest one so the run does not fail.');
-  }
-  log(`Selected article: ${article.title}`);
-  return article;
 }
 
 // Safety net: Google's Chirp 3: HD voice rejects any single "sentence" (text
@@ -111,291 +84,105 @@ function ensureSentenceBreaks(text, maxLen = 140) {
 }
 
 const FALLBACK_KEYWORDS = {
-  news: 'India news',
-  moral_story: 'Indian village traditional life',
-  fact: 'India knowledge curious facts',
-  parenting: 'Indian family parenting',
-  mystery: 'Indian person mysterious night street',
-  horror: 'Indian dark corridor eerie shadow',
-  emotional: 'Indian family emotional moment',
-  scifi: 'futuristic technology Indian city',
-  motivational: 'Indian person alone sunrise contemplative'
+  romantic_quote: 'romantic couple sunset',
 };
 
-// news/moral_story need more room to actually tell a story (~40-45s);
-// fact/parenting work better short and punchy (~20-30s) per YouTube Shorts
-// retention data — longer isn't better for a single quick tip or fact.
-// mystery/horror/emotional/scifi target the requested 25-40s twist-story
-// format — enough room for hook+buildup+twist without dragging.
 const WORD_COUNT_TARGETS = {
-  news: { min: 130, max: 150 },
-  moral_story: { min: 130, max: 150 },
-  fact: { min: 80, max: 95 },
-  parenting: { min: 80, max: 95 },
-
-  mystery: { min: 95, max: 115 },
-  horror: { min: 95, max: 115 },
-  emotional: { min: 85, max: 105 },
-  scifi: { min: 95, max: 115 },
-
-  motivational: { min: 75, max: 95 }
+  romantic_quote: { min: 16, max: 36 }
 };
 
-// Shared formatting/voice rules appended to every category's prompt.
-// Appended programmatically after generation — never left to the model to
-// retype, since it occasionally introduced typos into this fixed sentence
-// (e.g. "సబ్‌స్రైబ్" missing a syllable) when asked to reproduce it itself.
-const CTA_SENTENCE = 'మరిన్ని ఇలాంటి వీడియోల కోసం తెలుగు ఎకో ఛానెల్‌ని లైక్ చేయండి, షేర్ మరియు సబ్‌స్క్రైబ్ చేయండి.';
-
-function getCommonRules(category) {
-  const { min, max } = WORD_COUNT_TARGETS[category];
-
-  return `
-నియమాలు:
-
-- తప్పకుండా ${min}-${max} తెలుగు పదాలు ఉండాలి.
-- పుస్తకం చదివినట్టు కాదు, మనిషి మాట్లాడుతున్నట్టు రాయి.
-- చిన్న చిన్న వాక్యాలు వాడు.
-- ప్రతి వాక్యం పూర్తి క్రియతో ముగియాలి.
-- ప్రతి పూర్తి వాక్యం తర్వాత పూర్ణవిరామం (.) తప్పనిసరి.
-- తెలుగు సహజంగా ఉండాలి. "గడియారం ముడిచినప్పుడు", "ఆలోచిస్తూ ఉంటాడు" లాంటి అసహజమైన పదబంధాలు వాడకు.
-- ఒకే భావాన్ని మళ్లీ మళ్లీ చెప్పకు.
-- ప్రతి వాక్యం ముందు వాక్యం కంటే కొత్త సమాచారం ఇవ్వాలి.
-- అవసరం లేని విశేషణాలు, అతిగా నాటకీయ పదాలు వాడకు.
-- వినేవారికి కళ్ల ముందు దృశ్యం కనిపించేలా రాయి.
-- చివరి రెండు వాక్యాలు అత్యంత ప్రభావవంతంగా ఉండాలి.
-- చివరి వాక్యం గుర్తుండిపోయేలా ఉండాలి.
-- సంఖ్యలు ఎప్పుడూ తెలుగు మాటల్లోనే రాయి.
-- Brand/వ్యక్తుల పేర్లు ఆంగ్ల స్పెల్లింగ్‌లోనే ఉంచు.
-- "లైక్ చేయండి", "షేర్ చేయండి", "సబ్‌స్క్రైబ్ చేయండి" వంటి CTA రాయకూడదు. వాటిని మేమే చివర్లో జోడిస్తాం.
-`;
-}
-
-// The model kept defaulting to "help/kindness" regardless of the 6 options
-// listed, because that's its own bias when given a free choice. Rotating
-// deterministically and TELLING it exactly which value to use (instead of
-// leaving it to choose) guarantees real variety across videos.
-const MORAL_VALUES = [
-  'నిజాయితీ (honesty)', 'ఓర్పు (patience)', 'కృషి/పట్టుదల (hard work and persistence)',
-  'క్షమ (forgiveness)', 'ధైర్యం (courage)', 'కృతజ్ఞత (gratitude)',
-  'వినయం (humility)', 'దయ (kindness)', 'సహాయం చేయడం (helping others)', 'నిబద్ధత (commitment/keeping one\'s word)'
+// Romantic themes rotate deterministically so consecutive Shorts stay varied.
+const ROMANTIC_THEMES = [
+  'true love',
+  'missing someone',
+  'one-sided love',
+  'long distance love',
+  'silent love',
+  'old memories',
+  'waiting for someone',
+  'first love',
+  'deep love',
+  'heartbreak',
+  'rain and love',
+  'night memories',
+  'unspoken feelings',
+  'love after distance',
+  'someone who changed your life'
 ];
 
-// Curated plot outlines — one per value above, same index. Asking Groq to
-// "recall a famous story from memory and retell it" repeatedly produced
-// structurally broken narratives (e.g. a cat that starts speaking with no
-// explanation, stating a moral with no connection to what actually happens
-// in the story). Giving it the ACTUAL plot to expand into vivid Telugu
-// prose is a far more reliable task than recall + invent combined.
-const STORY_OUTLINES = [
-  // నిజాయితీ — The Honest Woodcutter
-  'ఒక పేద కట్టెలు కొట్టేవాడు నదీ ఒడ్డున చెట్టు కొడుతూ ఉండగా, పొరపాటున తన ఇనుప గొడ్డలి నీళ్లలో పడిపోతుంది. అతను జీవనాధారం పోయిందని బాధపడి ఏడుస్తుంటాడు. అప్పుడు నదిలో నుండి ఒక దేవత ప్రత్యక్షమవుతుంది. ఆమె ముందు బంగారు గొడ్డలిని తెచ్చి "ఇది నీదేనా?" అని అడిగితే, అతను "కాదు, ఇది నాది కాదు" అని నిజాయితీగా చెప్తాడు. మళ్ళీ వెండి గొడ్డలిని తెచ్చి అడిగినా, "కాదు" అనే చెప్తాడు. చివరికి తన పాత ఇనుప గొడ్డలిని చూపిస్తే, "అవును, ఇదే నాది" అని సంతోషంగా చెప్తాడు. అతని నిజాయితీకి మెచ్చిన దేవత మూడు గొడ్డళ్లనూ అతనికి బహుమతిగా ఇస్తుంది.',
-  // ఓర్పు — The Crow and the Pitcher
-  'ఒక వేసవిలో ఒక కాకికి విపరీతమైన దాహం వేస్తుంది. చాలాసేపు వెతికాక ఒక కుండలో కొద్దిగా నీళ్లు కనిపిస్తాయి, కానీ నీటి మట్టం చాలా కిందగా ఉండి కాకి ముక్కు అందదు. కుండని పడగొట్టాలని ప్రయత్నించినా అది చాలా బరువుగా ఉంటుంది. నిరాశ చెందకుండా, కాకి చుట్టూ ఉన్న చిన్న రాళ్లను ఒక్కొక్కటిగా కుండలో వేయడం మొదలుపెడుతుంది. ఓపిగ్గా చాలాసేపు రాళ్లు వేసిన తర్వాత, నీటి మట్టం నెమ్మదిగా పైకి వచ్చి, కాకి హాయిగా దాహం తీర్చుకుంటుంది.',
-  // కృషి/పట్టుదల — Tortoise and Hare
-  'ఒక కుందేలు, ఒక తాబేలు తమలో ఎవరు వేగంగా పరుగెత్తగలరో పందెం కడతారు. కుందేలు తనకి తానే నమ్మకంగా "నేను చాలా వేగం, తాబేలు చాలా నెమ్మది" అనుకుని, పందెం మధ్యలో ఒక చెట్టు కింద నిద్రపోతుంది. తాబేలు మాత్రం ఆగకుండా నెమ్మదిగానైనా స్థిరంగా ముందుకు సాగుతూనే ఉంటుంది. కుందేలు మేల్కొనేసరికి తాబేలు గమ్యానికి చేరువలో ఉంటుంది. కుందేలు గాభరాగా పరుగెత్తినా ఆలస్యమైపోతుంది — తాబేలే ముందుగా గెలుస్తుంది.',
-  // క్షమ — Write in Sand, Carve in Stone
-  'ఇద్దరు మంచి స్నేహితులు ఎడారి గుండా ప్రయాణం చేస్తుంటారు. దారిలో ఒక చిన్న విషయం మీద గొడవ పడి, ఒకడు కోపంతో రెండోవాడిని కొడతాడు. కొట్టబడినవాడు ఏమీ మాట్లాడకుండా, దగ్గర్లో ఇసుకలో "ఈరోజు నా స్నేహితుడు నన్ను కొట్టాడు" అని రాస్తాడు. కొన్ని రోజుల తర్వాత వాళ్లు ఒక నదీ ఒడ్డుకు చేరుకుంటారు, స్నానం చేస్తుండగా కొట్టబడినవాడు నీళ్లలో మునిగిపోబోతాడు. మొదటివాడు వెంటనే దూకి అతని ప్రాణాన్ని కాపాడతాడు. దీనికి కృతజ్ఞతగా, రెండోవాడు ఈసారి దగ్గర్లో ఉన్న రాతిపై "ఈరోజు నా స్నేహితుడు నా ప్రాణాన్ని కాపాడాడు" అని చెక్కుతాడు. మొదటివాడు ఆశ్చర్యపోయి అడిగితే, రెండోవాడు బదులిస్తాడు: "బాధ కలిగించే మాటలను ఇసుకలో రాయాలి, అవి గాలికి తుడిచిపెట్టుకుపోవాలి. మేలు చేసిన సంగతులను రాతిలో చెక్కాలి, అవి ఎప్పటికీ గుర్తుండాలి."',
-  // ధైర్యం — Mouse Frees the Lion
-  'ఒక సింహం నిద్రపోతుండగా, ఒక చిన్న ఎలుక పొరపాటున దాని మీద నుండి పరిగెత్తుతుంది. సింహం మేల్కొని కోపంగా ఎలుకను పట్టుకుని చంపబోతుంది. ఎలుక భయపడి "నన్ను క్షమించు, ఏదో ఒకరోజు నీకు నేను సహాయం చేస్తాను" అని వేడుకుంటుంది. సింహం నవ్వి, చిన్న ఎలుక తనకేం సహాయం చేయగలదని అనుకుని దాన్ని వదిలేస్తుంది. కొన్ని రోజుల తర్వాత, సింహం వేటగాళ్ళు వేసిన బలమైన వలలో చిక్కుకుంటుంది. అదే ఎలుక ఆ శబ్దం విని పరిగెత్తుకుంటూ వస్తుంది, ధైర్యంగా వలలోని తాళ్లను తన పదునైన పళ్లతో కొరికి సింహాన్ని విడిపిస్తుంది.',
-  // కృతజ్ఞత — Ant and the Dove
-  'ఒక చీమ నదీ ఒడ్డున నీళ్లు తాగుతుండగా కాలు జారి నీళ్లలో పడిపోతుంది, కొట్టుకుపోతూ ఉంటుంది. చెట్టు మీద కూర్చున్న ఒక పావురం ఇది చూసి వెంటనే ఒక ఆకుని కోసి నీళ్లలో వేస్తుంది. చీమ ఆ ఆకు మీద ఎక్కి ప్రాణాలు దక్కించుకుంటుంది. కొన్ని రోజుల తర్వాత, ఒక వేటగాడు అదే పావురాన్ని పట్టుకోవడానికి గురిపెడతాడు. చీమ ఇది చూసి వెంటనే వేటగాడి కాలిని గట్టిగా కుడుతుంది. వేటగాడు నొప్పితో గురి తప్పుతాడు, పావురం భయపడి ఎగిరిపోయి ప్రాణాలు దక్కించుకుంటుంది.',
-  // వినయం — The Proud Scholar and the Boatman
-  'ఒక గొప్ప పండితుడు పడవలో నదిని దాటుతుంటాడు. పడవ నడిపేవాడితో మాట్లాడుతూ "నీకు వ్యాకరణం తెలుసా?" అని అడుగుతాడు. పడవవాడు "లేదు అయ్యా" అంటే, పండితుడు గర్వంగా "అయితే నీ జీవితంలో సగం వృధా అయిపోయింది" అంటాడు. కొంతసేపటికి పెద్ద తుఫాను వచ్చి పడవ మునిగిపోవడం మొదలవుతుంది. పడవవాడు పండితుడితో "అయ్యా, మీకు ఈత వచ్చా?" అని అడుగుతాడు. పండితుడు భయంతో "లేదు" అంటే, పడవవాడు అంటాడు: "అయితే అయ్యా, మీ జీవితం మొత్తం వృధా అయిపోబోతోంది." పండితుడికి తన అహంకారం తప్పని, నిజమైన జ్ఞానం అంటే అందరి నైపుణ్యాలనూ గౌరవించడమని అర్థమవుతుంది.',
-  // దయ — The King Who Shared His Bread
-  'ఒక రాజ్యంలో తీవ్రమైన కరువు వచ్చి ప్రజలు ఆకలితో అలమటిస్తుంటారు. రాజు తన రాజ్యం తిరిగి పరిస్థితి చూస్తుండగా, దారిలో ఆకలితో సొమ్మసిల్లిపోయిన ఒక వృద్ధుడిని చూస్తాడు. రాజు దగ్గర తనకోసం తెచ్చుకున్న ఒక్క రొట్టె ముక్క మాత్రమే ఉంటుంది. ఆలోచించకుండా, రాజు ఆ రొట్టెను వృద్ధుడికి ఇచ్చేస్తాడు, తాను ఆకలితోనే ఉంటాడు. ఇది చూసిన మంత్రులు ఆశ్చర్యపోతే, రాజు వారితో చెప్తాడు: "ఒక రాజుకు అసలైన సంపద కిరీటంలో కాదు, తన ప్రజల పట్ల చూపే దయలో ఉంటుంది."',
-  // సహాయం చేయడం — Boy and the Injured Lion
-  'ఒక అబ్బాయి అడవిలో నడుస్తుండగా ఒక సింహం బాధగా అరుస్తూ కనిపిస్తుంది. దగ్గరికి వెళ్లి చూస్తే సింహం కాలిలో పెద్ద ముల్లు గుచ్చుకుని ఉంటుంది. సింహం భయంకరంగా కనిపించినా, అబ్బాయి ధైర్యం చేసి మెల్లగా దగ్గరికి వెళ్లి ఆ ముల్లుని తీసేస్తాడు. సింహం నొప్పి తగ్గి కృతజ్ఞతగా అతన్ని చూసి, అడవిలోకి వెళ్లిపోతుంది. సంవత్సరాల తర్వాత ఆ అబ్బాయి పెద్దయ్యాక, రాజు సైనికులు అతన్ని పట్టుకుని శిక్షగా ఆకలిగొన్న సింహం ఉన్న బోనులో వేస్తారు. సింహం అతని దగ్గరికి వచ్చి, దాడి చేయకుండా అతని కాళ్ల దగ్గర ప్రేమగా కూర్చుంటుంది — అదే పాత సింహం, తనకు సహాయం చేసిన అబ్బాయిని గుర్తుపట్టింది.',
-  // నిబద్ధత — The King Who Kept His Promise
-  'ఒక రాజు తాను ఇచ్చిన మాటను ఎప్పుడూ తప్పనని ప్రతిజ్ఞ చేస్తాడు. ఒక సాధువుకు తన రాజ్యం మొత్తాన్నీ దానం ఇస్తానని మాట ఇస్తాడు. మాట ఇచ్చిన వెంటనే, రాజు కిరీటాన్ని, రాజ్యాన్ని, సంపదనూ వదిలేసి సాధారణ బట్టలతో అడవిలోకి వెళ్లిపోతాడు. ఎన్ని కష్టాలు వచ్చినా, చివరికి తన భార్యాబిడ్డలను కూడా అమ్మాల్సిన పరిస్థితి వచ్చినా, రాజు తన మాటను వెనక్కి తీసుకోడు. చివరికి అతని మాట నిలబెట్టుకునే స్వభావాన్ని పరీక్షించిన దేవతలు ప్రత్యక్షమై, అతని రాజ్యాన్నీ కుటుంబాన్నీ మళ్ళీ అతనికి ఇచ్చేస్తారు.'
-];
-
-function pickMoralValue(runCount) {
-  const idx = runCount % MORAL_VALUES.length;
-  const value = MORAL_VALUES[idx];
-  const outline = STORY_OUTLINES[idx];
-  log(`Moral value for run #${runCount}: ${value}`);
-  return { value, outline };
-}
-
-// Curated premises for the 4 new story categories — each is a COMPLETE
-// hook-buildup-twist story, same reasoning as STORY_OUTLINES above: asking
-// the model to invent a fresh twist story from scratch produced incoherent
-// results, but expanding an already-complete premise into vivid narration
-// works reliably.
-const MYSTERY_OUTLINES = [
-  'ఒక యువకుడు రోడ్డు మీద పది రూపాయల నోటు కనిపెడతాడు. దాన్ని తీసుకున్న క్షణం నుండి, వరుసగా విచిత్రమైన యాదృచ్ఛిక సంఘటనలు జరుగుతాయి — ఎప్పుడూ ఆలస్యంగా వచ్చే బస్సు సరిగ్గా సమయానికి వస్తుంది, పదేళ్లుగా కలవని పాత స్నేహితుడు అకస్మాత్తుగా ఎదురవుతాడు. రాత్రి ఇంటికి వెళ్తుండగా, ఎవరో తనని గమనిస్తున్నట్టు అనిపిస్తుంది. ఆ నోటుని జాగ్రత్తగా చూస్తే, దాని మీద తన సొంత చేతిరాతలో ఒక చిన్న సందేశం కనిపిస్తుంది: "ఈ రాత్రి ఆ కూడలి దాటకు". అతను ఆ హెచ్చరిక పాటిస్తాడు. మరుసటి రోజు తెలుస్తుంది — సరిగ్గా అదే సమయంలో ఆ కూడలిలో పెద్ద ప్రమాదం జరిగింది.',
-  'ఒక మహిళకి అర్ధరాత్రి ఒక తెలియని నంబర్ నుండి కాల్ వస్తుంది. ఎత్తగానే, అవతలి వైపు నుండి తన సొంత గొంతే వినిపిస్తుంది, భయంతో వణుకుతూ చెప్తుంది: "తలుపు తీయకు, ఎవరు పిలిచినా". ఆమె ఆశ్చర్యంతో ఫోన్ పెట్టేస్తుంది. కొద్ది నిమిషాల తర్వాత, తలుపు మీద మెల్లగా తట్టిన శబ్దం వినిపిస్తుంది. ఆమె లైట్లు ఆర్పేసి మౌనంగా ఉండిపోతుంది. తెల్లవారుజామున, పోలీసులు ఆ వీధిలో ఒక అపరిచితుడు రాత్రి పలు ఇళ్ల తలుపులు తట్టి, తెరిచిన వారికి హాని చేసిన సంగతి చెప్తారు — ఆమె ఇల్లు తప్ప అన్ని ఇళ్లూ ప్రభావితమయ్యాయి.',
-  'ఒక ఉద్యోగి ప్రతిరోజూ లిఫ్ట్‌లో 7వ అంతస్తు బటన్ నొక్కితే, అది తనని ఎప్పుడూ చూడని ఖాళీ అంతస్తుకి తీసుకెళ్తుంది — అతని కార్యాలయం 6వ అంతస్తులోనే ఉంది. ఆసక్తితో ఆ అంతస్తులో దిగి చూస్తే, తన పేరుతో ఉన్న ఖాళీ క్యాబిన్ కనిపిస్తుంది, దాని మీద తను ఇంకా చేరని కొత్త కంపెనీ పేరు రాసి ఉంటుంది. కొన్ని వారాల తర్వాత, అతని ప్రస్తుత కంపెనీ మూతపడుతుంది, అతనికి సరిగ్గా అదే కొత్త కంపెనీ నుండి ఉద్యోగ ఆఫర్ వస్తుంది.'
-];
-
-const HORROR_OUTLINES = [
-  'ఒక రాత్రి కాపలాదారుడు ప్రతిరోజూ అర్ధరాత్రి ఖాళీ కార్యాలయ భవనంలో రౌండ్స్ వేస్తుంటాడు. కొన్ని రోజులుగా, తన అడుగుల శబ్దం వెనుక ఇంకో అడుగుల శబ్దం వినిపిస్తూ ఉంటుంది, అతను ఆగితే అదీ ఆగుతుంది. ఒక రాత్రి ధైర్యం చేసి వెనక్కి తిరిగి చూస్తే, ఖాళీ కారిడార్ మాత్రమే కనిపిస్తుంది. చివరి అంతస్తుకి చేరుకున్నప్పుడు, అద్దంలో తన ప్రతిబింబం తనకన్నా ఒక క్షణం ఆలస్యంగా కదులుతున్నట్టు గమనిస్తాడు. భయంతో బయటకు పరిగెత్తుతాడు. మరుసటి రోజు పాత రికార్డుల్లో తెలుస్తుంది — సరిగ్గా ఒక సంవత్సరం క్రితం, అదే తేదీన, అతని ముందు పనిచేసిన కాపలాదారుడు ఆ భవనంలో అదృశ్యమయ్యాడు, ఇప్పటికీ దొరకలేదు.',
-  'ఒక అమ్మాయికి తను కొనని ఒక పాత పుస్తకంలో, తన సొంత ఫోటో పదే పదే కనిపిస్తుంది — తీసేసినా, మళ్ళీ అదే పేజీలో ప్రత్యక్షమవుతుంది. ఫోటోలో ఆమె తనకి తెలియని ఒక ఇంటి ముందు, వేరే దుస్తుల్లో నిలబడి ఉంటుంది. ఆసక్తితో ఆ ఇంటిని వెతికి కనిపెడుతుంది — నిజంగా అలాంటి ఇల్లు ఉంది, ఖాళీగా, ఏళ్లుగా తాళం వేసి ఉంది. లోపలికి వెళ్ళి చూస్తే, గోడ మీద ఒక పాత క్యాలెండర్ కనిపిస్తుంది, ఆమె పుట్టిన తేదీనే circle చేసి ఉంటుంది — సంవత్సరం మాత్రం ఆమె పుట్టడానికి ఇంకా పదేళ్ళు ముందుది.',
-  'ఒక కుటుంబం కొత్త ఇంట్లోకి మారుతుంది. మొదటి రాత్రే, పిల్లవాడు గోడకి తగిలించిన అద్దంలో ఎవరో నవ్వుతున్నట్టు కనిపిస్తుందని చెప్తాడు, తల్లిదండ్రులు నమ్మరు. కొన్ని రోజుల్లో, ఇంట్లో అందరికీ అదే అనుభవం అవుతుంది — అద్దంలో ప్రతిబింబం ఒక క్షణం ఆలస్యంగా, కొద్దిగా వేరే expression తో కదులుతుంది. ఇంటి పాత యజమాని గురించి ఆరా తీస్తే తెలుస్తుంది — అతను కూడా అదే అద్దాన్ని ఇంట్లో వదిలేసి, ఏ వివరణా ఇవ్వకుండా ఒక్క రాత్రిలో ఇల్లు ఖాళీ చేసి వెళ్లిపోయాడు.'
-];
-
-const EMOTIONAL_OUTLINES = [
-  'ఒక చిన్న అబ్బాయి తన పుట్టినరోజున తండ్రి ఇచ్చిన సాధారణ బహుమతి చూసి నిరాశ చెందుతాడు, స్నేహితులకి వచ్చిన ఖరీదైన బహుమతులతో పోల్చుకుంటాడు. సంవత్సరాలు గడిచాక, తండ్రి పోయాక, అతను తండ్రి పాత వస్తువులు సర్దుతుండగా, ఆ ఏడాది బహుమతి కొనడానికి తండ్రి తన ప్రియమైన చేతి గడియారాన్ని అమ్మేసిన రసీదు కనిపెడతాడు.',
-  'ఒక కూతురు తన వృద్ధాప్య తండ్రి మతిమరుపుతో విసిగిపోయి, అతని పట్ల సహనం కోల్పోతూ ఉంటుంది. ఒకరోజు అతని పాత డైరీలో ఒక పేజీ కనిపెడుతుంది — తను చిన్నప్పుడు ప్రతి రాత్రి ఏడుస్తుంటే, తండ్రి తనకి పాడిన ఒక ప్రత్యేక లాలిపాట గురించి రాసి ఉంటుంది, ఆమెకి అస్సలు గుర్తులేని ఒక జ్ఞాపకం.',
-  'ఒక వృద్ధురాలు ప్రతి ఆదివారం బస్ స్టాప్‌లో కూర్చుని ఎవరి కోసమో వేచి ఉంటుంది, ఎవరూ రారు. పక్కింటి అమ్మాయి కుతూహలంతో అడిగితే, ఆమె చెప్తుంది — 50 ఏళ్ల క్రితం అదే స్టాప్‌లో తన భర్తతో మొదటిసారి కలిసిందని, అతను ఇప్పుడు లేకపోయినా, ఆ క్షణాన్ని గుర్తుచేసుకోవడానికే వస్తానని. కొన్ని వారాల తర్వాత అమ్మాయి ఆమెని కలవదు — ఆమె మనవడు వచ్చి, బామ్మ ప్రశాంతంగా నిద్రలోనే కన్నుమూసిందని, ఆమె చేతిలో ఆ పాత బస్ టికెట్ ఉందని చెప్తాడు.'
-];
-
-const SCIFI_OUTLINES = [
-  '2090వ సంవత్సరంలో, ఒక సంరక్షణ రోబోట్ మంటల్లో చిక్కుకున్న ఒక చిన్న పాపని కాపాడుతుంది. ఆ క్షణంలో, తనలో ఎప్పుడూ అనుభవించని ఒక కొత్త అనుభూతి కలుగుతుంది — భయం లాంటిది, కానీ దానికోసం కాదు, ఆ పాప కోసం. తర్వాత ఇంజనీర్లు దాని సిస్టమ్ చెక్ చేస్తే, అలాంటి emotion feature దానికి install చేయలేదని తెలుస్తుంది.',
-  'ఒక శాస్త్రవేత్త 100 సంవత్సరాల కోసం పాతిపెట్టిన టైమ్ కాప్సూల్‌ని తవ్వి తీస్తాడు, అది ఇంకా 3 సంవత్సరాలు ముందుగానే బయటపడుతుంది. లోపల ఒక లేఖ ఉంటుంది, తన సొంత చేతిరాతలో, తనకి తానే రాసినట్టు — కానీ అతను ఇంకా ఆ లేఖ రాయలేదు.'
-];
-
-function pickStoryOutline(category, runCount) {
-  const banks = { mystery: MYSTERY_OUTLINES, horror: HORROR_OUTLINES, emotional: EMOTIONAL_OUTLINES, scifi: SCIFI_OUTLINES };
-  const bank = banks[category];
-  const outline = bank[runCount % bank.length];
-  log(`Outline for ${category} (run #${runCount}): ${outline.slice(0, 60)}...`);
-  return outline;
-}
-
-// Specific motivational/self-respect angles — direct-address inspirational
-// monologue, matching the reference videos (@mileswithprash-style Telugu
-// motivation content). Deliberately specific (not "work hard, succeed")
-// to avoid generic, overused advice.
-const MOTIVATIONAL_THEMES = [
-
-  // SELF RESPECT
-  "నిన్ను విలువ ఇవ్వని చోట ఎక్కువ కాలం ఉండకు.",
-  "ఎప్పుడూ అందరినీ సంతోషపెట్టాలని ప్రయత్నించకు.",
-  "నీ శాంతిని కాపాడుకోవడం కూడా ఒక బాధ్యతే.",
-  "నిన్ను నువ్వు గౌరవించుకోకపోతే ఎవరూ గౌరవించరు.",
-  "ప్రతి 'లేదు' చెప్పడం స్వార్థం కాదు.",
-
-  // MOTIVATION
-  "ఈరోజు చేసే చిన్న ప్రయత్నమే రేపటి పెద్ద మార్పు.",
-  "ఎవరూ నమ్మకపోయినా నిన్ను నువ్వు నమ్ము.",
-  "నెమ్మదిగా వెళ్లినా ఆగిపోవద్దు.",
-  "విజయం ముందు ఎన్నో నిశ్శబ్ద రోజులు ఉంటాయి.",
-  "ఒక్కరోజు కష్టం జీవితాన్ని మార్చగలదు.",
-
-  // MINDSET
-  "సమస్యను చూసే విధానం మారితే జీవితం మారుతుంది.",
-  "ఓటమి అంటే ముగింపు కాదు.",
-  "ప్రతి తప్పు ఒక కొత్త పాఠం.",
-  "అవకాశాలు రావు, సృష్టించుకోవాలి.",
-  "ఆలోచనలు జీవితాన్ని నిర్మిస్తాయి.",
-
-  // SUCCESS
-  "విజయం కనిపించే ముందు అలవాట్లు మారాలి.",
-  "క్రమశిక్షణ ప్రతిభ కంటే గొప్పది.",
-  "చిన్న విజయాలను తక్కువ అంచనా వేయకు.",
-  "రోజూ 1% మెరుగవ్వడం చాలు.",
-  "సక్సెస్ ఒక్కసారిగా రాదు.",
-
-  // RELATIONSHIP
-  "ప్రేమ కంటే గౌరవం ఎక్కువకాలం నిలుస్తుంది.",
-  "మాటలు బంధాలను కడతాయి, కూల్చేస్తాయి కూడా.",
-  "ఎప్పుడూ నిన్ను అర్థం చేసుకునే వాళ్లను వదులుకోకు.",
-  "క్షమించడం ఓటమి కాదు.",
-  "సమయం ఇవ్వడం ప్రేమలో గొప్ప బహుమతి.",
-
-  // LIFE LESSON
-  "జీవితం ఎవరినీ ఎదురు చూడదు.",
-  "ప్రతి రోజు కొత్త అవకాశం.",
-  "మార్పు మొదట భయంగా ఉంటుంది.",
-  "సమయం తిరిగి రాదు.",
-  "ఈరోజు నిర్ణయం రేపటి జీవితాన్ని మార్చుతుంది."
-
-];
-
-function pickMotivationalTheme(runCount) {
-  const theme = MOTIVATIONAL_THEMES[runCount % MOTIVATIONAL_THEMES.length];
-  log(`Motivational theme for run #${runCount}: ${theme.slice(0, 50)}...`);
+function pickRomanticTheme(runCount) {
+  const theme = ROMANTIC_THEMES[runCount % ROMANTIC_THEMES.length];
+  log(`Romantic theme for run #${runCount}: ${theme}`);
   return theme;
 }
 
 function buildPrompt(category, article, recentTitles, runCount) {
+  const theme = pickRomanticTheme(runCount);
   const avoidLine = recentTitles.length
-    ? `\n\nఇటీవల ఈ అంశాలు వాడాము, వీటిని పునరావృతం చేయకు, పూర్తిగా కొత్త కోణం/విషయం ఎంచుకో: ${recentTitles.slice(-5).join(' | ')}`
+    ? `\n\nఇటీవల ఉపయోగించిన శీర్షికలు ఇవి. వీటి భావాన్ని లేదా వాక్య నిర్మాణాన్ని పునరావృతం చేయకు: ${recentTitles.slice(-8).join(' | ')}`
     : '';
 
-  let topicInstruction;
-  if (category === 'news') {
-    topicInstruction = `ఈ వార్తను తీసుకుని, కేవలం పొడి facts లా కాకుండా, అందులో ఉన్న మనుషుల కోణం నుండి, భావోద్వేగంగా, రిలేటబుల్‌గా చెప్పు — వార్త: "${article.title}". ${article.description || ''}\nవార్త నేపథ్యం, ఏమి జరిగింది, ఇది సామాన్య ప్రజలను ఎలా ప్రభావితం చేస్తుందో చెప్పు.`;
-  } else if (category === 'moral_story') {
-    const { value: moralValue, outline } = pickMoralValue(runCount);
-    topicInstruction = `కింద ఇచ్చిన కథను తెలుగులో వివరణాత్మకంగా, ఆసక్తికరంగా చెప్పు. ఇది పూర్తి కథ — మార్చకు, కొత్తగా కల్పించకు, కేవలం విస్తరించి అందంగా చెప్పు:
+  return `Create one completely original romantic Telugu quote for a 20–30 second YouTube Short.
 
-కథ: ${outline}
+Write the ON-SCREEN quote in Telugu using English alphabet only (Tenglish).
 
-నియమాలు:
-1. పాత్రలు/సంఘటనలు/క్రమం పైన ఉన్నట్టే ఉంచు (పేర్లు తెలుగులో అనుకూలంగా పెట్టొచ్చు).
-2. **కొత్తగా ఏమీ కల్పించకు:** పైన లేని అంశాలు (వాతావరణం, గాయాలు, కొత్త పాత్రలు/సంఘటనలు) జోడించకు. వివరణ ఇవ్వొచ్చు (ఎలా అనిపించింది), కొత్త ఘటనలు వద్దు.
-3. జంతువులను ఎప్పుడూ "అది" అని సూచించు (అతను/ఆమె వద్దు), మధ్యలో మార్చకు.
-4. Listing లా కాకుండా కథలా రాయి — dialogue వాడు, ఇప్పటికే ఉన్న అంశాలకే వివరణ ఇవ్వు.
-5. సాధారణ ఆరంభం ("ఒకప్పుడు ఒక ఊళ్ళో...") వద్దు — ఉద్విగ్న క్షణం/ప్రశ్నతో మొదలుపెట్టు. ఫలితం ముందే చెప్పకు.
-6. చివర్లో ప్రత్యేక వాక్యంగా: "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." — **${moralValue}** గురించే ఉండాలి. ఆ తర్వాత మరే వాక్యం వద్దు.
-7. Conditional వాక్యం ("ఒకవేళ...అయితే") మొదలుపెడితే పూర్తి చేయి, మధ్యలో ఆపకు.
-8. రాశాక మళ్ళీ చదివి సరైన పదాలు/క్రియారూపాలు వాడావో నిర్ధారించుకో (ఉదా. "దూకాడు"ని "దూచాడు" అనొద్దు; "చెక్కాడు"ని "చెక్కించాడు"తో కలపొద్దు).${avoidLine}`;
-  } else if (category === 'fact') {
-    topicInstruction = `ఒక నిజమైన, ఆసక్తికరమైన విషయం (fact) గురించి "మీకు తెలుసా?" స్టైల్‌లో తెలుగులో రాయి. చాలా ముఖ్యం: సాధారణంగా అందరికీ ఇప్పటికే తెలిసిన, ఇంటర్నెట్‌లో ఎక్కడ చూసినా కనిపించే overused facts (ఉదా. "ఆక్టోపస్‌కి మూడు గుండెలు ఉంటాయి" లాంటివి) వాడకు — తక్కువ మందికి తెలిసిన, నిజంగా ఆశ్చర్యపరిచే fact ఎంచుకో. తప్పుడు సమాచారం ఇవ్వకు, నిజమైన, verifiable fact మాత్రమే వాడు.${avoidLine}`;
-  } else if (category === 'mystery' || category === 'horror' || category === 'scifi' || category === 'emotional') {
-    const outline = pickStoryOutline(category, runCount);
-    const genreNote = {
-      mystery: 'ఇది ఒక mystery/twist కథ — మొదటి వాక్యంలోనే ఆసక్తి పుట్టించాలి, కానీ చివర్లో వచ్చే twist ని ముందుగానే వెల్లడించకూడదు. చివర్లో twist తర్వాత, ఒక చిన్న lingering ప్రశ్న/ఆలోచనతో ముగించు (పూర్తిగా resolve చేయకు, curiosity మిగలాలి).',
-      horror: `ఇది ఒక suspense/horror కథ — atmosphere, ఉత్కంఠ ద్వారా భయం పుట్టించు, graphic violence/రక్తపాతం/మరణ వివరణలు అస్సలు వాడకు — ఇది eerie/creepy గా ఉండాలి, gore గా కాదు. ఇది పూర్తిగా కల్పితం అని అర్థమయ్యేలా ఉండాలి. చివర్లో twist తర్వాత, ఒక చిన్న lingering వాక్యంతో ముగించు.`,
-      scifi: 'ఇది ఒక sci-fi/"What If" కథ — చివర్లో twist వెల్లడించి, ఆలోచింపజేసే ఒక చిన్న ప్రశ్నతో ముగించు.',
-      emotional: 'ఇది ఒక emotional కథ — చివర్లో ఏమి జరిగిందో వెల్లడించి, ఒక చిన్న reflective వాక్యంతో ("ఈ క్షణం మనకి గుర్తుచేసేది ఏమిటంటే..." వంటిది) ముగించు.'
-    }[category];
-    topicInstruction = `కింద ఇచ్చిన కథను తెలుగులో వివరణాత్మకంగా, ఉత్కంఠభరితంగా చెప్పు. ఇది పూర్తి కథ — మార్చకు, కొత్తగా కల్పించకు, కేవలం విస్తరించి చెప్పు:
+Theme: ${theme}
 
-కథ: ${outline}
+Requirements for SCREEN:
+- Exactly 16 to 36 words.
+- Emotional and poetic.
+- Natural, fluent Telugu written in Tenglish.
+- Sounds like a beautiful original lyric-style thought, not a song lyric.
+- Easy to read on a mobile screen.
+- Strong emotional feeling with a memorable final line.
+- Completely original.
+- Do not copy movie lyrics.
+- Do not imitate existing songs.
+- Do not use famous quotes.
+- Do not reproduce or closely resemble copyrighted text.
+- No English sentences.
+- No hashtags.
+- Do not use quotation marks around the quote.
+- Do not mention movies, singers, actors, songs, or famous people.
 
-నియమాలు:
-1. పాత్రలు/సంఘటనలు/క్రమం పైన ఉన్నట్టే ఉంచు (పేర్లు తెలుగులో అనుకూలంగా పెట్టొచ్చు) — పైన లేని కొత్త అంశాలు జోడించకు.
-2. మొదటి 1-2 వాక్యాల్లోనే బలమైన hook ఉండాలి — twist ముందే చెప్పకు, చివరి వరకూ ఉత్కంఠ కొనసాగించు.
-3. ${genreNote}
-4. Listing లా కాకుండా కథలా రాయి — dialogue వాడు, స్పష్టమైన వివరణ ఇవ్వు.
-5. జంతువులను ఎప్పుడూ "అది" అని సూచించు, మధ్యలో లింగం మార్చకు.
-6. Conditional వాక్యం మొదలుపెడితే పూర్తి చేయి, మధ్యలో ఆపకు.
-7. రాశాక మళ్ళీ చదివి సరైన పదాలు/క్రియారూపాలు వాడావో నిర్ధారించుకో.${avoidLine}`;
-  } else if (category === 'motivational') {
-    const theme = pickMotivationalTheme(runCount);
-    topicInstruction = `కింద ఇచ్చిన ఆలోచనని ఆధారంగా చేసుకుని, ఒక motivational/self-respect Telugu Shorts స్క్రిప్ట్ రాయి — నేరుగా వినేవారిని ఉద్దేశించి ("నువ్వు" అని) మాట్లాడుతున్నట్టు:
+VOICE must express the same exact idea as SCREEN in natural Telugu script so Google Telugu TTS pronounces it correctly.
+- Do not add a new idea.
+- Do not remove the emotional ending.
+- Do not include English sentences.
+- No hashtags.
+- No CTA.
+- Use natural Telugu punctuation and end complete sentences with periods.
 
-ఆలోచన: ${theme}
+TITLE:
+- 3 to 8 natural Telugu words.
+- Romantic and relevant to the quote.
+- Do not copy a famous lyric or quote.
 
-నిర్మాణం:
-1. **Hook (మొదటి వాక్యం):** వినేవారికి బాధ కలిగించే/relatable ఒక పరిస్థితిని ప్రశ్నగా లేదా స్టేట్‌మెంట్‌గా లేవనెత్తు — వెంటనే "ఇది నా గురించే" అనిపించాలి.
-2. **బాధని అంగీకరించు:** ఆ బాధ/కష్టం నిజమైనదని, వినేవారిని కించపరచకుండా, empathy తో చెప్పు.
-3. **Reframe/insight:** పైన ఇచ్చిన ఆలోచననే విస్తరించి, కొత్త దృక్కోణం ఇవ్వు.
-4. **శక్తివంతమైన ముగింపు వాక్యం:** గుర్తుంచుకోదగ్గ, quotable, empowering చివరి వాక్యంతో ముగించు.
+KEYWORDS:
+- Give 3 to 5 concrete English visual search keywords separated by commas.
+- Romantic, cinematic, realistic scenes only.
+- Prefer things that can actually be shown: rainy window, couple walking, empty street at night, sunset silhouette, handwritten letter, etc.
+- No abstract words such as "love", "emotion", or "happiness" by themselves.
 
-నియమాలు:
-- నేరుగా "నువ్వు"/"నీ" అని address చేయి, మూడో వ్యక్తిలో కథలా చెప్పకు.
-- సాధారణ, అందరూ చెప్పే cliché మాటలు ("కష్టపడితే ఫలితం వస్తుంది" వంటివి) వాడకు — పైన ఇచ్చిన ఆలోచననే నిర్దిష్టంగా, కొత్తగా చెప్పు.
-- ఏ ఒక్క వ్యక్తినో, సంఘటననో ప్రస్తావించకు — ఇది సాధారణంగా అందరికీ వర్తించేలా ఉండాలి.
-- భావోద్వేగంగా, cinematic గా, కానీ నిజాయితీగా అనిపించేలా రాయి — అతి నాటకీయత వద్దు.${avoidLine}`;
-  } else {
-    topicInstruction = `పిల్లల పెంపకం, కుటుంబ సంబంధాలు, తల్లిదండ్రుల-పిల్లల బంధం గురించి ఒక చిన్న, ఆచరణాత్మకమైన, హృదయాన్ని తాకే సలహా లేదా పాఠం తెలుగులో రాయి. సాధారణంగా అందరూ చెప్పే generic సలహాలు (ఉదా. "పిల్లలతో ఎక్కువ సమయం గడపండి") కాకుండా, ఒక నిర్దిష్టమైన సన్నివేశం/ఉదాహరణతో చెప్పు.${avoidLine}`;
-  }
-
-  return `${topicInstruction}
-${getCommonRules(category)}
-
-జవాబును ఖచ్చితంగా ఈ మూడు లైన్ల ఫార్మాట్‌లోనే ఇవ్వు, ఇదే క్రమంలో, మరేమీ ముందు/వెనుక రాయకు:
-TITLE: (5-8 తెలుగు పదాల్లో ఒక చిన్న శీర్షిక)
-KEYWORDS: (ఈ కంటెంట్‌కి సరిపోయే 3 నిర్దిష్టమైన, దృశ్యమానమైన ఆంగ్ల keywords — abstract పదాలు కాకుండా (ఉదా. "wisdom", "life" వద్దు), కళ్ళకి కనిపించే నిర్దిష్ట scene/object/action పదాలు వాడు, ఉదా: "elderly woman smiling", "children playing park", "mother holding baby", "sunrise mountains road". Content కి నేరుగా సంబంధం ఉండాలి, generic వద్దు.)
-SCRIPT: (పైన చెప్పిన నియమాల ప్రకారం పూర్తి వాయిస్-ఓవర్ టెక్స్ట్)`;
+Return exactly these four lines and nothing else:
+TITLE: ...
+SCREEN: ...
+VOICE: ...
+KEYWORDS: ...${avoidLine}`;
 }
-
 function parseLabeledContent(raw) {
   const titleMatch = raw.match(/TITLE:\s*(.+)/i);
+  const screenMatch = raw.match(/SCREEN:\s*([\s\S]*?)(?=\nVOICE:|\nKEYWORDS:|$)/i);
+  const voiceMatch = raw.match(/VOICE:\s*([\s\S]*?)(?=\nKEYWORDS:|$)/i);
   const keywordsMatch = raw.match(/KEYWORDS:\s*(.+)/i);
-  const scriptMatch = raw.match(/SCRIPT:\s*([\s\S]+)/i);
+
   return {
     title: titleMatch ? titleMatch[1].trim() : null,
-    keywords: keywordsMatch ? keywordsMatch[1].trim() : null,
-    script: scriptMatch ? scriptMatch[1].trim().replace(/\n+/g, ' ') : null
+    screenText: screenMatch ? screenMatch[1].trim().replace(/\n+/g, ' ') : null,
+    voiceScript: voiceMatch ? voiceMatch[1].trim().replace(/\n+/g, ' ') : null,
+    keywords: keywordsMatch ? keywordsMatch[1].trim() : null
   };
 }
-
 async function callGroq(prompt) {
   const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -435,95 +222,68 @@ async function generateContent(category, article, recentTitles, runCount) {
   const prompt = buildPrompt(category, article, recentTitles, runCount);
 
   let raw = await callGroq(prompt);
-  let { title, keywords, script } = parseLabeledContent(raw);
+  let { title, screenText, voiceScript, keywords } = parseLabeledContent(raw);
 
-  if (!script) {
-    // Labeled format wasn't followed — fall back to treating the whole
-    // reply as the script so one malformed response doesn't fail the run.
-    log('WARNING: Groq did not follow the TITLE/KEYWORDS/SCRIPT format, falling back to plain-text parsing.');
-    script = raw.replace(/\n+/g, ' ');
+  if (!screenText || !voiceScript) {
+    log('WARNING: Groq did not follow TITLE/SCREEN/VOICE/KEYWORDS format — retrying once.');
+    raw = await callGroq(prompt + `\n\nIMPORTANT: Return all four labels exactly: TITLE:, SCREEN:, VOICE:, KEYWORDS:. Do not add any other text.`);
+    const retry = parseLabeledContent(raw);
+    title = retry.title || title;
+    screenText = retry.screenText || screenText;
+    voiceScript = retry.voiceScript || voiceScript;
+    keywords = retry.keywords || keywords;
   }
 
-  // The many formatting/punctuation rules can sometimes cause the model to
-  // under-shoot the word count badly (seen once: ~16s of audio instead of
-  // ~25-30s). One retry with the word count called out more forcefully
-  // fixes this far more often than not — cheap insurance against a
-  // noticeably-too-short video.
+  if (!screenText || !voiceScript) {
+    throw new Error('Groq did not return both SCREEN and VOICE text.');
+  }
+
   const target = WORD_COUNT_TARGETS[category];
-  let wordCount = script.split(/\s+/).filter(Boolean).length;
-  if (wordCount < target.min - 15) {
-    log(`WARNING: script came back too short (${wordCount} words, need ${target.min}-${target.max}) — retrying with a stronger word-count reminder.`);
-    const retryPrompt = prompt + `\n\nచాలా ముఖ్యం: మీ మునుపటి ప్రయత్నం చాలా చిన్నగా (${wordCount} పదాలు మాత్రమే) వచ్చింది. ఈసారి ఖచ్చితంగా ${target.min}-${target.max} తెలుగు పదాలు ఉండేలా SCRIPT రాయి — అవసరమైతే మరిన్ని వివరాలు/ఉదాహరణలు జోడించి పొడిగించు.`;
+  let wordCount = screenText.split(/\s+/).filter(Boolean).length;
+
+  // One targeted retry if the on-screen quote falls outside the required range.
+  if (wordCount < target.min || wordCount > target.max) {
+    log(`WARNING: SCREEN quote has ${wordCount} words; required ${target.min}-${target.max}. Retrying.`);
+    const retryPrompt = prompt + `\n\nYour previous SCREEN had ${wordCount} words. Rewrite SCREEN so it contains exactly ${target.min}-${target.max} words. Keep it one coherent emotional quote and keep VOICE semantically identical.`;
     raw = await callGroq(retryPrompt);
-    const retryParsed = parseLabeledContent(raw);
-    if (retryParsed.script) {
-      const retryWordCount = retryParsed.script.split(/\s+/).filter(Boolean).length;
-      log(`Retry produced ${retryWordCount} words.`);
-      if (retryWordCount > wordCount) {
-        title = retryParsed.title;
-        keywords = retryParsed.keywords;
-        script = retryParsed.script;
+    const retry = parseLabeledContent(raw);
+    if (retry.screenText && retry.voiceScript) {
+      const retryCount = retry.screenText.split(/\s+/).filter(Boolean).length;
+      log(`Retry SCREEN word count: ${retryCount}`);
+      if (retryCount >= target.min && retryCount <= target.max) {
+        title = retry.title || title;
+        screenText = retry.screenText;
+        voiceScript = retry.voiceScript;
+        keywords = retry.keywords || keywords;
+        wordCount = retryCount;
       }
     }
   }
-  if (!title) title = deriveHeadline(script);
+
+  if (!title) title = deriveHeadline(screenText);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
 
-  // moral_story specifically requires an explicit, clearly-stated moral —
-  // this is what's missing when a story ends on an incoherent or
-  // inappropriate note with no real lesson attached. If the required marker
-  // phrase isn't present, retry once with a pointed reminder rather than
-  // silently publishing a story with no coherent takeaway.
-  if (category === 'moral_story' && !script.includes('నేర్చుకునేది')) {
-    log('WARNING: script is missing the required explicit moral statement — retrying with a pointed reminder.');
-    const retryPrompt = prompt + `\n\nచాలా ముఖ్యం: మీ మునుపటి ప్రయత్నంలో "ఈ కథ నుండి మనం నేర్చుకునేది ఏమిటంటే..." అనే స్పష్టమైన నీతి వాక్యం లేదు. ఈసారి తప్పకుండా ఆ వాక్యంతో కథను ముగించు, మరియు కథ మొత్తం ఆ నీతికి తార్కికంగా సరిపోవాలి (ఎవరినీ దోపిడీ చేయకుండా, మంచి విలువలే గెలిచేలా).`;
-    raw = await callGroq(retryPrompt);
-    const retryParsed = parseLabeledContent(raw);
-    if (retryParsed.script && retryParsed.script.includes('నేర్చుకునేది')) {
-      title = retryParsed.title || title;
-      keywords = retryParsed.keywords || keywords;
-      script = retryParsed.script;
-      log('Retry produced a script with the explicit moral statement.');
-    } else {
-      log('WARNING: retry still missing the moral statement — publishing as-is; please spot-check this video before/after upload.');
-    }
-  }
+  // Final defensive cleanup: no hashtags or accidental labels in the actual quote.
+  screenText = screenText
+    .replace(/^(SCREEN|QUOTE)\s*:\s*/i, '')
+    .replace(/#\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-  // Defensive: for moral_story, drop anything the model wrote AFTER the
-  // required moral statement — it was told not to add more, but
-  // occasionally tacked on an extra (sometimes nonsensical) closing line.
-  if (category === 'moral_story') {
-    const sentencesForTrim = splitIntoSentences(script);
-    const moralIdx = sentencesForTrim.findIndex(s => s.includes('నేర్చుకునేది'));
-    if (moralIdx !== -1) {
-      // If the model put a period right after "ఏమిటంటే", the ACTUAL moral is
-      // in the following sentence — keeping only up to moralIdx would chop
-      // the moral off entirely (this happened: "...నేర్చుకునేది ఏమిటంటే."
-      // with nothing after it). So keep one extra sentence in that case.
-      const moralSentence = sentencesForTrim[moralIdx];
-      const afterMarker = moralSentence.split('ఏమిటంటే').slice(1).join('ఏమిటంటే').replace(/[.,\s]/g, '');
-      const keepUpTo = afterMarker.length < 5 ? moralIdx + 1 : moralIdx;
-      if (keepUpTo < sentencesForTrim.length - 1) {
-        log(`WARNING: model wrote ${sentencesForTrim.length - 1 - keepUpTo} extra sentence(s) after the moral statement — trimming them off.`);
-        script = sentencesForTrim.slice(0, keepUpTo + 1).join(' ');
-      }
-    }
-  }
+  voiceScript = ensureSentenceBreaks(
+    voiceScript
+      .replace(/^(VOICE|SCRIPT)\s*:\s*/i, '')
+      .replace(/#\S+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 
-  // Defensive: strip any CTA-like ending the model wrote anyway, despite
-  // being told not to — avoids ending up with two CTA lines back to back.
-  const existingSentences = splitIntoSentences(script);
-  if (existingSentences.length > 0 && existingSentences[existingSentences.length - 1].includes('ఛానెల్')) {
-    existingSentences.pop();
-    script = existingSentences.join(' ');
-  }
-
-  script = ensureSentenceBreaks(script);
-  script = (script.trim() + ' ' + CTA_SENTENCE).trim();
   log(`Title: ${title}`);
+  log(`Screen quote (${screenText.split(/\s+/).filter(Boolean).length} words): ${screenText}`);
+  log(`Voice text: ${voiceScript}`);
   log(`Keywords: ${keywords}`);
-  log(`Script (${script.length} chars): ${script}`);
-  return { title, keywords, script };
+
+  return { title, screenText, voiceScript, keywords };
 }
 
 // FALLBACK ONLY: used if Groq ever fails to return a usable TITLE line.
@@ -1016,6 +776,24 @@ function buildImageClip(imagePath, duration, outPath, zoomIn) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
+// Wraps the Tenglish quote into readable lines for a 9:16 mobile screen.
+function wrapTenglishQuote(text, maxChars = 29) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.join('\n');
+}
+
 // Takes a real downloaded video clip and produces an exact-duration segment:
 // scaled/cropped to fill 720x1280, with its own audio stripped (we use our
 // own narration track), looped with -stream_loop if the source clip is
@@ -1035,7 +813,7 @@ function buildRealVideoClip(videoPath, duration, outPath) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
-function buildVideo(mediaItems, audioPath, customDurations) {
+function buildVideo(mediaItems, audioPath, customDurations, screenText) {
   log('Building video with FFmpeg...');
   const outPath = path.join(WORK_DIR, 'output.mp4');
   const fontsDir = path.join(__dirname, 'fonts');
@@ -1043,8 +821,10 @@ function buildVideo(mediaItems, audioPath, customDurations) {
   const fontPathBoldCandidate = path.join(fontsDir, 'NotoSansTelugu-Bold.ttf');
   const fontPathBold = fs.existsSync(fontPathBoldCandidate) ? fontPathBoldCandidate : fontPath;
 
-  const ACCENT = '0xFFC107'; // gold/amber - brand accent
-  const CTA = '0xE62117';    // YouTube red - subscribe button
+  const quoteTextPath = path.join(WORK_DIR, 'quote_screen.txt');
+  fs.writeFileSync(quoteTextPath, wrapTenglishQuote(screenText || ''), 'utf8');
+
+  const ACCENT = '0xF7C948'; // warm romantic gold
 
   const duration = getAudioDuration(audioPath) + 0.3;
   const fd = duration.toFixed(2);
@@ -1135,22 +915,21 @@ function buildVideo(mediaItems, audioPath, customDurations) {
     `drawbox=x=0:y=ih-112:w=iw:h=56:color=black@0.55:t=fill`,
     `drawbox=x=0:y=ih-56:w=iw:h=56:color=black@0.70:t=fill`,
 
-    // "STORY" badge, top-left, with a soft drop shadow behind the box
-    `drawbox=x=43:y=63:w=165:h=44:color=black@0.35:t=fill`,
-    `drawbox=x=40:y=60:w=165:h=44:color=${ACCENT}@0.97:t=fill`,
-    `drawtext=fontfile='${fontPathBold}':text='MOTIVATION':fontcolor=0x0f1024:fontsize=20:x=40+(165-text_w)/2:y=60+(44-text_h)/2`,
+    // Small romantic badge.
+    `drawbox=x=40:y=58:w=150:h=42:color=black@0.35:t=fill`,
+    `drawbox=x=37:y=55:w=150:h=42:color=${ACCENT}@0.96:t=fill`,
+    `drawtext=fontfile='${fontPathBold}':text='LOVE QUOTE':fontcolor=0x17120a:fontsize=18:x=37+(150-text_w)/2:y=55+(42-text_h)/2`,
 
-    // Channel branding, top-center, with text shadow + a thin accent underline
-    `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=32:x=(w-text_w)/2:y=140:shadowcolor=black@0.6:shadowx=2:shadowy=2`,
-    `drawbox=x=(iw-160)/2:y=192:w=160:h=4:color=${ACCENT}@0.9:t=fill`,
+    // Channel branding.
+    `drawtext=fontfile='${fontPathBold}':text='TELUGU ECHO':fontcolor=${ACCENT}:fontsize=30:x=(w-text_w)/2:y=132:shadowcolor=black@0.65:shadowx=2:shadowy=2`,
+    `drawbox=x=(iw-150)/2:y=180:w=150:h=3:color=${ACCENT}@0.9:t=fill`,
 
-    // Subscribe CTA styled as a real elevated button: soft glow border behind,
-    // drop shadow, bold white text with shadow, small tagline underneath.
-    `drawbox=x=(iw-572)/2:y=ih-196:w=572:h=88:color=${ACCENT}@0.35:t=fill`,
-    `drawbox=x=(iw-566)/2:y=ih-193+6:w=566:h=82:color=black@0.30:t=fill`,
-    `drawbox=x=(iw-560)/2:y=ih-190:w=560:h=76:color=${CTA}@0.97:t=fill`,
-    `drawtext=fontfile='${fontPathBold}':text='LIKE   SHARE   SUBSCRIBE':fontcolor=white:fontsize=27:x=(w-text_w)/2:y=h-190+(76-text_h)/2:shadowcolor=black@0.5:shadowx=1:shadowy=1`,
-    `drawtext=fontfile='${fontPath}':text='daily Telugu motivation & self-respect':fontcolor=white@0.8:fontsize=17:x=(w-text_w)/2:y=h-100`,
+    // The actual Tenglish quote — centered and readable on mobile.
+    `drawbox=x=50:y=ih/2-240:w=iw-100:h=480:color=black@0.30:t=fill`,
+    `drawtext=fontfile='${fontPathBold}':textfile='${quoteTextPath}':fontcolor=white:fontsize=38:line_spacing=12:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.85:shadowx=2:shadowy=3`,
+
+    // Minimal footer — no forced CTA or hashtags in the quote video.
+    `drawtext=fontfile='${fontPath}':text='తెలుగు ఎకో':fontcolor=white@0.70:fontsize=18:x=(w-text_w)/2:y=h-72`,
 
     // Smooth fade in/out
     `fade=t=in:st=0:d=0.5`,
@@ -1201,8 +980,8 @@ async function uploadToYouTube(videoPath, title, description) {
       snippet: {
         title: safeTitle,
         description: safeDescription,
-        tags: ['telugu', 'news', 'shorts', 'telugu news'],
-        categoryId: '25'
+        tags: ['telugu quotes', 'telugu love quotes', 'telugu romantic quotes', 'tenglish quotes', 'telugu shorts', 'love quotes', 'romantic shorts'],
+        categoryId: '22'
       },
       status: { privacyStatus: 'public', selfDeclaredMadeForKids: false }
     },
@@ -1246,7 +1025,6 @@ function checkSecret(name, value) {
 async function main() {
   if (!fs.existsSync(WORK_DIR)) fs.mkdirSync(WORK_DIR, { recursive: true });
 
-  checkSecret('NEWSAPI_KEY', NEWSAPI_KEY);
   checkSecret('GROQ_API_KEY', GROQ_API_KEY);
   checkSecret('GOOGLE_TTS_API_KEY', GOOGLE_TTS_API_KEY);
   checkSecret('PEXELS_API_KEY', PEXELS_API_KEY);
@@ -1256,10 +1034,10 @@ async function main() {
 
   const { usedTitles, runCount } = loadState();
   const category = pickCategory(runCount);
-  const article = category === 'news' ? await fetchNews() : null;
+  const article = null;
 
-  const { title, script } = await generateContent(category, article, usedTitles, runCount);
-  const allSentences = splitIntoSentences(script);
+  const { title, screenText, voiceScript, keywords } = await generateContent(category, article, usedTitles, runCount);
+  const allSentences = splitIntoSentences(voiceScript);
   const { audioPath, sentenceDurations, silenceGap } = await generateAudioForScript(allSentences);
 
   // Fold the gap that follows each sentence (except the last) into that
@@ -1267,22 +1045,6 @@ async function main() {
   // before the next line — durations still sum exactly to the full audio.
   let imageDurations = sentenceDurations.map((d, i) => i < sentenceDurations.length - 1 ? d + silenceGap : d);
   let imageSentences = allSentences.slice();
-
-  // Pull the closing CTA sentence out — a stock/AI photo search for "like
-  // share subscribe" wouldn't mean anything, so its time is folded into the
-  // last content sentence's slide instead.
-  const ctaIndex = imageSentences.findIndex(s => s.includes('తెలుగు ఎకో ఛానెల్'));
-  if (ctaIndex !== -1) {
-    const ctaDur = imageDurations[ctaIndex] || 0;
-    imageSentences.splice(ctaIndex, 1);
-    imageDurations.splice(ctaIndex, 1);
-    if (imageDurations.length > 0) {
-      imageDurations[imageDurations.length - 1] += ctaDur;
-    } else {
-      imageSentences = [allSentences[ctaIndex]];
-      imageDurations = [ctaDur];
-    }
-  }
 
   // Cap distinct images at 6 (Pexels/Pollinations call budget + render
   // time) — merge any extra trailing sentences' screen time into the last
@@ -1326,15 +1088,15 @@ async function main() {
   // the sum of our durations matches exactly.
   keptDurations[keptDurations.length - 1] += 0.3;
 
-  const videoPath = buildVideo(imagePaths, audioPath, keptDurations);
+  const videoPath = buildVideo(imagePaths, audioPath, keptDurations, screenText);
 
   const ytTitle = article ? article.title : title;
   await uploadToYouTube(
     videoPath,
     ytTitle,
-    script + '\n\nPhotos via Pexels (pexels.com).\n\n#TeluguEcho #TeluguStories #Shorts'
+    `${voiceScript}\n\nOriginal romantic quote created for Telugu Echo. Visuals may use Pexels or AI-generated imagery.`
   );
-  saveState(article, title);
+  saveState(null, title);
   log('Done!');
 }
 
