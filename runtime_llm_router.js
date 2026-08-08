@@ -48,17 +48,21 @@ function replaceFunction(source, signature, replacement) {
 }
 
 const providerReplacement = [
-  '// Stable runtime LLM router: Cerebras -> Groq 120B -> Groq 20B -> OpenRouter free.',
+  '// Stable runtime LLM router: GitHub Models -> Cerebras -> Groq 120B -> Groq 20B -> OpenRouter free.',
+  "const ROUTER_GITHUB_TOKEN = (process.env.GITHUB_TOKEN || '').trim();",
   "const ROUTER_CEREBRAS_API_KEY = (process.env.CEREBRAS_API_KEY || '').trim();",
   "const ROUTER_OPENROUTER_API_KEY = (process.env.OPENROUTER_API_KEY || '').trim();",
   "const ROUTER_GROQ_API_KEY = (process.env.GROQ_API_KEY || '').trim();",
   '',
   'const LLM_PROVIDERS = [',
-  "  { name: 'cerebras', key: ROUTER_CEREBRAS_API_KEY, url: 'https://api.cerebras.ai/v1/chat/completions', model: 'gpt-oss-120b', maxTokens: 1800 },",
-  "  { name: 'groq-120b', key: ROUTER_GROQ_API_KEY, url: 'https://api.groq.com/openai/v1/chat/completions', model: 'openai/gpt-oss-120b', maxTokens: 1800 },",
-  "  { name: 'groq-20b', key: ROUTER_GROQ_API_KEY, url: 'https://api.groq.com/openai/v1/chat/completions', model: 'openai/gpt-oss-20b', maxTokens: 1200 },",
-  "  { name: 'openrouter-free', key: ROUTER_OPENROUTER_API_KEY, url: 'https://openrouter.ai/api/v1/chat/completions', model: 'qwen/qwen3-235b-a22b-2507:free', maxTokens: 1400 }",
+  "  { name: 'github-models', key: ROUTER_GITHUB_TOKEN, url: 'https://models.github.ai/inference/chat/completions', model: 'openai/gpt-4.1', maxTokens: 1400 },",
+  "  { name: 'cerebras', key: ROUTER_CEREBRAS_API_KEY, url: 'https://api.cerebras.ai/v1/chat/completions', model: 'gpt-oss-120b', maxTokens: 1600 },",
+  "  { name: 'groq-120b', key: ROUTER_GROQ_API_KEY, url: 'https://api.groq.com/openai/v1/chat/completions', model: 'openai/gpt-oss-120b', maxTokens: 1600 },",
+  "  { name: 'groq-20b', key: ROUTER_GROQ_API_KEY, url: 'https://api.groq.com/openai/v1/chat/completions', model: 'openai/gpt-oss-20b', maxTokens: 1100 },",
+  "  { name: 'openrouter-free', key: ROUTER_OPENROUTER_API_KEY, url: 'https://openrouter.ai/api/v1/chat/completions', model: 'qwen/qwen3-235b-a22b-2507:free', maxTokens: 1200 }",
   '].filter(p => p.key);',
+  '',
+  'const ROUTER_DISABLED_PROVIDERS = new Set();',
   '',
   'function llmErrorMessage(data, status) {',
   "  return String((data && data.error && (data.error.message || data.error.code)) || 'HTTP ' + status);",
@@ -66,12 +70,12 @@ const providerReplacement = [
   '',
   'async function callProvider(provider, prompt) {',
   '  const body = { model: provider.model, messages: [{ role: \'user\', content: prompt }], max_tokens: provider.maxTokens, temperature: 0.35 };',
-  '  if (provider.name === \'cerebras\') body.max_completion_tokens = provider.maxTokens;',
   "  const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + provider.key };",
+  "  if (provider.name === 'github-models') headers['X-GitHub-Api-Version'] = '2022-11-28';",
   "  if (provider.name === 'openrouter-free') { headers['HTTP-Referer'] = 'https://github.com/mastanytofficial-byte/telugu-shorts'; headers['X-Title'] = 'Telugu Amazing Facts Shorts'; }",
   '  const res = await fetchWithTimeout(provider.url, { method: \'POST\', headers, body: JSON.stringify(body) }, 30000);',
   '  let data = {}; try { data = await res.json(); } catch (_) {}',
-  '  if (!res.ok) throw new Error(llmErrorMessage(data, res.status));',
+  '  if (!res.ok) { const err = new Error(llmErrorMessage(data, res.status)); err.status = res.status; throw err; }',
   '  const choice = data.choices && data.choices[0];',
   '  const content = choice && choice.message && choice.message.content;',
   "  if (!content || !String(content).trim()) throw new Error('empty response (finish_reason: ' + ((choice && choice.finish_reason) || 'unknown') + ')');",
@@ -79,12 +83,13 @@ const providerReplacement = [
   '}',
   '',
   'async function callLLM(prompt) {',
-  "  if (!LLM_PROVIDERS.length) throw new Error('No LLM API key configured. Add CEREBRAS_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY to GitHub Secrets.');",
+  "  if (!LLM_PROVIDERS.length) throw new Error('No LLM API key/token configured. Add GITHUB_TOKEN permission or CEREBRAS_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.');",
   '  let lastError = null;',
   '  for (const provider of LLM_PROVIDERS) {',
+  '    if (ROUTER_DISABLED_PROVIDERS.has(provider.name)) continue;',
   "    log('LLM provider: ' + provider.name + ' (' + provider.model + ')');",
   '    try { const result = await callProvider(provider, prompt); await sleep(400); return result; }',
-  "    catch (e) { lastError = e; log('WARNING: ' + provider.name + ' unavailable (' + e.message + ') — trying next LLM provider.'); }",
+  "    catch (e) { lastError = e; ROUTER_DISABLED_PROVIDERS.add(provider.name); log('WARNING: ' + provider.name + ' unavailable (' + e.message + ') — disabling it for this run and trying next LLM provider.'); }",
   '  }',
   "  throw new Error('All configured LLM providers failed. Last error: ' + (lastError && lastError.message));",
   '}'
@@ -147,5 +152,5 @@ let source = fs.readFileSync(SOURCE, 'utf8');
 source = replaceFunction(source, 'async function callLLM(', providerReplacement);
 source = replaceFunction(source, 'async function generateContent(', directReplacement);
 fs.writeFileSync(RUNTIME, source);
-console.log('LLM_ROUTER_V2: provider fallback + fact-locked narration applied successfully.');
+console.log('LLM_ROUTER_V3: GitHub Models + provider health memory + fact-locked narration applied successfully.');
 require(RUNTIME);
