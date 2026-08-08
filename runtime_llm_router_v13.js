@@ -5,9 +5,6 @@ const child = require('child_process');
 const V12 = path.join(__dirname, 'runtime_llm_router_v12.js');
 const RUNTIME = path.join(__dirname, '.index.runtime.v8.js');
 
-// V12 remains the stable base for topic/fact/script/duration rules. Run it in
-// patch-only mode, then replace only the provider router with a health-aware,
-// rotating router so one provider is not consumed for every request.
 child.execFileSync(process.execPath, [V12], {
   stdio: 'inherit',
   env: { ...process.env, LLM_ROUTER_PATCH_ONLY: '1' }
@@ -60,7 +57,6 @@ function replaceFunction(source, signature, replacement) {
 
 const providerReplacement = `async function callLLM(prompt) {
   if (!callLLM.disabledProviders) callLLM.disabledProviders = new Set();
-  if (!callLLM.cooldowns) callLLM.cooldowns = new Map();
   if (!Number.isInteger(callLLM.cursor)) callLLM.cursor = 0;
 
   const providers = [
@@ -72,16 +68,13 @@ const providerReplacement = `async function callLLM(prompt) {
     { name: 'groq-20b', key: (process.env.GROQ_API_KEY || '').trim(), model: 'openai/gpt-oss-20b', kind: 'groq' }
   ];
 
-  const now = Date.now();
-  const available = providers.filter(p => p.key && !callLLM.disabledProviders.has(p.name) && (!callLLM.cooldowns.has(p.name) || callLLM.cooldowns.get(p.name) <= now));
+  const available = providers.filter(p => p.key && !callLLM.disabledProviders.has(p.name));
   if (!available.length) {
     const configured = providers.filter(p => p.key).map(p => p.name);
     const missing = providers.filter(p => !p.key).map(p => p.name);
     throw new Error('LLM_PROVIDER_EXHAUSTED: no healthy provider remains. Configured=' + configured.join(',') + '; Missing keys=' + missing.join(','));
   }
 
-  // Rotate the starting provider on every successful request. This prevents
-  // OpenAI/Groq from being consumed for every stage of the same video.
   const ordered = [];
   for (let i = 0; i < available.length; i++) ordered.push(available[(callLLM.cursor + i) % available.length]);
   const failures = [];
@@ -117,21 +110,16 @@ const providerReplacement = `async function callLLM(prompt) {
       content = String(content).replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();
       if (!content) throw new Error('empty cleaned response');
       callLLM.cursor = (providers.findIndex(x => x.name === p.name) + 1) % providers.length;
-      log('LLM provider success: ' + p.name + ' (next request starts after this provider)');
+      log('LLM provider success: ' + p.name + ' — rotating to the next provider for the next request.');
       return content;
     } catch (e) {
       const msg = String(e && e.message || e);
       failures.push(p.name + ': ' + msg);
-      // Rate limits/credits are not transient within this run. Disable the
-      // provider so later stages do not waste another request on it.
+      callLLM.disabledProviders.add(p.name);
       if (/429|402|rate limit|credits? depleted|TPD|RPD|RPM|daily limit|prepayment/i.test(msg)) {
-        callLLM.disabledProviders.add(p.name);
-        const m = msg.match(/try again in ([0-9.]+)s/i);
-        if (m) callLLM.cooldowns.set(p.name, Date.now() + Math.ceil(Number(m[1])) * 1000);
-        log('WARNING: ' + p.name + ' rate/credit limited — disabled for this run.');
+        log('WARNING: ' + p.name + ' rate/credit limited — disabled for the rest of this run.');
       } else {
-        callLLM.disabledProviders.add(p.name);
-        log('WARNING: ' + p.name + ' failed — disabled for this run. ' + msg);
+        log('WARNING: ' + p.name + ' failed — disabled for the rest of this run. ' + msg);
       }
     }
   }
@@ -139,10 +127,8 @@ const providerReplacement = `async function callLLM(prompt) {
 }`;
 
 source = replaceFunction(source, 'async function callLLM(', providerReplacement);
-
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 fs.writeFileSync(RUNTIME, source, 'utf8');
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 console.log('LLM_ROUTER_V13: V12 stable pipeline + rotating provider health + rate-limit memory + missing-key diagnostics applied successfully.');
 require(RUNTIME);
-`;
