@@ -1,6 +1,8 @@
 name: final narration fix
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/final-narration-fix.yml']
 jobs:
   fix:
     runs-on: ubuntu-latest
@@ -12,20 +14,17 @@ jobs:
           from pathlib import Path
           p = Path('index.js')
           s = p.read_text(encoding='utf-8')
-
           old = "  const parts = protectedText.split(/(?<=\\.)\\s*/).map(s => s.trim()).filter(Boolean);"
           new = "  // A model line break is a real voice/visual beat, so split on both periods and newlines.\n  const parts = protectedText.split(/(?<=\\.)\\s*|\\n+/).map(s => s.trim()).filter(Boolean);"
           if old not in s:
               raise SystemExit('splitIntoSentences target not found')
           s = s.replace(old, new, 1)
-
           start = s.index('  const retryPrompt = tooLong')
           end = s.index('\n\n    const retryScript =', start)
           new_retry = '''  const retryPrompt = tooLong
       ? `ఈ VERIFIED FACT కోసం అదే high-retention Telugu Shorts storytelling style లో narration రాయి. ఖచ్చితంగా ${target.min}-${target.max} పదాలు; మునుపటి ప్రయత్నం ${bestWordCount} పదాలు వచ్చింది, కాబట్టి అవసరం లేని explanation తొలగించు.\\n\\nSTORY BEATS:\\n${beatsJSON}\\n\\nనియమాలు: 12-18 short spoken lines. ప్రతి line సాధారణంగా 2-10 తెలుగు పదాలు. Hook → curiosity → reveal → surprising detail → twist → memorable takeaway. మొదటి 1-2 lines లో answer పూర్తిగా reveal చేయకు. ప్రతి 1-2 lines తర్వాత కొత్త information/reveal ఇవ్వు. Forced personal scenario, forced comparison, generic moral వద్దు. VERIFIED FACT/BEATS లో లేని claim, number, example జోడించకు. సహజమైన మాట్లాడే తెలుగు; textbook/documentary style వద్దు. "..." suspense/reveal కోసం మాత్రమే. ASCII digits వద్దు; సంఖ్యలను తెలుగు మాటల్లో రాయి. CTA/title/emoji/labels వద్దు. ప్రతి line కొత్త spoken beat గా ఉండేలా line breaks తప్పనిసరిగా ఉంచు. కేవలం narration మాత్రమే.`
       : `ఈ VERIFIED FACT కోసం అదే high-retention Telugu Shorts storytelling style లో narration రాయి. ఖచ్చితంగా ${target.min}-${target.max} పదాలు; మునుపటి ప్రయత్నం ${wordCount} పదాలు వచ్చింది, కాబట్టి beats ని summary లాగా కాకుండా పూర్తిగా, ఆసక్తికరమైన spoken story గా విస్తరించు.\\n\\nSTORY BEATS:\\n${beatsJSON}\\n\\nనియమాలు: 12-18 short spoken lines. ప్రతి line సాధారణంగా 2-10 తెలుగు పదాలు. Hook → curiosity → reveal → surprising detail → twist → memorable takeaway. మొదటి 1-2 lines లో answer పూర్తిగా reveal చేయకు. ప్రతి 1-2 lines తర్వాత కొత్త information/reveal ఇవ్వు. Forced personal scenario, forced comparison, generic moral వద్దు. VERIFIED FACT/BEATS లో లేని claim, number, example జోడించకు. సహజమైన మాట్లాడే తెలుగు; textbook/documentary style వద్దు. "..." suspense/reveal కోసం మాత్రమే. ASCII digits వద్దు; సంఖ్యలను తెలుగు మాటల్లో రాయి. CTA/title/emoji/labels వద్దు. ప్రతి line కొత్త spoken beat గా ఉండేలా line breaks తప్పనిసరిగా ఉంచు. కేవలం narration మాత్రమే.`;'''
           s = s[:start] + new_retry + s[end:]
-
           p.write_text(s, encoding='utf-8')
           PY
       - name: Validate JavaScript
