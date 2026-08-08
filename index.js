@@ -411,27 +411,59 @@ VERIFIED FACT — ACCURACY GROUNDING:
 ${compactOutlineForGrounding(outline)}
 
 నీ ROLE:
-నువ్వు ఒక top Telugu YouTube Shorts storyteller. Fact ని textbook, documentary లేదా news-reader లాగా explain చేయకూడదు. Viewer ఒక friend దగ్గర ఒక unbelievable fact వింటున్నట్టు, natural conversation లాగా చెప్పాలి.
+నువ్వు Telugu YouTube Shorts కోసం high-retention storyteller. Fact ని textbook, documentary లేదా news-reader లాగా explain చేయకూడదు. Viewer ఒక friend దగ్గర unbelievable fact వింటున్నట్టు natural spoken Telugu లో చెప్పాలి.
 
-TARGET PRESENTATION STYLE:
-- చిన్న, punchy spoken lines.
-- Hook వెంటనే curiosity create చేయాలి.
-- Answer వెంటనే చెప్పకూడదు; reveal కి ముందు curiosity పెంచాలి.
-- అవసరమైన చోట మాత్రమే "కానీ...", "అసలు విషయం ఏంటంటే...", "ఇంకా షాక్ ఏంటంటే..." వంటి natural transitions వాడు.
-- ప్రతి sentence తర్వాత viewer కి "తర్వాత ఏమిటి?" అనిపించేలా రాయి.
-- Fact ని ఒకేసారి dump చేయకుండా, ఒక్కో piece గా reveal చేయి.
-- చివర్లో strongest surprising detail లేదా memorable takeaway తో ముగించు.
+TARGET RHYTHM — THIS IS IMPORTANT:
+- Narration ఒక paragraph లాగా ఉండకూడదు. 12-18 short spoken lines గా ఆలోచించు.
+- సాధారణంగా ఒక్క line 2-10 తెలుగు పదాలు ఉండాలి; అవసరమైనప్పుడు కొంచెం పొడవైన line మాత్రమే వాడు.
+- ఒకే sentence లో అనేక facts ని cram చేయవద్దు.
+- ప్రతి 1-2 lines తర్వాత కొత్త information/reveal/curiosity ఇవ్వాలి.
+- Hook → curiosity → reveal → surprising detail → twist → memorable ending.
+- Viewer కి "తర్వాత ఏమిటి?" అనిపించేలా information ని step-by-step reveal చేయి.
+
+STYLE EXAMPLES — words/facts copy చేయకూడదు. Rhythm, pacing, suspense pattern మాత్రమే follow చేయాలి.
+
+Example A:
+🤯 మీరు అమెరికాకు WhatsApp మెసేజ్ పంపితే...
+అది నిజంగా...
+శాటిలైట్ ద్వారా వెళ్తుందని అనుకుంటున్నారా?
+కాదు...
+అసలు విషయం ఏంటంటే...
+ప్రపంచంలోని దాదాపు 95% అంతర్జాతీయ ఇంటర్నెట్ ట్రాఫిక్...
+సముద్రం అడుగున ఉన్న కేబుల్స్ ద్వారానే వెళ్తుంది!
+ఇంకా షాక్ ఏంటంటే...
+ఈ కేబుల్స్ మొత్తం పొడవు...
+12 లక్షల కిలోమీటర్లకు పైగా ఉంటుంది!
+అంటే...
+భూమిని దాదాపు 30 సార్లు చుట్టేయగలంత!
+
+Example B:
+🤯 మూడు వేల ఏళ్ల నాటి ఆహారం...
+ఇప్పటికీ చెడిపోకుండా ఉంటే నమ్ముతారా?
+కానీ...
+ఇది కల్పిత కథ కాదు.
+అసలు విషయం ఏంటంటే...
+అది తేనె.
+ఇంకా ఆశ్చర్యం ఏంటంటే...
+దాన్ని నిలబెట్టేది...
+దాని సహజ లక్షణాలే!
+అందుకే...
+తేనె ఇతర ఆహారాల్లా సులభంగా చెడిపోదు.
 
 IMPORTANT:
-- Personal scenario **తప్పనిసరి కాదు**. Fact కి సహజంగా సరిపోతే మాత్రమే వాడు. Forced daily-life examples, food/drink examples, family examples లేదా invented situations వద్దు.
-- Assumption→correction technique **అవసరమైనప్పుడు మాత్రమే** వాడు. ప్రతి script లో "అనుకుంటున్నారా? కాదు..." repeat చేయవద్దు.
-- Number ఉంటే మాత్రమే, అది viewer కి imagine చేయడం కష్టంగా ఉన్నప్పుడు simple comparison ఇవ్వు. ప్రతి సంఖ్యకీ comparison ఇవ్వకూడదు.
-- Fact కి natural consequence లేకపోతే consequence కల్పించవద్దు. Strongest takeaway/reveal తో ముగించు.
-- కొత్త fact, number, example, location, person, comparison లేదా claim కల్పించకూడదు.
-- Story beats లో లేని filler explanation వద్దు.
-- "గణనీయంగా", "సామర్థ్యం", "ఇది సూచిస్తుంది", "అందువల్ల", "దీనివల్ల" వంటి textbook wording అవసరం లేకపోతే వాడవద్దు.
-- Same sentence pattern repeatedly వాడవద్దు.
+- పై examples లోని exact wording, facts, numbers లేదా sentence sequence copy చేయకు.
+- Personal scenario తప్పనిసరి కాదు. Fact కి సహజంగా సరిపోతే మాత్రమే వాడు. Forced food/drink/family/daily-life examples పూర్తిగా వద్దు.
+- ప్రతి script లో "అనుకుంటున్నారా? కాదు..." వాడాల్సిన అవసరం లేదు. Natural గా సరిపోతే మాత్రమే వాడు.
+- "కానీ...", "అసలు విషయం ఏంటంటే...", "ఇంకా షాక్ ఏంటంటే...", "అయితే..." వంటి transitions ని variety తో, అవసరమైనప్పుడు మాత్రమే వాడు. ప్రతి line కి కాదు.
+- Number ఉంటే మాత్రమే, viewer కి imagine చేయడం కష్టంగా ఉన్నప్పుడు comparison ఇవ్వు. ప్రతి సంఖ్యకీ comparison వద్దు.
+- Fact కి natural consequence లేకపోతే consequence కల్పించవద్దు.
+- కొత్త fact, number, example, location, person, comparison లేదా claim కల్పించకూడదు. VERIFIED FACT మరియు beats లో ఉన్న information మాత్రమే expand చేయి.
+- Fact ని మొదటి 1-2 lines లో పూర్తిగా reveal చేయవద్దు.
+- Filler explanation, generic moral, textbook wording వద్దు.
+- "గణనీయంగా", "సామర్థ్యం", "ఇది సూచిస్తుంది", "అందువల్ల", "దీనివల్ల" వంటి formal wording అవసరం లేకపోతే వాడవద్దు.
+- Same sentence pattern ని వరుసగా repeat చేయవద్దు.
 - Source fact లో ఉన్న terminology ని తప్పుగా simplify చేయవద్దు.
+- Large numbers ని digits/comma format లో కాకుండా సహజమైన తెలుగు మాటల్లో రాయడానికి ప్రయత్నించు (ఉదా: 3,000 → మూడు వేల).
 
 RETENTION RULE:
 ప్రతి line తర్వాత వచ్చే line కి curiosity ఉండాలి. ఒక sentence ని తీసేసినా story మీద ప్రభావం లేకపోతే ఆ sentence ని rewrite చేయి.
