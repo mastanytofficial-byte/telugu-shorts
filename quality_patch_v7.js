@@ -70,13 +70,13 @@ async function getSentenceKeywords(sentences, outline) {
   ].join('\n');
 
   const raw = await callLLM(prompt);
-  log(`Raw sentence-keywords/scenes response from Groq:\n${raw}`);
+  log('Raw sentence-keywords/scenes response from Groq:\n' + raw);
   const character = parseNumberedSection(raw, 'SUBJECT:', 1)[0];
   const keywords = parseNumberedSection(raw, 'KEYWORDS:', sentences.length);
   const scenes = parseNumberedSection(raw, 'SCENES:', sentences.length);
-  log(`  main character: ${character || '(none parsed)'}`);
+  log('  main character: ' + (character || '(none parsed)'));
   sentences.forEach((_, i) => {
-    log(`  sentence ${i} keyword: ${keywords[i] || '(none — fallback)'} | scene: ${scenes[i] ? scenes[i].slice(0, 50) + '...' : '(none — will use keyword)'}`);
+    log('  sentence ' + i + ' keyword: ' + (keywords[i] || '(none — fallback)') + ' | scene: ' + (scenes[i] ? scenes[i].slice(0, 50) + '...' : '(none — will use keyword)'));
   });
   return { character, keywords, scenes };
 }
