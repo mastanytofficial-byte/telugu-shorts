@@ -4,11 +4,6 @@ const vm = require('vm');
 const file = path.join(__dirname, 'index.js');
 let s = fs.readFileSync(file, 'utf8');
 
-if (s.includes('// QUALITY_PATCH_V8_TPM_SAFE')) {
-  console.log('QUALITY_PATCH_V8_TPM_SAFE already applied.');
-  process.exit(0);
-}
-
 function replaceFunction(source, marker, newFn, label) {
   const start = source.indexOf(marker);
   if (start < 0) throw new Error('QUALITY_PATCH_V8: ' + label + ' not found');
@@ -38,8 +33,14 @@ function replaceFunction(source, marker, newFn, label) {
   return source.slice(0, start) + newFn + source.slice(end);
 }
 
+// GPT-OSS is a reasoning model. Its reasoning tokens count against the
+// completion budget, so the old 2400-token call could still consume the
+// entire budget before producing visible narration. Groq supports low
+// reasoning effort and hidden reasoning for GPT-OSS; use both here because
+// our tasks are short-form fact writing, verification and metadata, not
+// complex agentic reasoning.
 const callLLMFn = String.raw`// QUALITY_PATCH_V8_TPM_SAFE
-async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRun ? GROQ_FALLBACK_MODEL : GROQ_MODEL), maxTokens = 2400) {
+async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRun ? GROQ_FALLBACK_MODEL : GROQ_MODEL), maxTokens = 1400) {
   const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -49,7 +50,9 @@ async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRu
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: maxTokens
+      max_completion_tokens: maxTokens,
+      reasoning_effort: 'low',
+      include_reasoning: false
     })
   });
   const data = await res.json();
@@ -81,40 +84,41 @@ async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRu
   let content = (choice.message && choice.message.content || '').trim();
   const finishReason = choice.finish_reason || 'unknown';
 
-  if (!content && finishReason === 'length' && maxTokens > 1200) {
-    log('WARNING: Groq response hit output length at ' + maxTokens + ' tokens — retrying same prompt with a compact ' + Math.floor(maxTokens / 2) + '-token ceiling.');
+  // A length stop with no visible content means the reasoning phase consumed
+  // the completion budget. Do NOT retry with a smaller budget (the old bug).
+  // Retry once with a slightly larger budget while keeping reasoning LOW.
+  if (!content && finishReason === 'length' && maxTokens < 2200) {
+    log('WARNING: Groq response exhausted completion budget at ' + maxTokens + ' tokens — retrying once at 2200 with low reasoning.');
     await sleep(500);
-    return callLLM(prompt, 1, model, Math.floor(maxTokens / 2));
+    return callLLM(prompt, 1, model, 2200);
   }
 
   if (!content) {
     throw new Error('Groq returned an empty response (finish_reason: ' + finishReason + ', model: ' + model + ').');
   }
 
+  // include_reasoning:false normally makes this unnecessary, but retain it
+  // as a defensive cleanup for older/variant GPT-OSS responses.
   content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   if (!content) {
-    if (finishReason === 'length' && maxTokens > 1200) {
-      log('WARNING: Groq output became empty after <think> removal — retrying compactly.');
-      return callLLM(prompt, 1, model, Math.floor(maxTokens / 2));
+    if (finishReason === 'length' && maxTokens < 2200) {
+      log('WARNING: Groq output became empty after cleanup — retrying once at 2200.');
+      return callLLM(prompt, 1, model, 2200);
     }
-    throw new Error('Groq returned no usable content after cleanup (finish_reason: ' + finishReason + ').');
+    throw new Error('Groq returned no usable content after cleanup (finish_reason: ' + finishReason + ', model: ' + model + ').');
   }
 
-  await sleep(1500);
+  await sleep(1200);
   return content;
 }
 `;
 
-const updated = replaceFunction(
-  s,
-  'async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRun ? GROQ_FALLBACK_MODEL : GROQ_MODEL)) {',
-  callLLMFn,
-  'callLLM'
-);
+// Re-apply even when the previous v8 marker already exists. The previous
+// version exited early, which meant its buggy 2400-token implementation was
+// frozen into index.js forever. Replacing from the marker makes this patch
+// self-healing on every run.
+const updated = replaceFunction(s, '// QUALITY_PATCH_V8_TPM_SAFE', callLLMFn, 'callLLM');
 
-// Never write a generated patch to disk if the patch itself produced invalid
-// JavaScript. This prevents a bad escape in a template literal/regex from
-// breaking the whole GitHub Actions run before index.js can even start.
 try {
   new vm.Script(updated, { filename: file });
 } catch (err) {
