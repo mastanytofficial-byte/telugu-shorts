@@ -39,6 +39,7 @@ jobs:
 
       - name: Validate automation source
         run: |
+          node --check runtime_llm_router_v7_boot.js
           node --check runtime_llm_router_v7.js
           node --check index.js
 
