@@ -43,11 +43,15 @@ jobs:
           node --check quality_patch_v6.js
           node --check quality_patch_v7.js
           node --check quality_patch_v8.js
+          node --check quality_patch_v11.js
+          node --check quality_patch_v12.js
           node --check index.js
 
       - name: Generate and upload video
         env:
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           JAMENDO_CLIENT_ID: ${{ secrets.JAMENDO_CLIENT_ID }}
