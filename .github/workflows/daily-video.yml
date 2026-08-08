@@ -2,8 +2,8 @@ name: Daily Telugu News Short
 
 on:
   schedule:
-    - cron: '30 3 * * *'   # 9:00 AM IST every day (3:30 UTC)
-  workflow_dispatch: {}     # allows manual "Run workflow" button too
+    - cron: '30 3 * * *'
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -37,10 +37,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Apply duplicate-prevention guard
+        run: node dedupe_guard_v2.js
+
       - name: Validate automation source
         run: |
           node --check runtime_llm_router_v5.js
           node --check index.js
+          node --check dedupe_guard_v2.js
 
       - name: Generate and upload video
         env:
@@ -66,10 +70,8 @@ jobs:
           set -euo pipefail
           test -f state.json || { echo 'state.json was not generated'; exit 1; }
           test -f last-article.json || { echo 'last-article.json was not generated'; exit 1; }
-
           cp state.json /tmp/state.json.generated
           cp last-article.json /tmp/last-article.json.generated
-
           for attempt in 1 2 3 4 5; do
             echo "Saving state (attempt ${attempt}/5)..."
             git fetch origin main
@@ -77,25 +79,20 @@ jobs:
             cp /tmp/state.json.generated state.json
             cp /tmp/last-article.json.generated last-article.json
             git add state.json last-article.json
-
             if git diff --cached --quiet; then
               echo 'No state change to commit.'
               exit 0
             fi
-
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -m "Persist category and topic rotation state [skip ci]"
-
+            git commit -m "Persist category topic and duplicate-prevention state [skip ci]"
             if git push origin HEAD:main; then
-              echo 'Rotation state saved successfully.'
+              echo 'Rotation and duplicate-prevention state saved successfully.'
               exit 0
             fi
-
             echo 'Push raced with another update; retrying from latest main...'
             git reset --hard origin/main
             sleep $((attempt * 2))
           done
-
           echo 'Failed to save state after 5 attempts.'
           exit 1
