@@ -42,16 +42,16 @@ async function generateUniqueContent(category, usedTitles, outline, ctaSentence)
   const state = loadState();
   const previousScripts = (state.discoveredFacts && state.discoveredFacts.__scripts) || [];
   for (let attempt = 1; attempt <= 5; attempt++) {
-    const nonce = attempt === 1 ? '' : `\\n\\nDUPLICATE-PREVENTION RETRY ${attempt}: ముందు వచ్చిన narration structure, opening rhythm, wording, comparison, twist మరియు ending pattern ఏదీ పునరావృతం చేయకు. పూర్తిగా కొత్త phrasing మరియు delivery pattern వాడు.`;
+    const nonce = attempt === 1 ? '' : '\\n\\nDUPLICATE-PREVENTION RETRY ' + attempt + ': ముందు వచ్చిన narration structure, opening rhythm, wording, comparison, twist మరియు ending pattern ఏదీ పునరావృతం చేయకు. పూర్తిగా కొత్త phrasing మరియు delivery pattern వాడు.';
     const result = await generateContent(category, [...usedTitles, nonce], outline, ctaSentence);
     const titleDuplicate = isDuplicateAgainst(usedTitles, result.title, 0.82);
     const scriptDuplicate = isDuplicateAgainst(previousScripts, result.script, 0.68);
     if (!titleDuplicate && !scriptDuplicate) {
       appendPersistentScriptHistory(result.script);
-      log(`  DEDUPE: unique title + narration confirmed (attempt ${attempt}/5).`);
+      log('  DEDUPE: unique title + narration confirmed (attempt ' + attempt + '/5).');
       return result;
     }
-    log(`  DEDUPE: duplicate/near-duplicate detected (title=${titleDuplicate}, script=${scriptDuplicate}) — regenerating (${attempt}/5).`);
+    log('  DEDUPE: duplicate/near-duplicate detected (title=' + titleDuplicate + ', script=' + scriptDuplicate + ') — regenerating (' + attempt + '/5).');
   }
   throw new Error('Duplicate-prevention guard rejected all generated narration attempts. No duplicate content will be uploaded.');
 }
