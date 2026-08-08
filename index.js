@@ -7,7 +7,18 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { google } = require('googleapis');
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+// .trim() defends against a real, confirmed symptom: the key worked when
+// tested directly in Groq's Playground, but failed with "Invalid API Key"
+// specifically when read from this GitHub Secret — classic sign of a
+// stray leading/trailing space or newline getting included when the
+// secret value was pasted, silently making it different from the real key.
+const GROQ_API_KEY_RAW = process.env.GROQ_API_KEY || '';
+// .trim() defends against a real, confirmed symptom: the key worked when
+// tested directly in Groq's Playground, but failed with "Invalid API Key"
+// specifically when read from this GitHub Secret — classic sign of a
+// stray leading/trailing space or newline getting included when the
+// secret value was pasted, silently making it different from the real key.
+const GROQ_API_KEY = GROQ_API_KEY_RAW.trim();
 const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY;
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
 const JAMENDO_CLIENT_ID = process.env.JAMENDO_CLIENT_ID;
@@ -1804,7 +1815,7 @@ function checkSecret(name, value) {
 async function main() {
   if (!fs.existsSync(WORK_DIR)) fs.mkdirSync(WORK_DIR, { recursive: true });
 
-  checkSecret('GROQ_API_KEY', GROQ_API_KEY);
+  checkSecret('GROQ_API_KEY', GROQ_API_KEY_RAW);
   checkSecret('GOOGLE_TTS_API_KEY', GOOGLE_TTS_API_KEY);
   checkSecret('PEXELS_API_KEY', PEXELS_API_KEY);
   checkSecret('JAMENDO_CLIENT_ID', JAMENDO_CLIENT_ID);
