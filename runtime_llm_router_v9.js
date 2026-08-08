@@ -12,7 +12,6 @@ function mustReplace(oldText, newText, label) {
 }
 
 // Target 83-90 content words + the 12-word spoken CTA = 95-102 total words.
-// Combined with the measured Google Chirp pacing this is aimed at 50-60s.
 for (const category of ['mindblowing','psychology','earth_space','animal','money','history','human_body','technology','food','ocean']) {
   const re = new RegExp(category + ':\\s*\\{ min: 85, max: 115 \\}', 'g');
   patched = patched.replace(re, category + ': { min: 83, max: 90 }');
@@ -44,9 +43,29 @@ const oldBlock = `  const ctaSentence = pickCTA(runCount);\n  const { title, hoo
 const newBlock = `  const ctaSentence = pickCTA(runCount);\n  let title, hookEmoji, script, allSentences, audioPath, sentenceDurations, silenceGap;\n  let measuredNarrationDuration = 0;\n  let contentAudioAttempt = 0;\n  for (contentAudioAttempt = 1; contentAudioAttempt <= 3; contentAudioAttempt++) {\n    const generated = await generateContent(category, usedTitles, outline, ctaSentence);\n    title = generated.title;\n    hookEmoji = generated.hookEmoji;\n    script = generated.script;\n    allSentences = splitIntoSentences(script);\n    const generatedAudio = await generateAudioForScript(allSentences);\n    audioPath = generatedAudio.audioPath;\n    sentenceDurations = generatedAudio.sentenceDurations;\n    silenceGap = generatedAudio.silenceGap;\n    measuredNarrationDuration = getAudioDuration(audioPath);\n    log('Duration guard attempt ' + contentAudioAttempt + ': narration=' + measuredNarrationDuration.toFixed(2) + 's (target 50-60s final video).');\n    // buildVideo adds a fixed 0.3s safety buffer, so narration itself must be 49.7-59.7s.\n    if (measuredNarrationDuration >= 49.7 && measuredNarrationDuration <= 59.7) break;\n    log('WARNING: narration duration outside the safe 49.7-59.7s range — regenerating narration before continuing.');\n  }\n\n  // Final measured-rate correction. Bounded so TTS never becomes wildly fast or slow.\n  if (measuredNarrationDuration < 49.7 || measuredNarrationDuration > 59.7) {\n    const targetDuration = 54.7;\n    const correctedRate = Math.max(0.75, Math.min(1.20, 0.98 * measuredNarrationDuration / targetDuration));\n    globalThis.__TELUGU_TTS_RATE = correctedRate;\n    log('Applying final TTS duration correction: speakingRate=' + correctedRate.toFixed(3));\n    const correctedAudio = await generateAudioForScript(allSentences);\n    audioPath = correctedAudio.audioPath;\n    sentenceDurations = correctedAudio.sentenceDurations;\n    silenceGap = correctedAudio.silenceGap;\n    measuredNarrationDuration = getAudioDuration(audioPath);\n    log('Final narration duration after TTS correction: ' + measuredNarrationDuration.toFixed(2) + 's.');\n  }\n  if (measuredNarrationDuration < 49.7 || measuredNarrationDuration > 59.7) {\n    throw new Error('VIDEO_DURATION_GUARD_FAILED: final narration is ' + measuredNarrationDuration.toFixed(2) + 's; refusing to upload outside the required 50-60s final-video window.');\n  }`;
 mustReplace(oldBlock, newBlock, 'main duration guard');
 
-// Patch only the working copy used by this GitHub Actions run. V8 then applies
+// Harden V8's fresh-topic resolver too: rejected/failed candidates are remembered
+// for the rest of the current run, so the LLM cannot return the exact same topic
+// again after a rejection (the V8 log showed this happening with Lanternfish).
+const v8Path = path.join(__dirname, 'runtime_llm_router_v8.js');
+let v8 = fs.readFileSync(v8Path, 'utf8');
+const oldTopicsLine = "  const previousTopics = Object.values(usedTopics || {}).flat().slice(-80);";
+const newTopicsLine = "  const previousTopics = [...Object.values(usedTopics || {}).flat().slice(-80)];";
+if (!v8.includes(oldTopicsLine)) throw new Error('V9 V8-anchor not found: previousTopics');
+v8 = v8.replace(oldTopicsLine, newTopicsLine);
+const oldDuplicateBlock = `    if (previousTopics.some(t => t.toLowerCase() === topic.toLowerCase())) {\n      log('  Duplicate topic rejected: ' + topic);\n      continue;\n    }`;
+const newDuplicateBlock = `    if (previousTopics.some(t => t.toLowerCase() === topic.toLowerCase())) {\n      log('  Duplicate topic rejected: ' + topic);\n      continue;\n    }\n    // Reserve this candidate immediately, even if its fact is later rejected.\n    previousTopics.push(topic);`;
+if (!v8.includes(oldDuplicateBlock)) throw new Error('V9 V8-anchor not found: duplicate topic block');
+v8 = v8.replace(oldDuplicateBlock, newDuplicateBlock);
+const oldCandidateMarker = `      if (previousFacts.some(f => {\n        const n = f.toLowerCase().replace(/\\s+/g, ' ').trim();\n        return n.includes(normCandidate.slice(0, 100)) || normCandidate.includes(n.slice(0, 100));\n      })) {\n        log('  Duplicate fact rejected.');\n        continue;\n      }`;
+const newCandidateMarker = `      if (previousFacts.some(f => {\n        const n = f.toLowerCase().replace(/\\s+/g, ' ').trim();\n        return n.includes(normCandidate.slice(0, 100)) || normCandidate.includes(n.slice(0, 100));\n      })) {\n        log('  Duplicate fact rejected.');\n        continue;\n      }\n      // Reserve the candidate immediately so a later attempt cannot regenerate the same fact.\n      previousFacts.push(candidate);`;
+if (!v8.includes(oldCandidateMarker)) throw new Error('V9 V8-anchor not found: duplicate fact block');
+v8 = v8.replace(oldCandidateMarker, newCandidateMarker);
+fs.writeFileSync(v8Path, v8, 'utf8');
+child.execFileSync(process.execPath, ['--check', v8Path], { stdio: 'inherit' });
+
+// Write the patched source only for this GitHub Actions run. V8 then applies
 // its provider/fresh-topic router to this hardened source.
 fs.writeFileSync(SOURCE, patched, 'utf8');
 child.execFileSync(process.execPath, ['--check', SOURCE], { stdio: 'inherit' });
-console.log('LLM_ROUTER_V9_BOOT: 50-60s duration guard + mandatory spoken CTA + narration-length hardening applied.');
+console.log('LLM_ROUTER_V9_BOOT: duplicate lock + 50-60s duration guard + mandatory spoken CTA + narration-length hardening applied.');
 require('./runtime_llm_router_v8.js');
