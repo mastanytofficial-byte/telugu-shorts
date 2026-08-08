@@ -1,0 +1,213 @@
+--- a/index.js
++++ b/index.js
+@@ -128,10 +128,15 @@
+ 
+ Theme: ${theme}
+ 
+-Requirements for SCREEN:
++STRICT LANGUAGE RULES FOR SCREEN:
+ - Exactly 16 to 36 words.
++- Use ONLY Telugu words written with English letters (Tenglish).
++- Do NOT use ANY English vocabulary inside SCREEN.
++- Do NOT use English phrases, even short ones.
++- Do NOT use words such as love, first, heart, heartbeat, life, line, feeling, feelings, memory, memories, forever, beautiful, special, miss, missing, happy, sad, relationship, story, best, true, deep, distance, waiting, sorry, etc.
++- If a concept has a natural Telugu word, use the Telugu word in Tenglish instead of English.
++- The quote must sound like natural spoken Telugu when read aloud.
+ - Emotional and poetic.
+-- Natural, fluent Telugu written in Tenglish.
+ - Sounds like a beautiful original lyric-style thought, not a song lyric.
+ - Easy to read on a mobile screen.
+ - Strong emotional feeling with a memorable final line.
+@@ -140,15 +145,15 @@
+ - Do not imitate existing songs.
+ - Do not use famous quotes.
+ - Do not reproduce or closely resemble copyrighted text.
+-- No English sentences.
+ - No hashtags.
+ - Do not use quotation marks around the quote.
+ - Do not mention movies, singers, actors, songs, or famous people.
+ 
+ VOICE must express the same exact idea as SCREEN in natural Telugu script so Google Telugu TTS pronounces it correctly.
+ - Do not add a new idea.
+ - Do not remove the emotional ending.
+-- Do not include English sentences.
++- Telugu script only. Do not use any Latin/English letters.
++- No English words or phrases.
+ - No hashtags.
+ - No CTA.
+ - Use natural Telugu punctuation and end complete sentences with periods.
+@@ -217,6 +222,47 @@
+   return content;
+ }
++
++// LLMs can accidentally mix English words into Tenglish. Validate the
++// on-screen text and the Telugu-script voice before rendering anything.
++const FORBIDDEN_ENGLISH_WORDS = new Set([
++  'a', 'an', 'and', 'are', 'best', 'beautiful', 'because', 'be', 'but',
++  'deep', 'distance', 'feeling', 'feelings', 'first', 'forever', 'happy',
++  'heart', 'heartbeat', 'life', 'line', 'love', 'memories', 'memory',
++  'miss', 'missing', 'my', 'relationship', 'sad', 'special', 'story',
++  'true', 'waiting', 'you', 'your', 'is', 'was', 'were', 'the', 'to',
++  'of', 'in', 'on', 'for', 'with', 'from', 'this', 'that', 'me', 'mine',
++  'someone', 'one', 'side', 'long', 'old', 'night', 'rain', 'after',
++  'sorry', 'firstlove', 'lifeline'
++]);
++
++function findForbiddenEnglishWords(text) {
++  const words = String(text || '').toLowerCase().match(/[a-z]+(?:'[a-z]+)?/g) || [];
++  return [...new Set(words.filter(word => FORBIDDEN_ENGLISH_WORDS.has(word)))];
++}
++
++function validateRomanticQuote(screenText, voiceScript, target) {
++  const screen = String(screenText || '').trim();
++  const voice = String(voiceScript || '').trim();
++  const wordCount = screen.split(/\s+/).filter(Boolean).length;
++  const problems = [];
++  const forbidden = findForbiddenEnglishWords(screen);
++
++  if (wordCount < target.min || wordCount > target.max) {
++    problems.push(`SCREEN has ${wordCount} words; required ${target.min}-${target.max}`);
++  }
++  if (forbidden.length) {
++    problems.push(`SCREEN contains English words: ${forbidden.join(', ')}`);
++  }
++  if (/[A-Za-z]/.test(voice)) {
++    problems.push('VOICE contains Latin/English letters; Telugu script only is allowed');
++  }
++  if (/#\S+/.test(screen) || /#\S+/.test(voice)) {
++    problems.push('Hashtags are not allowed');
++  }
++
++  return { valid: problems.length === 0, problems, wordCount };
++}
+ 
+ async function generateContent(category, article, recentTitles, runCount) {
+   log(`Generating ${category} content via Groq...`);
+   const prompt = buildPrompt(category, article, recentTitles, runCount);
+-
+-  let raw = await callGroq(prompt);
+-  let { title, screenText, voiceScript, keywords } = parseLabeledContent(raw);
+-
+-  if (!screenText || !voiceScript) {
+-    log('WARNING: Groq did not follow TITLE/SCREEN/VOICE/KEYWORDS format — retrying once.');
+-    raw = await callGroq(prompt + `\n\nIMPORTANT: Return all four labels exactly: TITLE:, SCREEN:, VOICE:, KEYWORDS:. Do not add any other text.`);
+-    const retry = parseLabeledContent(raw);
+-    title = retry.title || title;
+-    screenText = retry.screenText || screenText;
+-    voiceScript = retry.voiceScript || voiceScript;
+-    keywords = retry.keywords || keywords;
+-  }
+-
+-  if (!screenText || !voiceScript) {
+-    throw new Error('Groq did not return both SCREEN and VOICE text.');
+-  }
+-
+   const target = WORD_COUNT_TARGETS[category];
+-  let wordCount = screenText.split(/\s+/).filter(Boolean).length;
+-
+-  // One targeted retry if the on-screen quote falls outside the required range.
+-  if (wordCount < target.min || wordCount > target.max) {
+-    log(`WARNING: SCREEN quote has ${wordCount} words; required ${target.min}-${target.max}. Retrying.`);
+-    const retryPrompt = prompt + `\n\nYour previous SCREEN had ${wordCount} words. Rewrite SCREEN so it contains exactly ${target.min}-${target.max} words. Keep it one coherent emotional quote and keep VOICE semantically identical.`;
+-    raw = await callGroq(retryPrompt);
+-    const retry = parseLabeledContent(raw);
+-    if (retry.screenText && retry.voiceScript) {
+-      const retryCount = retry.screenText.split(/\s+/).filter(Boolean).length;
+-      log(`Retry SCREEN word count: ${retryCount}`);
+-      if (retryCount >= target.min && retryCount <= target.max) {
+-        title = retry.title || title;
+-        screenText = retry.screenText;
+-        voiceScript = retry.voiceScript;
+-        keywords = retry.keywords || keywords;
+-        wordCount = retryCount;
+-      }
+-    }
+-  }
+-
+-  if (!title) title = deriveHeadline(screenText);
+-  if (!keywords) keywords = FALLBACK_KEYWORDS[category];
+-
+-  // Final defensive cleanup: no hashtags or accidental labels in the actual quote.
+-  screenText = screenText
+-    .replace(/^(SCREEN|QUOTE)\s*:\s*/i, '')
+-    .replace(/#\S+/g, '')
+-    .replace(/\s+/g, ' ')
+-    .trim();
+-
+-  voiceScript = ensureSentenceBreaks(
+-    voiceScript
+-      .replace(/^(VOICE|SCRIPT)\s*:\s*/i, '')
+-      .replace(/#\S+/g, '')
+-      .replace(/\s+/g, ' ')
+-      .trim()
+-  );
+-
+-  log(`Title: ${title}`);
+-  log(`Screen quote (${screenText.split(/\s+/).filter(Boolean).length} words): ${screenText}`);
+-  log(`Voice text: ${voiceScript}`);
+-  log(`Keywords: ${keywords}`);
+-
+-  return { title, screenText, voiceScript, keywords };
++  let last = { title: null, screenText: null, voiceScript: null, keywords: null };
++
++  // Never render an invalid quote. Retry with explicit validation feedback.
++  for (let attempt = 1; attempt <= 4; attempt++) {
++    let attemptPrompt = prompt;
++    if (attempt > 1) {
++      const previous = last.screenText ? `\nPrevious invalid SCREEN: ${last.screenText}` : '';
++      const reasons = last.screenText && last.voiceScript
++        ? validateRomanticQuote(last.screenText, last.voiceScript, target).problems.join('; ')
++        : 'The previous response did not follow the required format.';
++      attemptPrompt += `\n\nRETRY ${attempt}: The previous response failed validation.\nReason: ${reasons}${previous}\nGenerate a completely NEW quote. Do not repair the previous quote. SCREEN must contain only Telugu vocabulary written in English letters. VOICE must contain Telugu script only.`;
++    }
++
++    let raw = await callGroq(attemptPrompt);
++    let parsed = parseLabeledContent(raw);
++
++    if (!parsed.screenText || !parsed.voiceScript) {
++      log(`Attempt ${attempt}: missing SCREEN or VOICE; retrying.`);
++      raw = await callGroq(attemptPrompt + `\n\nIMPORTANT: Return all four labels exactly: TITLE:, SCREEN:, VOICE:, KEYWORDS:. Do not add any other text.`);
++      parsed = parseLabeledContent(raw);
++    }
++
++    last = {
++      title: parsed.title || last.title,
++      screenText: parsed.screenText || last.screenText,
++      voiceScript: parsed.voiceScript || last.voiceScript,
++      keywords: parsed.keywords || last.keywords
++    };
++
++    if (!last.screenText || !last.voiceScript) continue;
++
++    last.screenText = last.screenText
++      .replace(/^(SCREEN|QUOTE)\s*:\s*/i, '')
++      .replace(/#\S+/g, '')
++      .replace(/\s+/g, ' ')
++      .trim();
++
++    last.voiceScript = ensureSentenceBreaks(
++      last.voiceScript
++        .replace(/^(VOICE|SCRIPT)\s*:\s*/i, '')
++        .replace(/#\S+/g, '')
++        .replace(/\s+/g, ' ')
++        .trim()
++    );
++
++    const validation = validateRomanticQuote(last.screenText, last.voiceScript, target);
++    log(`Attempt ${attempt}: SCREEN=${validation.wordCount} words; valid=${validation.valid}`);
++    if (validation.problems.length) log(`Validation: ${validation.problems.join(' | ')}`);
++
++    if (validation.valid) {
++      if (!last.title) last.title = deriveHeadline(last.screenText);
++      if (!last.keywords) last.keywords = FALLBACK_KEYWORDS[category];
++      log(`Title: ${last.title}`);
++      log(`Screen quote (${validation.wordCount} words): ${last.screenText}`);
++      log(`Voice text: ${last.voiceScript}`);
++      log(`Keywords: ${last.keywords}`);
++      return last;
++    }
++  }
++
++  throw new Error('Groq failed romantic quote validation after 4 attempts. No invalid quote will be rendered.');
+ }
+*** End Patch

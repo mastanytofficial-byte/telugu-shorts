@@ -3,7 +3,7 @@ name: Daily Telugu Romantic Quote Short
 on:
   schedule:
     - cron: '30 3 * * *'   # 9:00 AM IST every day (3:30 UTC)
-  workflow_dispatch: {}     # allows manual "Run workflow" button too
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -38,6 +38,13 @@ jobs:
       - name: Install dependencies
         timeout-minutes: 3
         run: npm install
+
+      - name: Apply romantic quote validation patch
+        run: git apply romantic-quote-validation.patch
+
+      - name: Verify Node.js syntax
+        timeout-minutes: 1
+        run: node --check index.js
 
       - name: Generate and upload romantic quote video
         timeout-minutes: 15
