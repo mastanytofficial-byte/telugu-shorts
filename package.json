@@ -1,10 +1,10 @@
 {
   "name": "telugu-shorts",
   "version": "1.0.0",
-  "description": "Automated Telugu daily sad/emotional love quotes YouTube Shorts generator",
+  "description": "Automated Telugu daily Amazing Facts YouTube Shorts generator",
   "main": "index.js",
   "scripts": {
-    "start": "node quality_patch.js && node quality_patch_v2_fixed.js && node index.js"
+    "start": "node quality_patch.js && node quality_patch_v3.js && node index.js"
   },
   "dependencies": {
     "googleapis": "^140.0.0",
