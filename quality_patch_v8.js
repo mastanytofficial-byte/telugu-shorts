@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const file = path.join(__dirname, 'index.js');
 let s = fs.readFileSync(file, 'utf8');
 
@@ -104,6 +105,21 @@ async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRu
 }
 `;
 
-s = replaceFunction(s, 'async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRun ? GROQ_FALLBACK_MODEL : GROQ_MODEL)) {', callLLMFn, 'callLLM');
-fs.writeFileSync(file, s, 'utf8');
+const updated = replaceFunction(
+  s,
+  'async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRun ? GROQ_FALLBACK_MODEL : GROQ_MODEL)) {',
+  callLLMFn,
+  'callLLM'
+);
+
+// Never write a generated patch to disk if the patch itself produced invalid
+// JavaScript. This prevents a bad escape in a template literal/regex from
+// breaking the whole GitHub Actions run before index.js can even start.
+try {
+  new vm.Script(updated, { filename: file });
+} catch (err) {
+  throw new Error('QUALITY_PATCH_V8: generated index.js failed syntax validation: ' + err.message);
+}
+
+fs.writeFileSync(file, updated, 'utf8');
 console.log('QUALITY_PATCH_V8_TPM_SAFE applied successfully.');
