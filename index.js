@@ -1258,7 +1258,7 @@ function splitIntoSentences(script) {
   const protectedText = script
     .replace(/\.\.\./g, ELLIPSIS_PLACEHOLDER)
     .replace(/(\d)\.(\d)/g, `$1${DECIMAL_PLACEHOLDER}$2`);
-  const parts = protectedText.split(/(?<=\.)\s*/).map(s => s.trim()).filter(Boolean);
+  const parts = protectedText.split(/(?<=\.)\s*|\n+/).map(s => s.trim()).filter(Boolean);
   return parts.map(s => s.split(ELLIPSIS_PLACEHOLDER).join('...').split(DECIMAL_PLACEHOLDER).join('.'));
 }
 
