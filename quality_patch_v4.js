@@ -74,7 +74,7 @@ function buildNarrationPrompt(category, recentTitles, outline, beats) {
     'CTA: do not write a CTA; the program appends it separately.',
     '',
     'Return ONLY the final narration text.'
-  ].join('\\n');
+  ].join('\n');
 }
 `;
 
@@ -86,7 +86,7 @@ const newGenerateContent = String.raw`async function generateContent(category, r
   const target = WORD_COUNT_TARGETS[category] || { min: 85, max: 115 };
   const prompt = buildNarrationPrompt(category, recentTitles, outline, null);
   let script = (await callLLM(prompt)).trim();
-  let wordCount = script.split(/\\s+/).filter(Boolean).length;
+  let wordCount = script.split(/\s+/).filter(Boolean).length;
 
   // At most one compact retry. It reuses the verified fact and does not carry
   // a growing story-beat/optimizer prompt, keeping TPM safely bounded.
@@ -108,9 +108,9 @@ const newGenerateContent = String.raw`async function generateContent(category, r
       '- Target ' + target.min + '-' + target.max + ' words, but never invent facts to fill length.',
       '- No labels, JSON, explanation, reasoning, CTA, or ASCII digits.',
       '- Return ONLY the final narration.'
-    ].join('\\n');
+    ].join('\n');
     const retry = (await callLLM(retryPrompt)).trim();
-    const retryCount = retry.split(/\\s+/).filter(Boolean).length;
+    const retryCount = retry.split(/\s+/).filter(Boolean).length;
     log("Compact narration retry produced " + retryCount + " words.");
     if (retryCount >= Math.max(45, target.min - 20) && retryCount <= 140) {
       script = retry;
@@ -123,9 +123,9 @@ const newGenerateContent = String.raw`async function generateContent(category, r
   }
 
   script = script
-    .replace(/<think>[\\s\\S]*?<\\/think>/gi, '')
-    .replace(/^[A-Z_]+\\s*:\\s*/gm, '')
-    .replace(/\\n{3,}/g, '\\n\\n')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/^[A-Z_]\s*:\s*/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 
   script = ensureSentenceBreaks(script);
@@ -133,7 +133,7 @@ const newGenerateContent = String.raw`async function generateContent(category, r
   // Remove any accidental CTA so the programmatic CTA is the only one.
   script = splitIntoSentences(script)
     .filter(line => !/సబ్.?స్క్రైబ్|subscribe/i.test(line))
-    .join('\\n')
+    .join('\n')
     .trim();
 
   if (!/[.!?]$/.test(script)) script += '.';
@@ -158,10 +158,10 @@ const newGenerateContent = String.raw`async function generateContent(category, r
 
   // Spoken CTA is appended separately so the main story ends on its payoff.
   if (ctaSentence && !/సబ్.?స్క్రైబ్|subscribe/i.test(script)) {
-    script = script + '\\n' + ctaSentence;
+    script = script + '\n' + ctaSentence;
   }
 
-  const finalWordCount = script.split(/\\s+/).filter(Boolean).length;
+  const finalWordCount = script.split(/\s+/).filter(Boolean).length;
   log("Title: " + title);
   log("Keywords: " + keywords);
   log("Hook emoji line: " + hookEmoji);
