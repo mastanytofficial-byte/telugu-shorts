@@ -93,37 +93,37 @@
 @@
 -- 8 పదాల fragments మాత్రమే అని force చేయవద్దు; natural short sentences వాడు.
 +- 8 పదాల fragments మాత్రమే అని force చేయవద్దు; natural short spoken lines వాడు.
---- a/index.js
-+++ b/index.js
-@@ -368,18 +368,22 @@
--5 beats మాత్రమే:
--- hook: మొదటి 1-2 seconds లో attention ఆపే surprising idea. Fact ని పూర్తిగా reveal చేయకు.
-+5 beats మాత్రమే:
-+- hook: 1-2 seconds లో scroll ఆపేలా specific, surprising curiosity trigger. సాధ్యమైతే fact లోని అత్యంత concrete object/time/number ని tease చేయి, కానీ answer మొత్తం చెప్పవద్దు.
- - question: viewer కి సహజంగా వచ్చే "ఎందుకు? ఎలా? నిజమేనా?" అనే curiosity.
- - reveal: అసలు verified fact యొక్క core answer.
- - twist: అదే fact లో అత్యంత unexpected, genuinely interesting detail.
--- ending: strongest memorable takeaway. Artificial consequence లేదా generic moral వద్దు.
-+- ending: strongest memorable takeaway లేదా final reveal. Generic moral వద్దు.
- 
- RULES:
--- ప్రతి value 3-8 చిన్న తెలుగు పదాల phrase మాత్రమే; పూర్తి sentence/script కాదు.
-+- ప్రతి value 4-10 చిన్న తెలుగు పదాల phrase; పూర్తి narration sentence కాదు.
- - ప్రతి beat తర్వాత వచ్చే beat వినాలనే curiosity ఉండాలి.
- - Personal scenario అవసరం లేదు; fact కి సహజంగా సరిపోతే మాత్రమే సూచించు.
- - ప్రతి number కి comparison అవసరం లేదు.
- - కొత్త facts, numbers, examples, names లేదా claims కల్పించకు.
--- hook లోనే answer మొత్తం చెప్పవద్దు.
-+- hook generic గా "ఎటువంటి ఆహారం నశించదు?" వంటి vague question కాకూడదు. Fact-specific curiosity ఉండాలి.
-+- hook లో answer మొత్తం reveal చేయవద్దు.
- - generic phrases เช่น "ఇది మనల్ని ఆశ్చర్యపరుస్తుంది", "ఇది చాలా ఆసక్తికరం" వద్దు.
- - textbook explanation వద్దు.
-+- చివరి beat ఒక useful/surprising takeaway అయి ఉండాలి; "రుచి, ఆస్వాదన మరింత" లాంటి filler వద్దు.
 +
-+STYLE EXAMPLE — structure మాత్రమే నేర్చుకో; words/facts copy చేయకు:
-+Hook: "మూడు వేల ఏళ్ల నాటి ఆహారం..."
-+Question: "ఇప్పటికీ చెడిపోకుండా ఎలా ఉంది?"
-+Reveal: "అది తేనె..."
-+Twist: "దాని సహజ లక్షణాలే రహస్యం"
-+Ending: "అందుకే తేనె ఇంత ప్రత్యేకం"
-*** End Patch
++--- a/index.js
+++++ b/index.js
++@@ -368,18 +368,22 @@
++-5 beats మాత్రమే:
++-- hook: మొదటి 1-2 seconds లో attention ఆపే surprising idea. Fact ని పూర్తిగా reveal చేయకు.
+++5 beats మాత్రమే:
+++- hook: 1-2 seconds లో scroll ఆపేలా specific, surprising curiosity trigger. సాధ్యమైతే fact లోని అత్యంత concrete object/time/number ని tease చేయి, కానీ answer మొత్తం చెప్పవద్దు.
++ - question: viewer కి సహజంగా వచ్చే "ఎందుకు? ఎలా? నిజమేనా?" అనే curiosity.
++ - reveal: అసలు verified fact యొక్క core answer.
++ - twist: అదే fact లో అత్యంత unexpected, genuinely interesting detail.
++-- ending: strongest memorable takeaway. Artificial consequence లేదా generic moral వద్దు.
+++- ending: strongest memorable takeaway లేదా final reveal. Generic moral వద్దు.
++ 
++ RULES:
++-- ప్రతి value 3-8 చిన్న తెలుగు పదాల phrase మాత్రమే; పూర్తి sentence/script కాదు.
+++- ప్రతి value 4-10 చిన్న తెలుగు పదాల phrase; పూర్తి narration sentence కాదు.
++ - ప్రతి beat తర్వాత వచ్చే beat వినాలనే curiosity ఉండాలి.
++ - Personal scenario అవసరం లేదు; fact కి సహజంగా సరిపోతే మాత్రమే సూచించు.
++ - ప్రతి number కి comparison అవసరం లేదు.
++ - కొత్త facts, numbers, examples, names లేదా claims కల్పించకు.
++-- hook లోనే answer మొత్తం చెప్పవద్దు.
+++- hook generic గా "ఎటువంటి ఆహారం నశించదు?" వంటి vague question కాకూడదు. Fact-specific curiosity ఉండాలి.
+++- hook లో answer మొత్తం reveal చేయవద్దు.
++ - generic phrases เช่น "ఇది మనల్ని ఆశ్చర్యపరుస్తుంది", "ఇది చాలా ఆసక్తికరం" వద్దు.
++ - textbook explanation వద్దు.
+++- చివరి beat ఒక useful/surprising takeaway అయి ఉండాలి; "రుచి, ఆస్వాదన మరింత" లాంటి filler వద్దు.
+++
+++STYLE EXAMPLE — structure మాత్రమే నేర్చుకో; words/facts copy చేయకు:
+++Hook: "మూడు వేల ఏళ్ల నాటి ఆహారం..."
+++Question: "ఇప్పటికీ చెడిపోకుండా ఎలా ఉంది?"
+++Reveal: "అది తేనె..."
+++Twist: "దాని సహజ లక్షణాలే రహస్యం"
+++Ending: "అందుకే తేనె ఇంత ప్రత్యేకం"
