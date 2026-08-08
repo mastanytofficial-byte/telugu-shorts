@@ -59,7 +59,7 @@ async function generateUniqueContent(category, usedTitles, outline, ctaSentence)
 
 let patched = source;
 const pickTopicOld = `  const unused = topics.filter(t => !usedTopicsForCategory.includes(t));\n  const pool = unused.length > 0 ? unused : topics; // all used at least once — cycle again\n  const topic = pool[Math.floor(Math.random() * pool.length)];`;
-const pickTopicNew = `  const unused = topics.filter(t => !usedTopicsForCategory.includes(t));\n  if (unused.length === 0) {\n    throw new Error(\`No unused topic remains in category "${category}". Duplicate-prevention requires a genuinely new topic before this category can be used again.\`);\n  }\n  const topic = unused[Math.floor(Math.random() * unused.length)];`;
+const pickTopicNew = `  const unused = topics.filter(t => !usedTopicsForCategory.includes(t));\n  if (unused.length === 0) {\n    throw new Error(\`No unused topic remains in category "\${category}". Duplicate-prevention requires a genuinely new topic before this category can be used again.\`);\n  }\n  const topic = unused[Math.floor(Math.random() * unused.length)];`;
 if (!patched.includes(pickTopicOld)) throw new Error('DEDUPE_V2: pickTopic anchor not found');
 patched = patched.replace(pickTopicOld, pickTopicNew);
 
