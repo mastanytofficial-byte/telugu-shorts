@@ -39,7 +39,9 @@ function replaceFunction(source, marker, newFn, label) {
   return source.slice(0, start) + newFn + source.slice(end);
 }
 
-const callFn = `// QUALITY_PATCH_V12_PROVIDER_FINAL
+// String.raw is intentional: regex backslashes and literal \n sequences must
+// survive insertion into index.js exactly as JavaScript source.
+const callFn = String.raw`// QUALITY_PATCH_V12_PROVIDER_FINAL
 let llmProviderForRun = null;
 let llmProviderExhausted = new Set();
 
@@ -126,7 +128,7 @@ async function callGroq(prompt) {
     throw err;
   }
   let text = data && data.choices && data.choices[0] && data.choices[0].message ? (data.choices[0].message.content || '') : '';
-  text = text.replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   if (!text) throw new Error('Groq returned empty content.');
   return text;
 }
@@ -160,7 +162,7 @@ async function callLLM(prompt) {
   throw new Error('All configured LLM providers failed. Last error: ' + (lastError ? lastError.message : 'unknown'));
 }`;
 
-const contentFn = `// QUALITY_PATCH_V12_PROVIDER_FINAL
+const contentFn = String.raw`// QUALITY_PATCH_V12_PROVIDER_FINAL
 async function generateContent(category, recentTitles, outline, ctaSentence) {
   log('Generating ' + category + ' FINAL DIRECT FACT SCRIPT via provider fallback...');
   const recent = (recentTitles || []).slice(-15).join(' | ') || '(none)';
@@ -187,8 +189,8 @@ async function generateContent(category, recentTitles, outline, ctaSentence) {
   ].join('\n');
 
   let script = (await callLLM(prompt)).trim();
-  script = script.replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();
-  script = script.replace(/^(?:TITLE|SCRIPT|NARRATION)\\s*:\\s*/i, '').trim();
+  script = script.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  script = script.replace(/^(?:TITLE|SCRIPT|NARRATION)\s*:\s*/i, '').trim();
   if (typeof normalizeTeluguNumbers === 'function') script = normalizeTeluguNumbers(script);
   const lines = splitIntoSentences(script).filter(function(x) { return !/సబ్.?స్క్రైబ్|subscribe/i.test(x); }).map(function(x) { return x.trim(); }).filter(Boolean);
   script = lines.join('\n').trim();
