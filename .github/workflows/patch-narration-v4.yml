@@ -2,201 +2,28 @@ name: Apply narration style patch v4
 
 on:
   push:
-    paths:
-      - '.github/workflows/patch-narration-v4.yml'
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
-  patch:
+  apply:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Patch prompts
-        shell: bash
+      - name: Apply patch and validate
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path('index.js')
-          s = p.read_text(encoding='utf-8')
-
-          new_beats = r'''function generateStoryBeats(outline) {
-            const prompt = `కింద ఇచ్చిన VERIFIED FACT నుండి Telugu YouTube Shorts కోసం STORY BEATS తయారు చేయి.
-
-VERIFIED FACT:
-${outline}
-
-ఇది fact summary కాదు. Viewer మొదటి line నుంచే curious గా ఉండి, ప్రతి beat తర్వాత next beat వినాలనిపించేలా ఒక story skeleton తయారు చేయాలి.
-
-5 beats మాత్రమే:
-- hook: 1-2 seconds లో scroll ఆపేలా specific, surprising curiosity trigger. సాధ్యమైతే fact లోని అత్యంత concrete object/time/number ని tease చేయి, కానీ answer మొత్తం చెప్పవద్దు.
-- question: "ఎందుకు? ఎలా? నిజమేనా?" అనే natural curiosity.
-- reveal: అసలు verified fact యొక్క core answer.
-- twist: అదే fact లో నిజంగా ఉన్న అత్యంత unexpected detail.
-- ending: strongest memorable takeaway లేదా final reveal. Generic moral వద్దు.
-
-RULES:
-- ప్రతి value 4-10 చిన్న తెలుగు పదాల phrase; పూర్తి narration sentence కాదు.
-- hook generic గా "ఎటువంటి ఆహారం నశించదు?" వంటి vague question కాకూడదు. Fact-specific curiosity ఉండాలి.
-- hook లో answer మొత్తం reveal చేయవద్దు.
-- Personal scenario అవసరం లేదు; fact కి సహజంగా సరిపోతే మాత్రమే సూచించు.
-- ప్రతి number కి comparison అవసరం లేదు.
-- కొత్త facts, numbers, examples, names లేదా claims కల్పించకు.
-- generic phrases เช่น "ఇది మనల్ని ఆశ్చర్యపరుస్తుంది", "ఇది చాలా ఆసక్తికరం" వద్దు.
-- textbook explanation వద్దు.
-- చివరి beat ఒక useful/surprising takeaway అయి ఉండాలి; "రుచి, ఆస్వాదన మరింత" లాంటి filler వద్దు.
-
-STYLE EXAMPLE — structure మాత్రమే నేర్చుకో; words/facts copy చేయకు:
-Hook: "మూడు వేల ఏళ్ల నాటి ఆహారం..."
-Question: "ఇప్పటికీ చెడిపోకుండా ఎలా ఉంది?"
-Reveal: "అది తేనె..."
-Twist: "దాని సహజ లక్షణాలే రహస్యం"
-Ending: "అందుకే తేనె ఇంత ప్రత్యేకం"
-
-ఖచ్చితంగా ఈ JSON object మాత్రమే ఇవ్వు — ముందు/వెనుక ఏమీ రాయకు:
-{"hook":"...","question":"...","reveal":"...","twist":"...","ending":"..."}`;
-
-            let raw = await callLLM(prompt);
-            let beats = tryParseStoryBeatsJSON(raw);
-
-            if (!beats) {
-              log('WARNING: story beats response was not valid JSON — retrying once with a stricter reminder.');
-              const retryPrompt = `${prompt}\n\nనీ మునుపటి జవాబు valid JSON కాదు. ఖచ్చితంగా 5 keys ఉన్న ఒక్క JSON object మాత్రమే ఇవ్వు: {"hook":"...","question":"...","reveal":"...","twist":"...","ending":"..."}`;
-              raw = await callLLM(retryPrompt);
-              beats = tryParseStoryBeatsJSON(raw);
-            }
-
-            if (!beats) {
-              log('WARNING: story beats still not valid JSON after retry — falling back to raw text as a single beat.');
-              return { hook: raw.trim(), question: '', reveal: '', twist: '', ending: '' };
-            }
-            return beats;
-          }
-
-          // Extracts and parses the JSON object from the model's reply — tolerant of
-'''
-
-          new_narration = r'''function buildNarrationPrompt(category, recentTitles, outline, beats) {
-            const avoidLine = recentTitles.length
-              ? `\n\nఇటీవల వాడిన వీడియోల title/hook patterns ఇవి — వాటి opening rhythm, sentence pattern, comparison, twist లేదా ending ని copy చేయకు: ${recentTitles.slice(-10).join(' | ')}`
-              : '';
-            const { min, max } = WORD_COUNT_TARGETS[category];
-            const beatsJSON = JSON.stringify(beats);
-
-            return `కింద ఇచ్చిన VERIFIED FACT మరియు STORY BEATS ఆధారంగా ఒక original Telugu YouTube Shorts narration రాయి.
-
-STORY BEATS:
-${beatsJSON}
-
-VERIFIED FACT — ACCURACY GROUNDING:
-${compactOutlineForGrounding(outline)}
-
-ROLE:
-నువ్వు Telugu YouTube Shorts కోసం high-retention storyteller. Fact ని textbook, documentary లేదా news-reader లాగా explain చేయకూడదు. Viewer ఒక friend దగ్గర unbelievable fact వింటున్నట్టు natural spoken Telugu లో చెప్పాలి.
-
-TARGET RHYTHM — THIS IS IMPORTANT:
-- Narration ఒక paragraph లాగా ఉండకూడదు. 12-18 short spoken lines గా ఆలోచించు.
-- సాధారణంగా ఒక్క line 2-10 తెలుగు పదాలు ఉండాలి; అవసరమైనప్పుడు కొంచెం పొడవైన line మాత్రమే వాడు.
-- ఒకే sentence లో అనేక facts ని cram చేయవద్దు.
-- ప్రతి 1-2 lines తర్వాత కొత్త information/reveal/curiosity ఇవ్వాలి.
-- Hook → curiosity → reveal → surprising detail → twist → memorable ending.
-- Viewer కి "తర్వాత ఏమిటి?" అనిపించేలా information ని step-by-step reveal చేయి.
-
-STYLE EXAMPLES — words/facts copy చేయకూడదు. Rhythm, pacing, suspense pattern మాత్రమే follow చేయాలి.
-
-Example A:
-🤯 మీరు అమెరికాకు WhatsApp మెసేజ్ పంపితే...
-అది నిజంగా...
-శాటిలైట్ ద్వారా వెళ్తుందని అనుకుంటున్నారా?
-కాదు...
-అసలు విషయం ఏంటంటే...
-ప్రపంచంలోని దాదాపు 95% అంతర్జాతీయ ఇంటర్నెట్ ట్రాఫిక్...
-సముద్రం అడుగున ఉన్న కేబుల్స్ ద్వారానే వెళ్తుంది!
-ఇంకా షాక్ ఏంటంటే...
-ఈ కేబుల్స్ మొత్తం పొడవు...
-12 లక్షల కిలోమీటర్లకు పైగా ఉంటుంది!
-అంటే...
-భూమిని దాదాపు 30 సార్లు చుట్టేయగలంత!
-
-Example B:
-🤯 మూడు వేల ఏళ్ల నాటి ఆహారం...
-ఇప్పటికీ చెడిపోకుండా ఉంటే నమ్ముతారా?
-కానీ...
-ఇది కల్పిత కథ కాదు.
-అసలు విషయం ఏంటంటే...
-అది తేనె.
-ఇంకా ఆశ్చర్యం ఏంటంటే...
-దాన్ని నిలబెట్టేది...
-దాని సహజ లక్షణాలే!
-అందుకే...
-తేనె ఇతర ఆహారాల్లా సులభంగా చెడిపోదు.
-
-IMPORTANT:
-- పై examples లోని exact wording, facts, numbers లేదా sentence sequence copy చేయకు.
-- Personal scenario తప్పనిసరి కాదు. Fact కి సహజంగా సరిపోతే మాత్రమే వాడు. Forced food/drink/family/daily-life examples పూర్తిగా వద్దు.
-- ప్రతి script లో "అనుకుంటున్నారా? కాదు..." వాడాల్సిన అవసరం లేదు. Natural గా సరిపోతే మాత్రమే వాడు.
-- "కానీ...", "అసలు విషయం ఏంటంటే...", "ఇంకా షాక్ ఏంటంటే...", "అయితే..." వంటి transitions ని variety తో, అవసరమైనప్పుడు మాత్రమే వాడు. ప్రతి line కి కాదు.
-- Number ఉంటే మాత్రమే, viewer కి imagine చేయడం కష్టంగా ఉన్నప్పుడు comparison ఇవ్వు. ప్రతి సంఖ్యకీ comparison వద్దు.
-- Fact కి natural consequence లేకపోతే consequence కల్పించవద్దు.
-- కొత్త fact, number, example, location, person, comparison లేదా claim కల్పించకూడదు. VERIFIED FACT మరియు beats లో ఉన్న information మాత్రమే expand చేయి.
-- Fact ని మొదటి 1-2 lines లో పూర్తిగా reveal చేయవద్దు.
-- Filler explanation, generic moral, textbook wording వద్దు.
-- "గణనీయంగా", "సామర్థ్యం", "ఇది సూచిస్తుంది", "అందువల్ల", "దీనివల్ల" వంటి formal wording అవసరం లేకపోతే వాడవద్దు.
-- Same sentence pattern ని వరుసగా repeat చేయవద్దు.
-- Source fact లో ఉన్న terminology ని తప్పుగా simplify చేయవద్దు.
-- Large numbers ని digits/comma format లో కాకుండా సహజమైన తెలుగు మాటల్లో రాయడానికి ప్రయత్నించు (ఉదా: 3,000 → మూడు వేల).
-
-RETENTION RULE:
-ఒక line తీసేస్తే story మీద ప్రభావం లేకపోతే అది filler — దాన్ని rewrite చేయి. ప్రతి line తర్వాత వచ్చే line అవసరమైనట్టుగా అనిపించాలి.
-
-PUNCTUATION / RHYTHM:
-- "." = పూర్తి thought ముగిసినప్పుడు మాత్రమే.
-- "," = చిన్న natural breath.
-- "..." = suspense, reveal లేదా emotional pause కోసం మాత్రమే.
-- Target style కోసం "..." ని కొన్ని strategic places లో ఉపయోగించు; కానీ ప్రతి line కి పెట్టవద్దు.
-- Short line breaks spoken rhythm కోసం intentional గా వాడు.
-
-LENGTH:
-- ఖచ్చితంగా ${min}-${max} తెలుగు పదాలు.
-- 85-115 words range లో content complete గా ఉండాలి; rushed filler తో word count fill చేయవద్దు.
-
-LANGUAGE:
-- సహజమైన మాట్లాడే తెలుగు.
-- Telugu script మాత్రమే; Romanized Telugu వద్దు.
-- CTA, title, labels, emoji, markdown వద్దు.
-${avoidLine}
-
-కేవలం final narration text మాత్రమే ఇవ్వు.`;
-          }
-
-          // CALL B of Stage 2: metadata extraction from the ALREADY-FINISHED
-'''
-
-          s2, n1 = re.subn(r'function generateStoryBeats\(outline\) \{.*?\n\s*// Extracts and parses the JSON object from the model\'s reply —', new_beats, s, count=1, flags=re.S)
-          if n1 != 1:
-              raise SystemExit('Could not locate generateStoryBeats block')
-          s3, n2 = re.subn(r'function buildNarrationPrompt\(category, recentTitles, outline, beats\) \{.*?\n\s*// CALL B of Stage 2: metadata extraction from the ALREADY-FINISHED', new_narration, s2, count=1, flags=re.S)
-          if n2 != 1:
-              raise SystemExit('Could not locate buildNarrationPrompt block')
-
-          p.write_text(s3, encoding='utf-8')
-          print('Prompt blocks replaced:', n1, n2)
-          PY
-
-      - name: Validate and commit
-        shell: bash
-        run: |
+          git apply --recount .github/narration-v4.patch
           node --check index.js
           git diff --check
+          rm -f .github/narration-v4.patch
+          rm -f .github/workflows/patch-narration-v4.yml
+      - name: Commit changes
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.js
+          git add index.js .github
           git commit -m "chore: strengthen cinematic Telugu narration rhythm"
-          git rm .github/workflows/patch-narration-v4.yml
-          git commit -m "chore: remove one-time narration patch workflow"
           git push
