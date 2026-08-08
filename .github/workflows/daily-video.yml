@@ -36,15 +36,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Validate automation patch files
+      - name: Validate automation source
         run: |
-          node --check quality_patch.js
-          node --check quality_patch_v4.js
-          node --check quality_patch_v6.js
-          node --check quality_patch_v7.js
-          node --check quality_patch_v8.js
-          node --check quality_patch_v11.js
-          node --check quality_patch_v12.js
+          node --check runtime_llm_router.js
           node --check index.js
 
       - name: Generate and upload video
@@ -53,6 +47,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           JAMENDO_CLIENT_ID: ${{ secrets.JAMENDO_CLIENT_ID }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
