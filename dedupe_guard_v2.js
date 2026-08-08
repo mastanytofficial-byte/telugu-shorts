@@ -68,6 +68,11 @@ const outlineReturnNew = `  if (isDuplicateAgainst(existingOutlines || [], trimm
 if (!patched.includes(outlineReturnOld)) throw new Error('DEDUPE_V2: outline return anchor not found');
 patched = patched.replace(outlineReturnOld, outlineReturnNew);
 
+const titleTrimOld = `  if (newTitles.length > 50) newTitles = newTitles.slice(-50);`;
+const titleTrimNew = `  if (newTitles.length > 1000) newTitles = newTitles.slice(-1000);`;
+if (!patched.includes(titleTrimOld)) throw new Error('DEDUPE_V2: title-history anchor not found');
+patched = patched.replace(titleTrimOld, titleTrimNew);
+
 const mainCallOld = `  const { title, hookEmoji, script } = await generateContent(category, usedTitles, outline, ctaSentence);`;
 const mainCallNew = `  const { title, hookEmoji, script } = await generateUniqueContent(category, usedTitles, outline, ctaSentence);`;
 if (!patched.includes(mainCallOld)) throw new Error('DEDUPE_V2: generateContent call anchor not found');
@@ -77,4 +82,4 @@ const mainAnchor = `async function main() {`;
 if (!patched.includes(mainAnchor)) throw new Error('DEDUPE_V2: main anchor not found');
 patched = patched.replace(mainAnchor, helpers + mainAnchor);
 fs.writeFileSync(FILE, patched, 'utf8');
-console.log('DEDUPE_GUARD_V2: strict topic + outline + title + narration duplicate prevention applied successfully.');
+console.log('DEDUPE_GUARD_V2: strict category-cycle + topic + outline + title + narration duplicate prevention applied successfully.');
