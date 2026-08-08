@@ -286,7 +286,7 @@ function loadState() {
 function ensureSentenceBreaks(text, maxLen = 140) {
   const ELLIPSIS_PLACEHOLDER = '\u0001E\u0001';
   const protectedText = text.replace(/\.\.\./g, ELLIPSIS_PLACEHOLDER);
-  const parts = protectedText.split(/(?<=\.)\s*/);
+  const parts = protectedText.split(/(?<=\.)\s*|\n+/);
   const fixed = [];
   for (let part of parts) {
     while (part.length > maxLen) {
@@ -299,7 +299,7 @@ function ensureSentenceBreaks(text, maxLen = 140) {
     }
     if (part) fixed.push(part);
   }
-  return fixed.join(' ').replace(/\s+/g, ' ').trim().split(ELLIPSIS_PLACEHOLDER).join('...');
+  return fixed.join('\n').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().split(ELLIPSIS_PLACEHOLDER).join('...');
 }
 
 // Fixed, guaranteed-correct emoji per category — the model was asked to
@@ -414,9 +414,11 @@ ${compactOutlineForGrounding(outline)}
 నువ్వు Telugu YouTube Shorts కోసం high-retention storyteller. Fact ని textbook, documentary లేదా news-reader లాగా explain చేయకూడదు. Viewer ఒక friend దగ్గర unbelievable fact వింటున్నట్టు natural spoken Telugu లో చెప్పాలి.
 
 TARGET RHYTHM — THIS IS IMPORTANT:
-- Narration ఒక paragraph లాగా ఉండకూడదు. 12-18 short spoken lines గా ఆలోచించు.
-- సాధారణంగా ఒక్క line 2-10 తెలుగు పదాలు ఉండాలి; అవసరమైనప్పుడు కొంచెం పొడవైన line మాత్రమే వాడు.
-- ఒకే sentence లో అనేక facts ని cram చేయవద్దు.
+- Narration ఒక paragraph లాగా ఉండకూడదు. ఖచ్చితంగా 12-18 short spoken lines గా రాయి.
+- ప్రతి line ఒక ప్రత్యేకమైన, సహజమైన spoken beat కావాలి; సాధారణంగా 2-10 తెలుగు పదాలు.
+- Line break ను punctuation కంటే ముఖ్యమైన pacing signal గా భావించు. ప్రతి line ను కొత్త visual/voice beat లాగా రాయి.
+- ఒక line లో ఒక్క grammatical thought మాత్రమే ఉండాలి. Commaలతో 3-4 clauses ని ఒకే sentence లో కలపవద్దు.
+- Fragment కావాల్సిన suspense lines మాత్రమే fragment గా ఉండొచ్చు; మిగతా lines సహజమైన పూర్తి తెలుగు వాక్యాలుగా ఉండాలి.
 - ప్రతి 1-2 lines తర్వాత కొత్త information/reveal/curiosity ఇవ్వాలి.
 - Hook → curiosity → reveal → surprising detail → twist → memorable ending.
 - Viewer కి "తర్వాత ఏమిటి?" అనిపించేలా information ని step-by-step reveal చేయి.
@@ -463,7 +465,10 @@ IMPORTANT:
 - "గణనీయంగా", "సామర్థ్యం", "ఇది సూచిస్తుంది", "అందువల్ల", "దీనివల్ల" వంటి formal wording అవసరం లేకపోతే వాడవద్దు.
 - Same sentence pattern ని వరుసగా repeat చేయవద్దు.
 - Source fact లో ఉన్న terminology ని తప్పుగా simplify చేయవద్దు.
-- Large numbers ని digits/comma format లో కాకుండా సహజమైన తెలుగు మాటల్లో రాయడానికి ప్రయత్నించు (ఉదా: 3,000 → మూడు వేల).
+- Technical term అవసరమైతే మాత్రమే English/technical word వాడు; Telugu sentence లో random English words కలపవద్దు.
+- Fact యొక్క core claim ని మార్చవద్దు: ఉదాహరణకు refining/filtering process ని 'ఆ పదార్థంతో తయారవుతుంది' అని చెప్పవద్దు.
+- ASCII digits అసలు వాడవద్దు. అన్ని సంఖ్యలను సహజమైన తెలుగు మాటల్లోనే రాయి. ఉదా: 2000 → రెండు వేల, 19వ శతాబ్దం → పంతొమ్మిదో శతాబ్దం, 3,000 → మూడు వేల.
+- Source లో 'some', 'certain', 'may', 'can' వంటి పరిమితి ఉంటే narration లో దాన్ని 'అన్నీ', 'ఎప్పుడూ', 'ఖచ్చితంగా' అని overclaim చేయవద్దు.
 
 RETENTION RULE:
 ప్రతి line తర్వాత వచ్చే line కి curiosity ఉండాలి. ఒక sentence ని తీసేసినా story మీద ప్రభావం లేకపోతే ఆ sentence ని rewrite చేయి.
@@ -484,6 +489,8 @@ LANGUAGE:
 - సహజమైన మాట్లాడే తెలుగు.
 - Telugu script మాత్రమే; Romanized Telugu వద్దు.
 - CTA, title, labels, emoji, markdown వద్దు.
+- Final answer పంపే ముందు silently grammar, natural spoken Telugu, factual scope, number formatting, మరియు line-by-line pacing check చేయి.
+- Script చివరి line fact-specific memorable takeaway కావాలి; generic moral లేదా subscribe request వద్దు.
 ${avoidLine}
 
 కేవలం final narration text మాత్రమే ఇవ్వు.`;
@@ -509,7 +516,8 @@ ${script}
 - **"." (period):** ఒక పూర్తి ఆలోచన ముగిసిన చోటే. ఎప్పుడూ వాక్యం మధ్యలో, ఒక పదబంధం మధ్యలో, లేదా క్రియకి ముందు వద్దు.
 - **"," (comma):** ఒక వాక్యంలో రెండు సంబంధిత భావాలు ఉన్నప్పుడు, చిన్న breath కోసం.
 - **"..." (ellipsis):** suspense/surprise/emotional pause కోసం మాత్రమే — reveal కి ముందు వాడు. **ప్రతి 2-3 వాక్యాలకు ఒకసారి కన్నా ఎక్కువ వాడకు** — overuse చేస్తే artificial గా వినిపిస్తుంది.
-- **పదాలు ఒక్కటి కూడా జోడించకు, తీసేయకు, మార్చకు** — కేవలం punctuation (., ,, ...) మరియు line breaks మాత్రమే మార్చు.
+- **ఏ line merge చేయకు, ఏ line split చేయకు. Original line breaks సంఖ్య మరియు క్రమం తప్పనిసరిగా అలాగే ఉంచు.**
+- పదాలు ఒక్కటి కూడా జోడించకు, తీసేయకు, మార్చకు — కేవలం punctuation మాత్రమే మార్చు..
 
 కేవలం సరిచేసిన స్క్రిప్ట్ టెక్స్ట్ మాత్రమే ఇవ్వు — వేరే ఏమీ ముందు/వెనుక రాయకు, వివరణ వద్దు.`;
 }
@@ -796,7 +804,7 @@ ${beatsJSON}
 
   // Defensive: strip any stray markers/CTA-like ending the model wrote
   // anyway, despite being told not to.
-  script = script.replace(/\[[A-Z]+\]/g, '').replace(/\s+/g, ' ').trim();
+  script = script.replace(/\[[A-Z]+\]/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   const existingSentences = splitIntoSentences(script);
   if (existingSentences.length > 0 && existingSentences[existingSentences.length - 1].includes('సబ్‌స్క్రైబ్')) {
     existingSentences.pop();
@@ -825,7 +833,9 @@ ${beatsJSON}
   try {
     const punctPrompt = buildPunctuationOptimizerPrompt(script);
     const optimized = (await callLLM(punctPrompt)).trim();
-    if (optimized && wordsPreserved(script, optimized)) {
+    const originalLineCount = script.split(/\n+/).filter(Boolean).length;
+    const optimizedLineCount = optimized.split(/\n+/).filter(Boolean).length;
+    if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount) {
       script = optimized;
     } else {
       log('⚠️ WARNING: punctuation optimizer changed too many words — rejecting its output, keeping the original script.');
@@ -848,7 +858,9 @@ ${beatsJSON}
   title = `${title} ${categoryEmoji}`.trim();
   hookEmoji = `${hookEmoji} ${categoryEmoji}`.trim();
 
-  script = (script.trim() + ' ' + ctaSentence).trim();
+  // Spoken CTA is intentionally disabled. The video already has a visual CTA button;
+  // narration should end on the fact's strongest takeaway, not a templated subscription line.
+  script = script.trim();
   log(`Title: ${title}`);
   log(`Keywords: ${keywords}`);
   log(`Hook emoji line: ${hookEmoji}`);
