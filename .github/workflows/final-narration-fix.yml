@@ -1,8 +1,6 @@
 name: final narration fix
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/final-narration-fix.yml']
+  workflow_dispatch:
 jobs:
   fix:
     runs-on: ubuntu-latest
