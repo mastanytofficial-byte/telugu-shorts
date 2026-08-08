@@ -32,8 +32,8 @@ function replaceFunction(source, marker, newFn, label) {
 
 const visualFn = String.raw`// QUALITY_PATCH_V7_VISUALS
 async function getSentenceKeywords(sentences, outline) {
-  const numbered = sentences.map((s, i) => `${i + 1}. ${s}`).join('\n');
-  const outlineContext = outline ? `\n\nVERIFIED SOURCE FACT — VISUALS MUST NOT GO BEYOND THIS:\n${outline}` : '';
+  const numbered = sentences.map((s, i) => (i + 1) + '. ' + s).join('\n');
+  const outlineContext = outline ? '\n\nVERIFIED SOURCE FACT — VISUALS MUST NOT GO BEYOND THIS:\n' + outline : '';
   const prompt = [
     'Create documentary-style visual search keywords and AI-image scene descriptions for a Telugu Amazing Facts Short.',
     '',
