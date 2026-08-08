@@ -63,7 +63,7 @@ function buildNarrationPrompt(category, recentTitles, outline, beats) {
     recent,
     '',
     'Return ONLY the narration text.'
-  ].join('\\n');
+  ].join('\n');
 }
 `;
 
