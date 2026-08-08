@@ -43,23 +43,26 @@ const oldBlock = `  const ctaSentence = pickCTA(runCount);\n  const { title, hoo
 const newBlock = `  const ctaSentence = pickCTA(runCount);\n  let title, hookEmoji, script, allSentences, audioPath, sentenceDurations, silenceGap;\n  let measuredNarrationDuration = 0;\n  let contentAudioAttempt = 0;\n  for (contentAudioAttempt = 1; contentAudioAttempt <= 3; contentAudioAttempt++) {\n    const generated = await generateContent(category, usedTitles, outline, ctaSentence);\n    title = generated.title;\n    hookEmoji = generated.hookEmoji;\n    script = generated.script;\n    allSentences = splitIntoSentences(script);\n    const generatedAudio = await generateAudioForScript(allSentences);\n    audioPath = generatedAudio.audioPath;\n    sentenceDurations = generatedAudio.sentenceDurations;\n    silenceGap = generatedAudio.silenceGap;\n    measuredNarrationDuration = getAudioDuration(audioPath);\n    log('Duration guard attempt ' + contentAudioAttempt + ': narration=' + measuredNarrationDuration.toFixed(2) + 's (target 50-60s final video).');\n    // buildVideo adds a fixed 0.3s safety buffer, so narration itself must be 49.7-59.7s.\n    if (measuredNarrationDuration >= 49.7 && measuredNarrationDuration <= 59.7) break;\n    log('WARNING: narration duration outside the safe 49.7-59.7s range — regenerating narration before continuing.');\n  }\n\n  // Final measured-rate correction. Bounded so TTS never becomes wildly fast or slow.\n  if (measuredNarrationDuration < 49.7 || measuredNarrationDuration > 59.7) {\n    const targetDuration = 54.7;\n    const correctedRate = Math.max(0.75, Math.min(1.20, 0.98 * measuredNarrationDuration / targetDuration));\n    globalThis.__TELUGU_TTS_RATE = correctedRate;\n    log('Applying final TTS duration correction: speakingRate=' + correctedRate.toFixed(3));\n    const correctedAudio = await generateAudioForScript(allSentences);\n    audioPath = correctedAudio.audioPath;\n    sentenceDurations = correctedAudio.sentenceDurations;\n    silenceGap = correctedAudio.silenceGap;\n    measuredNarrationDuration = getAudioDuration(audioPath);\n    log('Final narration duration after TTS correction: ' + measuredNarrationDuration.toFixed(2) + 's.');\n  }\n  if (measuredNarrationDuration < 49.7 || measuredNarrationDuration > 59.7) {\n    throw new Error('VIDEO_DURATION_GUARD_FAILED: final narration is ' + measuredNarrationDuration.toFixed(2) + 's; refusing to upload outside the required 50-60s final-video window.');\n  }`;
 mustReplace(oldBlock, newBlock, 'main duration guard');
 
-// Harden V8's fresh-topic resolver too: rejected/failed candidates are remembered
-// for the rest of the current run, so the LLM cannot return the exact same topic
-// again after a rejection (the V8 log showed this happening with Lanternfish).
+// Harden V8's fresh-topic resolver without relying on brittle exact multiline anchors.
+// Rejected topics/facts are reserved for the rest of this run.
 const v8Path = path.join(__dirname, 'runtime_llm_router_v8.js');
 let v8 = fs.readFileSync(v8Path, 'utf8');
-const oldTopicsLine = "  const previousTopics = Object.values(usedTopics || {}).flat().slice(-80);";
-const newTopicsLine = "  const previousTopics = [...Object.values(usedTopics || {}).flat().slice(-80)];";
-if (!v8.includes(oldTopicsLine)) throw new Error('V9 V8-anchor not found: previousTopics');
-v8 = v8.replace(oldTopicsLine, newTopicsLine);
-const oldDuplicateBlock = `    if (previousTopics.some(t => t.toLowerCase() === topic.toLowerCase())) {\n      log('  Duplicate topic rejected: ' + topic);\n      continue;\n    }`;
-const newDuplicateBlock = `    if (previousTopics.some(t => t.toLowerCase() === topic.toLowerCase())) {\n      log('  Duplicate topic rejected: ' + topic);\n      continue;\n    }\n    // Reserve this candidate immediately, even if its fact is later rejected.\n    previousTopics.push(topic);`;
-if (!v8.includes(oldDuplicateBlock)) throw new Error('V9 V8-anchor not found: duplicate topic block');
-v8 = v8.replace(oldDuplicateBlock, newDuplicateBlock);
-const oldCandidateMarker = `      if (previousFacts.some(f => {\n        const n = f.toLowerCase().replace(/\\s+/g, ' ').trim();\n        return n.includes(normCandidate.slice(0, 100)) || normCandidate.includes(n.slice(0, 100));\n      })) {\n        log('  Duplicate fact rejected.');\n        continue;\n      }`;
-const newCandidateMarker = `      if (previousFacts.some(f => {\n        const n = f.toLowerCase().replace(/\\s+/g, ' ').trim();\n        return n.includes(normCandidate.slice(0, 100)) || normCandidate.includes(n.slice(0, 100));\n      })) {\n        log('  Duplicate fact rejected.');\n        continue;\n      }\n      // Reserve the candidate immediately so a later attempt cannot regenerate the same fact.\n      previousFacts.push(candidate);`;
-if (!v8.includes(oldCandidateMarker)) throw new Error('V9 V8-anchor not found: duplicate fact block');
-v8 = v8.replace(oldCandidateMarker, newCandidateMarker);
+
+const topicsBefore = v8;
+v8 = v8.replace(
+  /const previousTopics = Object\.values\(usedTopics \|\| \{\}\)\.flat\(\)\.slice\(-80\);/,
+  'const previousTopics = [...Object.values(usedTopics || {}).flat().slice(-80)];'
+);
+if (v8 === topicsBefore) throw new Error('V9 V8-anchor not found: previousTopics');
+
+const topicBlockRe = /(if \(previousTopics\.some\(t => t\.toLowerCase\(\) === topic\.toLowerCase\(\)\)\) \{[\s\S]*?continue;\s*\})/;
+if (!topicBlockRe.test(v8)) throw new Error('V9 V8-anchor not found: duplicate topic block');
+v8 = v8.replace(topicBlockRe, '$1\n    // Reserve immediately so a rejected candidate cannot be suggested again in this run.\n    previousTopics.push(topic);');
+
+const factBlockRe = /(if \(previousFacts\.some\(f => \{[\s\S]*?\}\)\) \{[\s\S]*?continue;\s*\})/;
+if (!factBlockRe.test(v8)) throw new Error('V9 V8-anchor not found: duplicate fact block');
+v8 = v8.replace(factBlockRe, '$1\n      // Reserve immediately so a later attempt cannot regenerate the same fact.\n      previousFacts.push(candidate);');
+
 fs.writeFileSync(v8Path, v8, 'utf8');
 child.execFileSync(process.execPath, ['--check', v8Path], { stdio: 'inherit' });
 
