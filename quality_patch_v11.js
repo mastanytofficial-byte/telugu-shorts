@@ -153,7 +153,7 @@ const contentFn = [
 '    "- Hook first, then one curiosity question, then clear reveal, then the strongest supporting detail, then a memorable ending.",',
 '    "- 8-12 short lines, about 70-100 Telugu words.",',
 '    "- Every line must sound natural when spoken aloud.",',
-'    "- Do not create fragments such as 'అది.', 'రహస్యం.', 'కానీ.'.",',
+'    "- Never output one-word or fragment-only lines.",',
 '    "- Use ... only for genuine suspense, normally 1-2 times.",',
 '    "- Do not repeat the same fact just to increase length.",',
 '    "- Do not add outside facts, comparisons, examples, causes or consequences not present in the verified fact.",',
