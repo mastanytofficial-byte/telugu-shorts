@@ -5,12 +5,7 @@ const SOURCE = path.join(__dirname, 'index.js');
 const RUNTIME = path.join(__dirname, '.index.runtime.v5.js');
 
 function findMatchingBrace(text, openIndex) {
-  let depth = 0;
-  let state = 'code';
-  let escaped = false;
-  let regex = false;
-  let charClass = false;
-  let prevSig = '';
+  let depth = 0, state = 'code', escaped = false, regex = false, charClass = false, prevSig = '';
   const canStartRegex = c => !c || '([{=,:;!&|?+-*%^~<>'.includes(c);
   for (let i = openIndex; i < text.length; i++) {
     const c = text[i], n = text[i + 1];
@@ -56,10 +51,10 @@ const providerReplacement = `async function callLLM(prompt) {
   const providers = [
     { name: 'gemini', key: (process.env.GEMINI_API_KEY || '').trim(), model: 'gemini-2.5-flash', kind: 'gemini' },
     { name: 'openai', key: (process.env.OPENAI_API_KEY || '').trim(), model: 'gpt-5.4-mini', kind: 'openai' },
-    { name: 'openrouter', key: (process.env.OPENROUTER_API_KEY || '').trim(), model: 'openrouter/free', kind: 'openai' },
-    { name: 'huggingface', key: (process.env.HF_TOKEN || '').trim(), model: 'openai/gpt-oss-120b:fastest', kind: 'openai-hf' },
-    { name: 'groq-20b', key: (process.env.GROQ_API_KEY || '').trim(), model: 'openai/gpt-oss-20b', kind: 'openai-groq' },
-    { name: 'groq-120b', key: (process.env.GROQ_API_KEY || '').trim(), model: 'openai/gpt-oss-120b', kind: 'openai-groq' }
+    { name: 'openrouter', key: (process.env.OPENROUTER_API_KEY || '').trim(), model: 'openrouter/free', kind: 'openrouter' },
+    { name: 'huggingface', key: (process.env.HF_TOKEN || '').trim(), model: 'openai/gpt-oss-120b:fastest', kind: 'huggingface' },
+    { name: 'groq-20b', key: (process.env.GROQ_API_KEY || '').trim(), model: 'openai/gpt-oss-20b', kind: 'groq' },
+    { name: 'groq-120b', key: (process.env.GROQ_API_KEY || '').trim(), model: 'openai/gpt-oss-120b', kind: 'groq' }
   ].filter(p => p.key);
 
   if (!providers.length) throw new Error('No LLM API key configured.');
@@ -77,11 +72,7 @@ const providerReplacement = `async function callLLM(prompt) {
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': p.key },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.25,
-              maxOutputTokens: 2200,
-              thinkingConfig: { thinkingBudget: 0 }
-            }
+            generationConfig: { temperature: 0.25, maxOutputTokens: 2200, thinkingConfig: { thinkingBudget: 0 } }
           })
         }, 30000);
         let data = {};
@@ -93,12 +84,14 @@ const providerReplacement = `async function callLLM(prompt) {
       } else {
         let url = 'https://api.openai.com/v1/chat/completions';
         const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + p.key };
-        if (p.kind === 'openai-hf') url = 'https://router.huggingface.co/v1/chat/completions';
-        if (p.kind === 'openai-groq') url = 'https://api.groq.com/openai/v1/chat/completions';
-        if (p.kind === 'openai' && p.name === 'openrouter') {
+        if (p.kind === 'openrouter') {
           url = 'https://openrouter.ai/api/v1/chat/completions';
           headers['HTTP-Referer'] = 'https://github.com/mastanytofficial-byte/telugu-shorts';
           headers['X-Title'] = 'Telugu Amazing Facts Shorts';
+        } else if (p.kind === 'huggingface') {
+          url = 'https://router.huggingface.co/v1/chat/completions';
+        } else if (p.kind === 'groq') {
+          url = 'https://api.groq.com/openai/v1/chat/completions';
         }
         const body = {
           model: p.model,
@@ -137,23 +130,23 @@ const directReplacement = `async function generateContent(category, recentTitles
     ? '\\nRecent titles/openings to avoid repeating: ' + recentTitles.slice(-15).join(' | ')
     : '';
 
-  const prompt = `SOURCE OF TRUTH — VERIFIED FACT OUTLINE:\n${outline}\n\n` +
-    `Write the final spoken narration for a Telugu Amazing Facts YouTube Short.\n` +
-    `IMPORTANT: The outline above is the only factual source. Do not add any new factual detail.\n` +
-    `Do not invent dates, numbers, places, causes, chemicals, comparisons, consequences, or examples.\n` +
-    `You may only rearrange and naturally paraphrase facts already present in the outline.\n\n` +
-    `STYLE:\n` +
-    `- Natural spoken Telugu, preferably Telugu script.\n` +
-    `- Start with the most surprising detail as a curiosity hook.\n` +
-    `- Flow naturally: hook -> curiosity/question -> verified fact -> strongest detail -> memorable ending.\n` +
-    `- 7 to 11 short lines, approximately 45 to 80 words.\n` +
-    `- Complete natural sentences; do not create broken fragments like "అది.", "రహస్యం.", "కానీ."\n` +
-    `- Use ... only for a genuine suspense pause.\n` +
-    `- No title, JSON, labels, emoji, markdown, CTA, or subscribe request.\n` +
-    `- Do not copy the wording of recent videos.\n` + avoid;
+  const prompt = \`SOURCE OF TRUTH — VERIFIED FACT OUTLINE:\\n\${outline}\\n\\n\` +
+    \`Write the final spoken narration for a Telugu Amazing Facts YouTube Short.\\n\` +
+    \`IMPORTANT: The outline above is the only factual source. Do not add any new factual detail.\\n\` +
+    \`Do not invent dates, numbers, places, causes, chemicals, comparisons, consequences, or examples.\\n\` +
+    \`You may only rearrange and naturally paraphrase facts already present in the outline.\\n\\n\` +
+    \`STYLE:\\n\` +
+    \`- Natural spoken Telugu, preferably Telugu script.\\n\` +
+    \`- Start with the most surprising detail as a curiosity hook.\\n\` +
+    \`- Flow naturally: hook -> curiosity/question -> verified fact -> strongest detail -> memorable ending.\\n\` +
+    \`- 7 to 11 short lines, approximately 45 to 80 words.\\n\` +
+    \`- Complete natural sentences; do not create broken fragments like \"అది.\", \"రహస్యం.\", \"కానీ.\"\\n\` +
+    \`- Use ... only for a genuine suspense pause.\\n\` +
+    \`- No title, JSON, labels, emoji, markdown, CTA, or subscribe request.\\n\` +
+    \`- Do not copy the wording of recent videos.\\n\` + avoid;
 
   let script = (await callLLM(prompt)).trim();
-  script = script.replace(/^```(?:text|telugu)?\\s*/i, '').replace(/```$/i, '').trim();
+  script = script.replace(/^\`\`\`(?:text|telugu)?\\s*/i, '').replace(/\`\`\`$/i, '').trim();
   script = script.replace(/^SCRIPT:\\s*/i, '').trim();
   script = script.replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();
 
@@ -179,8 +172,6 @@ let source = fs.readFileSync(SOURCE, 'utf8');
 source = replaceFunction(source, 'async function callLLM(', providerReplacement);
 source = replaceFunction(source, 'async function generateContent(', directReplacement);
 
-// Syntax-check the generated runtime before executing it. This prevents the exact
-// "Unexpected end of input" failure caused by earlier patch files.
 fs.writeFileSync(RUNTIME, source, 'utf8');
 require('child_process').execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 console.log('LLM_ROUTER_V5: clean provider router + fact-locked Telugu script + preflight syntax check applied successfully.');
