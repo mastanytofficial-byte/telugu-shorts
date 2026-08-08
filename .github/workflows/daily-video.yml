@@ -60,19 +60,23 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: npm start
 
-      - name: Save state (avoid duplicate news next run)
+      - name: Save rotation and duplicate-prevention state
         shell: bash
         run: |
           set -euo pipefail
+          test -f state.json || { echo 'state.json was not generated'; exit 1; }
           test -f last-article.json || { echo 'last-article.json was not generated'; exit 1; }
+
+          cp state.json /tmp/state.json.generated
           cp last-article.json /tmp/last-article.json.generated
 
           for attempt in 1 2 3 4 5; do
             echo "Saving state (attempt ${attempt}/5)..."
             git fetch origin main
             git checkout -B main origin/main
+            cp /tmp/state.json.generated state.json
             cp /tmp/last-article.json.generated last-article.json
-            git add last-article.json
+            git add state.json last-article.json
 
             if git diff --cached --quiet; then
               echo 'No state change to commit.'
@@ -81,10 +85,10 @@ jobs:
 
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -m "Update last used article [skip ci]"
+            git commit -m "Persist category and topic rotation state [skip ci]"
 
             if git push origin HEAD:main; then
-              echo 'State saved successfully.'
+              echo 'Rotation state saved successfully.'
               exit 0
             fi
 
