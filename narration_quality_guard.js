@@ -28,7 +28,7 @@ function classifyPrompt(prompt) {
 function qualitySuffix(kind) {
   if (kind === 'beats') return `\n\n${GUARD_MARKER}: FACT-LOCK RULES\n- VERIFIED FACT లో ఉన్న సంఖ్యలు, పేర్లు, ప్రదేశాలు, కాల పరిమితులు, శాస్త్రీయ పదాలు మరియు cause/effect claims ఏవీ మార్చవద్దు.\n- Fact లో లేని కొత్త సంఖ్య, percentage, year, person, place, comparison లేదా consequence జోడించవద్దు.\n- Hook sensational గా ఉండవచ్చు, కానీ verified claim కి మించి overclaim చేయవద్దు.\n- ప్రతి beat అదే verified fact కి నేరుగా సంబంధించినదే కావాలి.\n- ఒకే fact ని రెండు beats లో duplicate చేయవద్దు.`;
 
-  if (kind === 'narration') return `\n\n${GUARD_MARKER}: FINAL NARRATION QUALITY CONTRACT\n- Natural spoken Telugu మాత్రమే. పుస్తక తెలుగు, news-reader style, literal translation, AI-sounding filler వద్దు.\n- Viewer ఒక friend దగ్గర surprising fact వింటున్నట్టు conversational గా చెప్పు.\n- VERIFIED FACT లోని సంఖ్యలు, values, names, places, dates, technical terms మరియు uncertainty/limitation words అచ్చంగా preserve చేయాలి.\n- Source fact లో 120 ఉంటే 112/100/125 లాంటి మరో value ఎప్పుడూ రాయకూడదు.\n- Source లో may/can/some/about/nearly/certain వంటి limitation ఉంటే దాన్ని always/all/exactly/guaranteed గా మార్చవద్దు.\n- Source fact లో లేని statistic, example, comparison, distance, consequence, family detail, biological explanation లేదా real-world implication invent చేయవద్దు.\n- Hook ని question గా ఉంచినా answer ని false certainty గా మార్చవద్దు.\n- ఒకే claim ని synonym మార్చి మళ్లీ చెప్పవద్దు. ప్రతి line కొత్త information లేదా meaningful transition ఇవ్వాలి.\n- ఒక noun/claim ని వరుసగా 2-3 lines లో repeat చేయకుండా natural pronouns/transitions వాడు.\n- Forced metaphors เช่น సముద్రపు గుండె, ప్రకృతి రహస్యం, మాయ, అద్భుతం వంటి generic poetic filler వద్దు.\n- "అసలు విషయం ఏంటంటే", "ఇంకా షాక్ ఏంటంటే", "అయితే" వంటి stock transitions ను అవసరమైనప్పుడు మాత్రమే వాడు.\n- "దూరం ఎంతైనా", "పేరు గుర్తింపు", "కొంచెం ఒకేలా" వంటి vague or grammatically incomplete phrases వద్దు.\n- Telugu grammar first: subject, verb, case endings and sentence agreement సహజంగా ఉండాలి.\n- Technical term English లో అవసరమైతే మాత్రమే; Telugu sentence మధ్య random English words వద్దు.\n- ASCII digits వద్దు. సంఖ్యలు Telugu words లో సహజంగా రాయి.\n- CTA, title, emoji, labels, markdown వద్దు. Existing pipeline CTA ని separately handle చేస్తుంది.\n- 12-18 short spoken lines; repeated sentences వద్దు.\n- Final line fact-specific memorable takeaway కావాలి; generic moral వద్దు.\n- Final output narration మాత్రమే.`;
+  if (kind === 'narration') return `\n\n${GUARD_MARKER}: FINAL NARRATION QUALITY CONTRACT\n- Natural spoken Telugu మాత్రమే. పుస్తక తెలుగు, news-reader style, literal translation, AI-sounding filler వద్దు.\n- Viewer ఒక friend దగ్గర surprising fact వింటున్నట్టు conversational గా చెప్పు.\n- VERIFIED FACT లోని సంఖ్యలు, values, names, places, dates, technical terms మరియు uncertainty/limitation words అచ్చంగా preserve చేయాలి.\n- Source fact లో 120 ఉంటే 112/100/125 లాంటి మరో value ఎప్పుడూ రాయకూడదు.\n- Source లో may/can/some/about/nearly/certain వంటి limitation ఉంటే దాన్ని always/all/exactly/guaranteed గా మార్చవద్దు.\n- Source fact లో లేని statistic, example, comparison, distance, consequence, family detail, biological explanation లేదా real-world implication invent చేయవద్దు.\n- Hook ని question గా ఉంచినా answer ని false certainty గా మార్చవద్దు.\n- ఒకే claim ని synonym మార్చి మళ్లీ చెప్పవద్దు. ప్రతి line కొత్త information లేదా meaningful transition ఇవ్వాలి.\n- ఒక noun/claim ని వరుసగా 2-3 lines లో repeat చేయకుండా natural pronouns/transitions వాడు.\n- Forced metaphors, generic poetic filler, vague slogans వద్దు.\n- "అసలు విషయం ఏంటంటే", "ఇంకా షాక్ ఏంటంటే", "అయితే" వంటి stock transitions ను అవసరమైనప్పుడు మాత్రమే వాడు.\n- Vague phrases లేదా grammatically incomplete phrases వద్దు.\n- Telugu grammar first: subject, verb, case endings and sentence agreement సహజంగా ఉండాలి.\n- Technical term English లో అవసరమైతే మాత్రమే; Telugu sentence మధ్య random English words వద్దు.\n- ASCII digits వద్దు. సంఖ్యలు Telugu words లో సహజంగా రాయి.\n- CTA, title, emoji, labels, markdown వద్దు. Existing pipeline CTA ని separately handle చేస్తుంది.\n- 12-18 short spoken lines; repeated sentences వద్దు.\n- Final line fact-specific memorable takeaway కావాలి; generic moral వద్దు.\n- Final output narration మాత్రమే.`;
 
   return '';
 }
@@ -92,7 +92,7 @@ function hasObviousRepetition(content) {
 
 function hasBadStyle(content) {
   const s = String(content || '');
-  return /సముద్రపు గుండె|పేరు గుర్తింపు|కొంచెం ఒకేలా|అద్భుతమైన మాయ|సుంకించెదు|ఆన్‌లైన్.?శాపం/.test(s) || hasObviousRepetition(s);
+  return /పేరు గుర్తింపు|కొంచెం ఒకేలా|అద్భుతమైన మాయ|సుంకించెదు|ఆన్‌లైన్.?శాపం/.test(s) || hasObviousRepetition(s);
 }
 
 function buildRepairPrompt(originalPrompt, badOutput, reasons) {
@@ -104,7 +104,7 @@ function buildRepairPrompt(originalPrompt, badOutput, reasons) {
 async function callOriginalGroq(options, prompt, temperature = 0.08) {
   let parsed;
   try { parsed = JSON.parse(String(options.body || '{}')); } catch (_) { return null; }
-  const messages = Array.isArray(parsed.messages) ? messagesFrom(parsed.messages) : [];
+  const messages = Array.isArray(parsed.messages) ? parsed.messages.map(m => ({ ...m })) : [];
   if (!messages.length) return null;
   messages[messages.length - 1].content = prompt;
   parsed.messages = messages;
@@ -112,12 +112,8 @@ async function callOriginalGroq(options, prompt, temperature = 0.08) {
   return ORIGINAL_FETCH('https://api.groq.com/openai/v1/chat/completions', { ...options, body: JSON.stringify(parsed) });
 }
 
-function messagesFrom(messages) {
-  return messages.map(m => ({ ...m }));
-}
-
 async function verifyNarration(originalPrompt, narration, options) {
-  const verifyPrompt = `${GUARD_MARKER}: INDEPENDENT FACT-CONSISTENCY CHECK\n\nVERIFIED FACT AND STORY CONTEXT:\n${originalPrompt}\n\nGENERATED NARRATION:\n${narration}\n\nCheck factual consistency only. Compare every number/value, named entity, place, technical term, quantity, limitation and cause/effect claim in narration against VERIFIED FACT. Any changed number/value, invented detail, or stronger claim than the source is FAIL. Repetition or style is not the reason for PASS/FAIL here.\n\nReturn exactly one line: PASS or FAIL`;
+  const verifyPrompt = `${GUARD_MARKER}: INDEPENDENT FACT-CONSISTENCY CHECK\n\nVERIFIED FACT AND STORY CONTEXT:\n${originalPrompt}\n\nGENERATED NARRATION:\n${narration}\n\nCheck factual consistency only. Compare every number/value, named entity, place, technical term, quantity, limitation and cause/effect claim in narration against VERIFIED FACT. Any changed number/value, invented detail, or stronger claim than the source is FAIL.\n\nReturn exactly one line: PASS or FAIL`;
   try {
     const response = await callOriginalGroq(options, verifyPrompt, 0.02);
     if (!response || typeof response.clone !== 'function') {
@@ -136,11 +132,12 @@ async function verifyNarration(originalPrompt, narration, options) {
 }
 
 function makeJsonResponse(data, response) {
-  return new Response(JSON.stringify(data), {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers
-  });
+  return new Response(JSON.stringify(data), { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
+function normalizeCtaText(text) {
+  if (!/సబ్‌స్క్రైబ్|subscribe/i.test(text)) return text;
+  return 'వీడియో నచ్చితే లైక్ చేసి షేర్ చేయండి. మరిన్ని ఇలాంటి వీడియోల కోసం సబ్‌స్క్రైబ్ చేయండి.';
 }
 
 async function guardedFetch(url, options = {}) {
@@ -148,7 +145,8 @@ async function guardedFetch(url, options = {}) {
     try {
       const parsed = JSON.parse(String(options.body || '{}'));
       const raw = JSON.stringify(parsed.input || {});
-      if (/సబ్‌స్క్రైబ్|subscribe|like\s+share/i.test(raw)) {
+      if (/సబ్‌స్క్రైబ్|subscribe/i.test(raw)) {
+        parsed.input = { ...(parsed.input || {}), text: normalizeCtaText(String(parsed.input.text || '')) };
         parsed.audioConfig = { ...(parsed.audioConfig || {}), speakingRate: 1.75 };
         return ORIGINAL_FETCH(url, { ...options, body: JSON.stringify(parsed) });
       }
@@ -160,7 +158,7 @@ async function guardedFetch(url, options = {}) {
 
   let parsed;
   try { parsed = JSON.parse(String(options.body || '{}')); } catch (_) { return ORIGINAL_FETCH(url, options); }
-  const messages = Array.isArray(parsed.messages) ? messagesFrom(parsed.messages) : [];
+  const messages = Array.isArray(parsed.messages) ? parsed.messages.map(m => ({ ...m })) : [];
   const last = messages.length ? messages[messages.length - 1] : null;
   const originalPrompt = last && typeof last.content === 'string' ? last.content : '';
   const patched = patchPrompt(originalPrompt);
@@ -205,7 +203,7 @@ async function guardedFetch(url, options = {}) {
             console.log(`${GUARD_MARKER}: FINAL NARRATION\n${cleaned}`);
             return makeJsonResponse(repairData, repairResponse);
           }
-          console.log(`${GUARD_MARKER}: repair rejected — still violates local style checks; using original response.`);
+          console.log(`${GUARD_MARKER}: repair rejected — still violates local style checks; preserving primary response.`);
         }
       }
     }
