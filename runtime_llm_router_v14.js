@@ -102,7 +102,7 @@ replaceFunction('async function callLLM(', `async function callLLM(prompt) {
         content = choice?.message?.content ? String(choice.message.content) : '';
         if (!content.trim()) throw new Error('empty response (finish_reason: ' + (choice?.finish_reason || 'unknown') + ')');
       }
-      content = String(content).replace(/<think>[\\s\\S]*?<\\/think>/gi, '').trim();
+      content = String(content).replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
       if (!content) throw new Error('empty cleaned response');
       callLLM.cursor = (providers.findIndex(x => x.name === p.name) + 1) % providers.length;
       log('LLM provider success: ' + p.name + ' — rotating provider for next request.');
@@ -126,4 +126,6 @@ child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' })
 fs.writeFileSync(RUNTIME, source, 'utf8');
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 console.log('LLM_ROUTER_V14: V8 original duration behavior restored + rotating provider health + fresh-topic/duplicate system retained + mandatory CTA.');
+
+if (process.env.LLM_ROUTER_PATCH_ONLY === '1') process.exit(0);
 require(RUNTIME);
