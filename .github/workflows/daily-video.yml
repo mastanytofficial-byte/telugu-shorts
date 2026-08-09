@@ -39,8 +39,7 @@ jobs:
 
       - name: Validate automation source
         run: |
-          node --check runtime_llm_router_v17.js
-          node --check runtime_llm_router_v8.js
+          node --check runtime_llm_router.js
           node --check index.js
           node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"
 
