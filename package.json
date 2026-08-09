@@ -4,7 +4,7 @@
   "description": "Automated Telugu daily Amazing Facts YouTube Shorts generator",
   "main": "index.js",
   "scripts": {
-    "start": "node runtime_llm_router_v17.js"
+    "start": "node runtime_llm_router.js"
   },
   "dependencies": {
     "googleapis": "^140.0.0",
