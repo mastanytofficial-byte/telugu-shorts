@@ -19,21 +19,22 @@ function isGoogleTtsRequest(url, options) {
     options && String(options.method || 'GET').toUpperCase() === 'POST';
 }
 
-// IMPORTANT: classify beats BEFORE narration. Both prompts contain
-// "VERIFIED FACT"; using that phrase alone was the root cause of the
-// previous bug where Story Beats were mislabeled as FINAL NARRATION.
+// Stage 2 narration ALSO contains STORY BEATS and the five JSON keys.
+// Therefore narration MUST be detected first. The old order classified the
+// Stage 2 prompt as "beats", applied the 900-token beat budget, and GPT-OSS
+// spent that budget on reasoning before producing visible Telugu.
 function classifyPrompt(prompt) {
   const p = String(prompt || '');
+
+  const isNarration =
+    /TARGET RHYTHM|high-retention storyteller|CALL A of Stage 2|final narration text only|12-18 short spoken lines/i.test(p) &&
+    /STORY BEATS/i.test(p);
+  if (isNarration) return 'narration';
 
   const isBeats =
     /STORY BEATS/i.test(p) &&
     (/5 beats only|5 beats మాత్రమే|story beats ని JSON|\"hook\".*\"question\".*\"reveal\".*\"twist\".*\"ending\"/is.test(p));
   if (isBeats) return 'beats';
-
-  const isNarration =
-    /CALL A of Stage 2|high-retention storyteller|TARGET RHYTHM|final narration text only|12-18 short spoken lines/i.test(p) &&
-    /STORY BEATS/i.test(p);
-  if (isNarration) return 'narration';
 
   return 'other';
 }
@@ -78,10 +79,6 @@ function getGroqContent(data) {
     : null;
 }
 
-function hasBadAsciiNumber(output) {
-  return /\b\d+(?:[.,]\d+)?\b/.test(String(output || ''));
-}
-
 function cleanNarration(content) {
   return String(content || '')
     .replace(/^```(?:text|telugu)?\s*/i, '')
@@ -93,6 +90,10 @@ function cleanNarration(content) {
     .replace(/సుంకించెదు/g, 'తగ్గించవచ్చు')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function hasBadAsciiNumber(output) {
+  return /\b\d+(?:[.,]\d+)?\b/.test(String(output || ''));
 }
 
 function hasObviousRepetition(content) {
@@ -118,15 +119,11 @@ function hasBadStyle(content) {
 }
 
 function buildRepairPrompt(originalPrompt, badOutput, reasons) {
-  return `${originalPrompt}\n\n${GUARD_MARKER}: FINAL REPAIR PASS
-The previous narration failed these checks: ${reasons.join('; ')}.
-Rewrite ONLY the narration from scratch. Preserve every verified fact and value. Remove repetition and unnatural Telugu. Do not invent any fact, number, example, comparison, consequence or location. Keep 12-18 short spoken lines and natural conversational Telugu. Return narration only.` +
-    `\n\nPREVIOUS NARRATION:\n${badOutput}`;
+  return `${originalPrompt}\n\n${GUARD_MARKER}: FINAL REPAIR PASS\nThe previous narration failed these checks: ${reasons.join('; ')}.\nRewrite ONLY the narration from scratch. Preserve every verified fact and value. Remove repetition and unnatural Telugu. Do not invent any fact, number, example, comparison, consequence or location. Keep 12-18 short spoken lines and natural conversational Telugu. Return narration only.\n\nPREVIOUS NARRATION:\n${badOutput}`;
 }
 
 function buildEmptyRetryPrompt(originalPrompt) {
-  return `${originalPrompt}\n\n${GUARD_MARKER}: EMPTY-OUTPUT RECOVERY
-Your previous response was empty because it exhausted its output budget. Do NOT reason aloud. Do NOT explain. Return only the final Telugu narration, 85-115 words, 12-18 short lines, preserving ONLY the supplied verified fact. No JSON, labels, title, CTA, emoji or markdown.`;
+  return `${originalPrompt}\n\n${GUARD_MARKER}: EMPTY-OUTPUT RECOVERY\nThe previous response exhausted its output budget before producing visible narration. Do not reason aloud. Return ONLY the final Telugu narration. Keep it concise: 85-115 words, 12-18 short lines. Preserve ONLY the supplied verified fact. No JSON, labels, title, CTA, emoji or markdown.`;
 }
 
 async function callOriginalGroq(options, prompt, config = {}) {
@@ -139,7 +136,7 @@ async function callOriginalGroq(options, prompt, config = {}) {
   parsed.temperature = config.temperature ?? 0.08;
   parsed.reasoning_effort = config.reasoning_effort || 'low';
   parsed.include_reasoning = false;
-  if (config.max_tokens) parsed.max_tokens = config.max_tokens;
+  parsed.max_tokens = config.max_tokens || 2400;
   return ORIGINAL_FETCH('https://api.groq.com/openai/v1/chat/completions', {
     ...options,
     body: JSON.stringify(parsed)
@@ -147,23 +144,10 @@ async function callOriginalGroq(options, prompt, config = {}) {
 }
 
 async function verifyNarration(originalPrompt, narration, options) {
-  const verifyPrompt = `${GUARD_MARKER}: FACT-CONSISTENCY CHECK
-
-VERIFIED FACT AND STORY CONTEXT:
-${originalPrompt}
-
-GENERATED NARRATION:
-${narration}
-
-Compare every number/value, named entity, place, technical term, quantity, limitation and cause/effect claim against the verified fact. Any changed value, invented detail, or stronger claim is FAIL.
-
-Return exactly one word: PASS or FAIL`;
+  const verifyPrompt = `${GUARD_MARKER}: FACT-CONSISTENCY CHECK\n\nVERIFIED FACT AND STORY CONTEXT:\n${originalPrompt}\n\nGENERATED NARRATION:\n${narration}\n\nCompare every number/value, named entity, place, technical term, quantity, limitation and cause/effect claim against the verified fact. Any changed value, invented detail, or stronger claim is FAIL.\n\nReturn exactly one word: PASS or FAIL`;
   try {
     const response = await callOriginalGroq(options, verifyPrompt, { temperature: 0, max_tokens: 24, reasoning_effort: 'low' });
-    if (!response || typeof response.clone !== 'function') {
-      console.log(`${GUARD_MARKER}: independent fact check = SKIPPED`);
-      return null;
-    }
+    if (!response || typeof response.clone !== 'function') return null;
     const data = await response.clone().json();
     const result = String(getGroqContent(data) || '').trim().toUpperCase();
     console.log(`${GUARD_MARKER}: independent fact check = ${result || 'EMPTY'}`);
@@ -212,23 +196,15 @@ async function guardedFetch(url, options = {}) {
   const originalPrompt = last && typeof last.content === 'string' ? last.content : '';
   const patched = patchPrompt(originalPrompt);
 
-  // Keep every Groq request inside the practical token budget. GPT-OSS
-  // reasoning tokens are part of the completion budget, so low reasoning is
-  // important for these short production tasks.
   parsed.reasoning_effort = 'low';
   parsed.include_reasoning = false;
-  parsed.max_tokens = patched.kind === 'narration' ? 3000 :
-    patched.kind === 'beats' ? 900 :
-    Math.min(Number(parsed.max_tokens) || 6000, 1600);
-
+  parsed.max_tokens = patched.kind === 'narration' ? 2400 :
+    patched.kind === 'beats' ? 900 : 1600;
   if (patched.kind !== 'other') {
     parsed.temperature = patched.kind === 'narration' ? 0.20 : 0.14;
-    parsed.messages = messages;
     if (last) last.content = patched.prompt;
-    options = { ...options, body: JSON.stringify(parsed) };
-  } else {
-    options = { ...options, body: JSON.stringify(parsed) };
   }
+  options = { ...options, body: JSON.stringify(parsed) };
 
   const response = await ORIGINAL_FETCH(url, options);
   if (patched.kind !== 'narration' || !response || typeof response.clone !== 'function') return response;
@@ -237,14 +213,11 @@ async function guardedFetch(url, options = {}) {
     const data = await response.clone().json();
     let content = getGroqContent(data);
 
-    // GPT-OSS can spend the whole completion budget on reasoning and return
-    // an empty visible message. Recover once with low reasoning and a compact
-    // output budget instead of letting the whole video run die.
     if (typeof content !== 'string' || !content.trim()) {
       console.log(`${GUARD_MARKER}: empty narration response detected — running compact recovery pass.`);
       const recoveryResponse = await callOriginalGroq(options, buildEmptyRetryPrompt(patched.prompt), {
-        temperature: 0.12,
-        max_tokens: 2200,
+        temperature: 0.10,
+        max_tokens: 2400,
         reasoning_effort: 'low'
       });
       if (recoveryResponse && typeof recoveryResponse.clone === 'function') {
@@ -269,9 +242,6 @@ async function guardedFetch(url, options = {}) {
     if (hasBadAsciiNumber(content)) reasons.push('ASCII number detected');
     if (hasBadStyle(content)) reasons.push('repetition or unnatural Telugu detected');
 
-    // A verifier outage/rate-limit is not itself a reason to rewrite a good
-    // narration. This prevents the old empty-verifier -> repair -> more
-    // Groq calls -> rate-limit cascade.
     if (!reasons.length) {
       const factPass = await verifyNarration(patched.prompt, content, options);
       if (factPass === false) reasons.push('independent fact check failed');
@@ -282,7 +252,7 @@ async function guardedFetch(url, options = {}) {
       console.log(`${GUARD_MARKER}: narration contract violation detected — repair reasons: ${reasons.join(' | ')}`);
       const repairResponse = await callOriginalGroq(options, buildRepairPrompt(patched.prompt, content, reasons), {
         temperature: 0.08,
-        max_tokens: 2600,
+        max_tokens: 2400,
         reasoning_effort: 'low'
       });
       if (repairResponse && typeof repairResponse.clone === 'function') {
