@@ -1,7 +1,7 @@
 // Stable, idempotent narration-quality guard.
-// Strengthens the existing Groq prompts and performs one automatic repair
-// pass when a narration violates the verified-fact contract.
-// It does not generate a new runtime/index file and does not alter media APIs.
+// Strengthens the existing Groq prompts, performs one automatic repair pass
+// for fact-lock violations, and keeps the spoken CTA compact so it cannot
+// stretch the final visual scene unnecessarily.
 
 const ORIGINAL_FETCH = global.fetch;
 const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V2';
@@ -13,6 +13,11 @@ if (!ORIGINAL_FETCH || ORIGINAL_FETCH.__NARRATION_QUALITY_GUARD__) {
 
 function isGroqChatRequest(url, options) {
   return String(url).includes('api.groq.com/openai/v1/chat/completions') &&
+    options && String(options.method || 'GET').toUpperCase() === 'POST';
+}
+
+function isGoogleTtsRequest(url, options) {
+  return String(url).includes('texttospeech.googleapis.com/v1/text:synthesize') &&
     options && String(options.method || 'GET').toUpperCase() === 'POST';
 }
 
@@ -71,17 +76,6 @@ function narrationNeedsRepair(prompt, content) {
   const text = String(content || '').trim();
   if (!text) return true;
   if (hasBadAsciiNumber(text)) return true;
-  const sourceNumbers = extractSourceNumbers(prompt);
-  if (sourceNumbers.length) {
-    // If the model emits any ASCII number, it is already invalid. For source
-    // values we rely on the repair prompt to force the exact values into
-    // Telugu words rather than accepting a numerically similar hallucination.
-    const wrongNumberPattern = sourceNumbers.some(n => {
-      const alt = text.match(new RegExp(`\\b(?:${n}|\\d+)\\b`, 'g'));
-      return !!alt;
-    });
-    if (wrongNumberPattern) return true;
-  }
   return false;
 }
 
@@ -107,6 +101,23 @@ async function callOriginalGroq(options, prompt) {
 }
 
 async function guardedFetch(url, options = {}) {
+  if (isGoogleTtsRequest(url, options)) {
+    try {
+      const parsed = JSON.parse(String(options.body || '{}'));
+      const raw = JSON.stringify(parsed.input || {});
+      // The pipeline has a visual CTA button already. Keep the spoken CTA
+      // short; this prevents its duration from becoming a disproportionate
+      // part of the final slide while leaving normal narration at 1.08x.
+      if (/సబ్‌స్క్రైబ్|subscribe|like\s+share/i.test(raw)) {
+        parsed.audioConfig = { ...(parsed.audioConfig || {}), speakingRate: 1.75 };
+        return ORIGINAL_FETCH(url, { ...options, body: JSON.stringify(parsed) });
+      }
+    } catch (_) {
+      // Fall through unchanged if the request body is malformed.
+    }
+    return ORIGINAL_FETCH(url, options);
+  }
+
   if (!isGroqChatRequest(url, options)) return ORIGINAL_FETCH(url, options);
 
   let body = options.body;
@@ -134,6 +145,7 @@ async function guardedFetch(url, options = {}) {
     let content = getGroqContent(data);
     if (typeof content !== 'string') return response;
 
+    const originalContent = content;
     content = replaceKnownUnnaturalPhrases(content);
 
     if (narrationNeedsRepair(originalPrompt, content)) {
@@ -153,7 +165,7 @@ async function guardedFetch(url, options = {}) {
       }
     }
 
-    if (content !== getGroqContent(data)) {
+    if (content !== originalContent) {
       data.choices[0].message.content = content;
       return new Response(JSON.stringify(data), {
         status: response.status,
