@@ -140,7 +140,7 @@ const callLLMReplacement = String.raw`async function callLLM(prompt, attempt = 1
         content = choice && choice.message && choice.message.content ? String(choice.message.content) : "";
       }
 
-      content = String(content).replace(/<think>[\\s\\S]*?<\\/think>/gi, "").trim();
+      content = String(content).replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
       if (!content) throw new Error("empty LLM response");
 
       log("LLM provider success: " + provider.name);
