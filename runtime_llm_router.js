@@ -14,6 +14,9 @@ child.execFileSync(process.execPath, ['--check', QUALITY_GUARD], { stdio: 'inher
 fs.copyFileSync(SOURCE, RUNTIME);
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 
-require(QUALITY_GUARD);
-console.log('LLM_ROUTER_STABLE: source + runtime syntax checks passed; quality guard loaded.');
+const guard = require(QUALITY_GUARD);
+if (!guard || guard.marker !== 'NARRATION_QUALITY_GUARD_V2') {
+  throw new Error('Narration quality guard v2 failed to load — refusing to run the video pipeline.');
+}
+console.log('LLM_ROUTER_STABLE: source + runtime syntax checks passed; narration quality guard v2 loaded.');
 require(RUNTIME);
