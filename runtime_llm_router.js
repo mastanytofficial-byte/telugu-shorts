@@ -230,7 +230,11 @@ const categoryReplacement = String.raw`function pickCategory(runCount) {
   const statePath = path.join(__dirname, 'state.json');
   let state = {};
   try { state = JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch (_) {}
-  const history = Array.isArray(state.categoryHistory) ? state.categoryHistory : [];
+  let history = Array.isArray(state.categoryHistory) ? state.categoryHistory : [];
+  if (!history.length && runCount >= FACT_SUBNICHES.length) {
+    const count = FACT_SUBNICHES.length;
+    history = Array.from({ length: count }, (_, i) => FACT_SUBNICHES[(runCount - count + i) % count]);
+  }
   const recent = new Set(history.slice(-FACT_SUBNICHES.length));
   const startIndex = ((runCount % FACT_SUBNICHES.length) + FACT_SUBNICHES.length) % FACT_SUBNICHES.length;
   let category = null;
