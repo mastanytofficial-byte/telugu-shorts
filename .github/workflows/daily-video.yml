@@ -1,4 +1,4 @@
-name: Daily Telugu News Short
+name: Daily Telugu Romantic Quote Short
 
 on:
   schedule:
@@ -7,29 +7,32 @@ on:
 
 permissions:
   contents: write
-  models: read
 
 concurrency:
-  group: daily-video-main
+  group: daily-romantic-main
   cancel-in-progress: false
 
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+
     steps:
-      - name: Checkout repository
+      - name: Checkout romantic branch
         uses: actions/checkout@v4
         with:
+          ref: v3-motivation
           fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends ffmpeg
 
       - name: Verify ffmpeg is available
         run: ffmpeg -version
@@ -37,59 +40,37 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Validate automation source
+      - name: Add reliable quote fallback
         run: |
-          node --check runtime_llm_router.js
-          node --check index.js
-          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('romantic_simple.js')
+          s = p.read_text(encoding='utf-8')
+          marker = "  throw new Error('Could not generate a valid Tenglish romantic quote after 5 attempts.');"
+          if marker not in s:
+              raise SystemExit('Quote failure marker not found; refusing to continue.')
+          replacement = """  const fallback = {\n    title: 'Nee Gurthuga',\n    screen: 'Nuvvu naatho leni prathi kshanam nishabdanga gadichina, naa manasu maatram nee gurthulatho roju kothaga maatladutune untundi, ninnu taluchukuntu.',\n    voice: 'నువ్వు నాతో లేని ప్రతి క్షణం నిశ్శబ్దంగా గడిచినా, నా మనసు మాత్రం నీ జ్ఞాపకాలతో రోజు కొత్తగా మాట్లాడుతూనే ఉంటుంది, నిన్ను తలుచుకుంటూ.',\n    imageQuery: 'lonely person rainy window cinematic portrait'\n  };\n  const fallbackCheck = validate(fallback.screen, fallback.voice);\n  if (!fallbackCheck.valid) throw new Error('Fallback quote failed validation: ' + fallbackCheck.problems.join(' | '));\n  log('Groq did not produce a valid quote after 5 attempts; using curated original fallback.');\n  return fallback;"""
+          p.write_text(s.replace(marker, replacement), encoding='utf-8')
+          PY
 
-      - name: Generate and upload video
+      - name: Verify romantic pipeline syntax
+        run: node --check romantic_simple.js
+
+      - name: Generate and upload romantic quote video
+        timeout-minutes: 12
         env:
-          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          JAMENDO_CLIENT_ID: ${{ secrets.JAMENDO_CLIENT_ID }}
-          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           GOOGLE_TTS_API_KEY: ${{ secrets.GOOGLE_TTS_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: npm start
+        run: node romantic_simple.js
 
-      - name: Save rotation and duplicate-prevention state
-        shell: bash
+      - name: Save quote state to romantic branch
         run: |
-          set -euo pipefail
-          test -f state.json || { echo 'state.json was not generated'; exit 1; }
-          test -f last-article.json || { echo 'last-article.json was not generated'; exit 1; }
-          cp state.json /tmp/state.json.generated
-          cp last-article.json /tmp/last-article.json.generated
-          for attempt in 1 2 3 4 5; do
-            echo "Saving state (attempt ${attempt}/5)..."
-            git fetch origin main
-            git checkout -B main origin/main
-            cp /tmp/state.json.generated state.json
-            cp /tmp/last-article.json.generated last-article.json
-            git add state.json last-article.json
-            if git diff --cached --quiet; then
-              echo 'No state change to commit.'
-              exit 0
-            fi
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -m "Persist category topic and duplicate-prevention state [skip ci]"
-            if git push origin HEAD:main; then
-              echo 'Rotation and duplicate-prevention state saved successfully.'
-              exit 0
-            fi
-            echo 'Push raced with another update; retrying from latest main...'
-            git reset --hard origin/main
-            sleep $((attempt * 2))
-          done
-          echo 'Failed to save state after 5 attempts.'
-          exit 1
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add last-article.json
+          git diff --staged --quiet || git commit -m "Update romantic quote state [skip ci]"
+          git push origin HEAD:v3-motivation
