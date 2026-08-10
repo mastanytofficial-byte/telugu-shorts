@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const { google } = require('googleapis');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -77,20 +77,25 @@ async function makeImage(prompt){
   const p=path.join(WORK_DIR,'background.jpg'); fs.writeFileSync(p,b); log('Created ONE quote-specific full-screen AI image.'); return p;
 }
 
-function wav(file,duration,mood){
-  const sr=44100,total=Math.ceil(sr*duration),a=new Int16Array(total*2);
-  const presets={'quiet affection':[261.63,329.63,392],'tender longing':[220,261.63,329.63],'bittersweet remembrance':[196,246.94,293.66],'warm nostalgia':[174.61,220,261.63],'hopeful reunion':[261.63,329.63,440]};
-  const key=Object.keys(presets).find(k=>mood.toLowerCase().includes(k.split(' ')[1]))||'quiet affection';
-  const notes=presets[key];
-  for(let i=0;i<total;i++){const t=i/sr,chord=notes[Math.floor(t/4)%notes.length],fade=Math.min(1,t/1.5,(duration-t)/1.5);const pad=.012*Math.sin(2*Math.PI*chord*t)+.007*Math.sin(2*Math.PI*(chord*2)*t);const melody=.006*Math.sin(2*Math.PI*(chord*(1+(Math.floor(t*2)%3)*.25))*t);const s=Math.round((pad+melody)*Math.max(0,fade)*32767);a[i*2]=s;a[i*2+1]=s;}
-  const h=Buffer.alloc(44+a.length*2); h.write('RIFF',0);h.writeUInt32LE(36+a.length*2,4);h.write('WAVE',8);h.write('fmt ',12);h.writeUInt32LE(16,16);h.writeUInt16LE(1,20);h.writeUInt16LE(2,22);h.writeUInt32LE(sr,24);h.writeUInt32LE(sr*4,28);h.writeUInt16LE(4,32);h.writeUInt16LE(16,34);h.write('data',36);h.writeUInt32LE(a.length*2,40);for(let i=0;i<a.length;i++)h.writeInt16LE(a[i],44+i*2);fs.writeFileSync(file,h);return file;
+function generateBgm(file,duration,mood){
+  fs.mkdirSync(WORK_DIR,{recursive:true});
+  const script=path.join(__dirname,'romantic_bgm.py');
+  if(!fs.existsSync(script)) throw new Error('romantic_bgm.py is missing');
+  execFileSync('python3',[script,'--output',file,'--seconds',String(duration),'--mood',mood||'quiet affection'],{stdio:'inherit'});
+  if(!fs.existsSync(file) || fs.statSync(file).size<100000) throw new Error('Python BGM was not created correctly');
+  log('Created original mood-matched BGM with Python standard library.');
+  return file;
 }
 function quoteLines(text,max=31){const out=[];let line='';for(const w of text.split(/\s+/)){const n=line?`${line} ${w}`:w;if(line&&n.length>max){out.push(line);line=w}else line=n}if(line)out.push(line);return out.join('\\n');}
 function render(image,bgm,quote){
   const out=path.join(WORK_DIR,'output.mp4'),txt=path.join(WORK_DIR,'quote.txt');fs.writeFileSync(txt,quoteLines(quote),'utf8');
   const font='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
   const vf=`scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0009,1.08)':d=500:s=1080x1920:fps=25,drawbox=x=55:y=650:w=970:h=620:color=black@0.26:t=fill,drawtext=fontfile='${font}':textfile='${txt}':fontcolor=white:fontsize=46:line_spacing=18:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.9:shadowx=2:shadowy=3`;
-  execSync(`ffmpeg -y -loop 1 -i "${image}" -i "${bgm}" -vf "${vf}" -t ${VIDEO_SECONDS} -map 0:v -map 1:a -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest "${out}"`,{stdio:'inherit'});return out;
+  execSync(`ffmpeg -y -loop 1 -i "${image}" -i "${bgm}" -vf "${vf}" -t ${VIDEO_SECONDS} -map 0:v:0 -map 1:a:0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 160k -af "volume=0.82,afade=t=in:st=0:d=1,afade=t=out:st=${VIDEO_SECONDS-1.2}:d=1.2" -shortest "${out}"`,{stdio:'inherit'});
+  const probe=execSync(`ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of csv=p=0 "${out}"`,{encoding:'utf8'}).trim();
+  if(!probe) throw new Error('Final video has no audio stream; refusing upload');
+  log(`Audio verified: ${probe}`);
+  return out;
 }
 async function upload(video,title,quote){
   const auth=new google.auth.OAuth2(YT_CLIENT_ID,YT_CLIENT_SECRET);auth.setCredentials({refresh_token:YT_REFRESH_TOKEN});
@@ -101,8 +106,8 @@ async function upload(video,title,quote){
 async function main(){
   fs.mkdirSync(WORK_DIR,{recursive:true});
   for(const [n,v] of Object.entries({GROQ_API_KEY,YT_CLIENT_ID,YT_CLIENT_SECRET,YT_REFRESH_TOKEN}))if(!v)throw new Error(`${n} is missing`);
-  log('Run: quote + ONE full-screen matching image + ONE matching original BGM. NO VOICE.');
+  log('Run: quote + ONE full-screen matching image + ONE Python-generated matching BGM. NO VOICE.');
   const q=await makeQuote();log(`SCREEN (${countWords(q.screen)} words): ${q.screen}`);log(`MOOD: ${q.mood}`);log(`IMAGE: ${q.image}`);
-  const image=await makeImage(q.image);const bgm=wav(path.join(WORK_DIR,'original_bgm.wav'),VIDEO_SECONDS,q.mood);const video=render(image,bgm,q.screen);await upload(video,q.title,q.screen);saveState(q.title);log('Done.');
+  const image=await makeImage(q.image);const bgm=generateBgm(path.join(WORK_DIR,'original_bgm.wav'),VIDEO_SECONDS,q.mood);const video=render(image,bgm,q.screen);await upload(video,q.title,q.screen);saveState(q.title);log('Done.');
 }
 main().catch(e=>{console.error('FAILED:',e.stack||e);process.exit(1);});
