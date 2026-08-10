@@ -1,51 +1,74 @@
 #!/usr/bin/env python3
-"""Prepare a licensed YouTube Audio Library track for the romantic short.
+"""Automatically download and prepare a licensed cinematic BGM for the romantic short.
 
-The actual music file must be placed in music/. This script never downloads
-or synthesizes music; it only trims, fades and normalizes a user-supplied
-licensed track with ffmpeg.
+Music source: Mixkit Free Music. The selected tracks are published under the
+Mixkit Free License, which permits use in YouTube/social videos. The workflow
+never asks the user to upload a music file.
 """
 import argparse
-import glob
 import os
 import subprocess
+import urllib.request
 
-MOOD_KEYS = {
-    "heartbreak": ["heartbreak", "sad", "melancholy", "dramatic"],
-    "longing": ["longing", "sad", "nostalgia", "melancholy"],
-    "nostalgia": ["nostalgia", "memory", "warm", "piano"],
-    "reunion": ["hope", "hopeful", "uplifting", "romance"],
-    "affection": ["romance", "romantic", "love", "soft", "piano"],
-}
+TRACKS = [
+    {
+        "name": "Silent Descent",
+        "url": "https://assets.mixkit.co/music/download/mixkit-silent-descent-614.mp3",
+        "keywords": ("longing", "melancholic", "bittersweet", "sad", "heartbreak", "missing", "mournful"),
+    },
+    {
+        "name": "Beautiful Dream",
+        "url": "https://assets.mixkit.co/music/download/mixkit-beautiful-dream-493.mp3",
+        "keywords": ("nostalgia", "nostalgic", "warm", "tender", "affection", "affectionate", "romantic", "love"),
+    },
+    {
+        "name": "Dreaming Big",
+        "url": "https://assets.mixkit.co/music/download/mixkit-dreaming-big-31.mp3",
+        "keywords": ("hope", "hopeful", "reunion", "uplifting", "positive", "dreamy"),
+    },
+]
 
 
-def choose_track(mood):
-    files = sorted(glob.glob(os.path.join("music", "*.mp3")) + glob.glob(os.path.join("music", "*.wav")) + glob.glob(os.path.join("music", "*.m4a")))
-    if not files:
-        raise SystemExit("No licensed BGM found in music/. Download a track from YouTube Audio Library and place the MP3 in music/.")
+def choose_track(mood: str):
     m = (mood or "").lower()
-    for key, words in MOOD_KEYS.items():
-        if key in m:
-            for f in files:
-                name = os.path.basename(f).lower()
-                if any(w in name for w in words):
-                    return f
-    return files[0]
+    for track in TRACKS:
+        if any(word in m for word in track["keywords"]):
+            return track
+    return TRACKS[1]
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--output", required=True)
     ap.add_argument("--seconds", type=float, default=20)
-    ap.add_argument("--mood", default="romance")
+    ap.add_argument("--mood", default="romantic")
     args = ap.parse_args()
-    src = choose_track(args.mood)
-    fade_out = max(1.0, args.seconds - 1.2)
-    cmd = ["ffmpeg", "-y", "-i", src, "-t", str(args.seconds), "-vn",
-           "-af", f"loudnorm=I=-18:TP=-1.5:LRA=7,afade=t=in:st=0:d=1,afade=t=out:st={fade_out}:d=1.2",
-           "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", args.output]
+
+    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+    track = choose_track(args.mood)
+    source = os.path.join(os.path.dirname(args.output), "licensed_bgm_source.mp3")
+
+    print(f"Downloading licensed Mixkit BGM: {track['name']} | mood={args.mood}")
+    request = urllib.request.Request(
+        track["url"],
+        headers={"User-Agent": "Mozilla/5.0 (GitHub Actions romantic shorts)"},
+    )
+    with urllib.request.urlopen(request, timeout=60) as response, open(source, "wb") as out:
+        out.write(response.read())
+
+    if os.path.getsize(source) < 50000:
+        raise SystemExit("Licensed BGM download is too small or invalid")
+
+    fade_out = max(1.0, args.seconds - 1.5)
+    cmd = [
+        "ffmpeg", "-y", "-i", source, "-t", str(args.seconds), "-vn",
+        "-af",
+        f"loudnorm=I=-18:TP=-2:LRA=8,afade=t=in:st=0:d=1,afade=t=out:st={fade_out}:d=1.5",
+        "-ar", "44100", "-ac", "2", "-c:a", "pcm_s16le", args.output,
+    ]
     subprocess.run(cmd, check=True)
-    print(f"Selected licensed BGM: {src} | mood={args.mood}")
+
+    print(f"BGM ready: {track['name']} | {args.seconds:.0f}s | source=Mixkit Free License")
 
 
 if __name__ == "__main__":
