@@ -82,8 +82,8 @@ function generateBgm(file,duration,mood){
   const script=path.join(__dirname,'romantic_bgm.py');
   if(!fs.existsSync(script)) throw new Error('romantic_bgm.py is missing');
   execFileSync('python3',[script,'--output',file,'--seconds',String(duration),'--mood',mood||'quiet affection'],{stdio:'inherit'});
-  if(!fs.existsSync(file) || fs.statSync(file).size<100000) throw new Error('Python BGM was not created correctly');
-  log('Created original mood-matched BGM with Python standard library.');
+  if(!fs.existsSync(file) || fs.statSync(file).size<100000) throw new Error('Licensed BGM was not created correctly');
+  log('Created 20-second licensed cinematic BGM matched to the quote mood.');
   return file;
 }
 function quoteLines(text,max=31){const out=[];let line='';for(const w of text.split(/\s+/)){const n=line?`${line} ${w}`:w;if(line&&n.length>max){out.push(line);line=w}else line=n}if(line)out.push(line);return out.join('\\n');}
@@ -100,13 +100,13 @@ function render(image,bgm,quote){
 async function upload(video,title,quote){
   const auth=new google.auth.OAuth2(YT_CLIENT_ID,YT_CLIENT_SECRET);auth.setCredentials({refresh_token:YT_REFRESH_TOKEN});
   const yt=google.youtube({version:'v3',auth});
-  const r=await yt.videos.insert({part:['snippet','status'],requestBody:{snippet:{title:title.slice(0,95),description:`${quote}\n\nOriginal Telugu romantic quote with a quote-specific cinematic image and original instrumental BGM.`,tags:['telugu quotes','telugu romantic quotes','tenglish quotes','romantic shorts','telugu shorts'],categoryId:'22'},status:{privacyStatus:'public',selfDeclaredMadeForKids:false}},media:{body:fs.createReadStream(video)}});
+  const r=await yt.videos.insert({part:['snippet','status'],requestBody:{snippet:{title:title.slice(0,95),description:`${quote}\n\nOriginal Telugu romantic quote with a quote-specific cinematic image and licensed instrumental BGM.`,tags:['telugu quotes','telugu romantic quotes','tenglish quotes','romantic shorts','telugu shorts'],categoryId:'22'},status:{privacyStatus:'public',selfDeclaredMadeForKids:false}},media:{body:fs.createReadStream(video)}});
   log(`Uploaded: https://www.youtube.com/watch?v=${r.data.id}`);
 }
 async function main(){
   fs.mkdirSync(WORK_DIR,{recursive:true});
   for(const [n,v] of Object.entries({GROQ_API_KEY,YT_CLIENT_ID,YT_CLIENT_SECRET,YT_REFRESH_TOKEN}))if(!v)throw new Error(`${n} is missing`);
-  log('Run: quote + ONE full-screen matching image + ONE Python-generated matching BGM. NO VOICE.');
+  log('Run: quote + ONE full-screen matching image + ONE licensed cinematic BGM. NO VOICE.');
   const q=await makeQuote();log(`SCREEN (${countWords(q.screen)} words): ${q.screen}`);log(`MOOD: ${q.mood}`);log(`IMAGE: ${q.image}`);
   const image=await makeImage(q.image);const bgm=generateBgm(path.join(WORK_DIR,'original_bgm.wav'),VIDEO_SECONDS,q.mood);const video=render(image,bgm,q.screen);await upload(video,q.title,q.screen);saveState(q.title);log('Done.');
 }
