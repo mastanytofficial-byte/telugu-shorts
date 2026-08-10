@@ -1,0 +1,32 @@
+name: Clean Romantic Branch
+
+on:
+  push:
+    branches:
+      - romantic-quotes
+
+permissions:
+  contents: write
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout romantic branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Keep only romantic files
+        run: |
+          set -e
+          find . -mindepth 1 -maxdepth 1 ! -name .git ! -name romantic_simple.js ! -name package.json ! -name .github -exec rm -rf {} +
+          find .github/workflows -maxdepth 1 -type f ! -name romantic-short.yml -delete
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git add -A
+          git diff --cached --quiet && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "Keep romantic branch independent [skip ci]"
+          git push
