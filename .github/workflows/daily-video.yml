@@ -1,0 +1,95 @@
+name: Daily Telugu News Short
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  models: read
+
+concurrency:
+  group: daily-video-main
+  cancel-in-progress: false
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Verify ffmpeg is available
+        run: ffmpeg -version
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate automation source
+        run: |
+          node --check runtime_llm_router.js
+          node --check index.js
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"
+
+      - name: Generate and upload video
+        env:
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          JAMENDO_CLIENT_ID: ${{ secrets.JAMENDO_CLIENT_ID }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          GOOGLE_TTS_API_KEY: ${{ secrets.GOOGLE_TTS_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm start
+
+      - name: Save rotation and duplicate-prevention state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f state.json || { echo 'state.json was not generated'; exit 1; }
+          test -f last-article.json || { echo 'last-article.json was not generated'; exit 1; }
+          cp state.json /tmp/state.json.generated
+          cp last-article.json /tmp/last-article.json.generated
+          for attempt in 1 2 3 4 5; do
+            echo "Saving state (attempt ${attempt}/5)..."
+            git fetch origin main
+            git checkout -B main origin/main
+            cp /tmp/state.json.generated state.json
+            cp /tmp/last-article.json.generated last-article.json
+            git add state.json last-article.json
+            if git diff --cached --quiet; then
+              echo 'No state change to commit.'
+              exit 0
+            fi
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -m "Persist category topic and duplicate-prevention state [skip ci]"
+            if git push origin HEAD:main; then
+              echo 'Rotation and duplicate-prevention state saved successfully.'
+              exit 0
+            fi
+            echo 'Push raced with another update; retrying from latest main...'
+            git reset --hard origin/main
+            sleep $((attempt * 2))
+          done
+          echo 'Failed to save state after 5 attempts.'
+          exit 1
