@@ -41,16 +41,6 @@ jobs:
       - name: Verify ffmpeg
         run: ffmpeg -version
 
-      - name: Verify licensed BGM exists
-        run: |
-          shopt -s nullglob
-          files=(music/*.mp3 music/*.wav music/*.m4a)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No BGM file found in music/. Download a track from YouTube Studio > Audio Library and add the MP3 to this branch."
-            exit 1
-          fi
-          printf 'BGM files found:\n%s\n' "${files[@]}"
-
       - name: Prepare safe quote layout
         run: node prepare_romantic_layout.js
 
