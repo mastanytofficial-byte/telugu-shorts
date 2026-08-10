@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Download and prepare a licensed cinematic BGM for the romantic short.
 
-Music source: Mixkit Free Music. The selected tracks are published under the
-Mixkit License. The workflow downloads the preview MP3 endpoint, because the
-legacy /music/download/ endpoint can return HTTP 403 from GitHub Actions.
+The previous Mixkit CDN endpoints return HTTP 403 from GitHub Actions.
+This version uses direct Pixabay CDN files whose corresponding Pixabay pages
+identify them as free for use under the Pixabay Content License.
 """
 import argparse
 import os
@@ -13,19 +13,14 @@ import urllib.request
 
 TRACKS = [
     {
-        "name": "Silent Descent",
-        "url": "https://assets.mixkit.co/music/preview/mixkit-silent-descent-614.mp3",
-        "keywords": ("longing", "melancholic", "bittersweet", "sad", "heartbreak", "missing", "mournful"),
+        "name": "Dramatic Nostalgic Sad Piano and Cello",
+        "url": "https://cdn.pixabay.com/download/audio/2023/01/09/audio_bb355899f8.mp3?filename=dramatic-nostalgic-sad-piano-and-cello-132706.mp3",
+        "keywords": ("longing", "melancholic", "bittersweet", "sad", "heartbreak", "missing", "mournful", "nostalgic"),
     },
     {
-        "name": "Beautiful Dream",
-        "url": "https://assets.mixkit.co/music/preview/mixkit-beautiful-dream-493.mp3",
-        "keywords": ("nostalgia", "nostalgic", "warm", "tender", "affection", "affectionate", "romantic", "love"),
-    },
-    {
-        "name": "Love in the Air",
-        "url": "https://assets.mixkit.co/music/preview/mixkit-love-in-the-air-41.mp3",
-        "keywords": ("hope", "hopeful", "reunion", "uplifting", "positive", "dreamy", "affection"),
+        "name": "Always With Me, Always With You",
+        "url": "https://cdn.pixabay.com/download/audio/2022/02/18/audio_b3c6f0c96f.mp3?filename=always-with-me-always-with-you-long-21256.mp3",
+        "keywords": ("romantic", "love", "affection", "tender", "warm", "dreamy", "hope", "reunion", "positive"),
     },
 ]
 
@@ -43,7 +38,6 @@ def download(track, source):
         track["url"],
         headers={
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
-            "Referer": "https://mixkit.co/",
             "Accept": "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
         },
     )
@@ -62,13 +56,11 @@ def main():
     selected = choose_track(args.mood)
     source = os.path.join(os.path.dirname(args.output), "licensed_bgm_source.mp3")
 
-    # Try the mood-selected track first. If one CDN asset is blocked, try the
-    # other verified Mixkit romantic tracks instead of failing the whole run.
     ordered = [selected] + [t for t in TRACKS if t is not selected]
     last_error = None
     for track in ordered:
         try:
-            print(f"Downloading licensed Mixkit BGM: {track['name']} | mood={args.mood}")
+            print(f"Downloading licensed Pixabay BGM: {track['name']} | mood={args.mood}")
             download(track, source)
             if os.path.getsize(source) < 50000:
                 raise RuntimeError("downloaded file is too small")
@@ -78,7 +70,7 @@ def main():
             last_error = exc
             print(f"BGM download failed for {track['name']}: {exc}; trying next licensed track.")
     else:
-        raise SystemExit(f"All licensed Mixkit BGM downloads failed: {last_error}")
+        raise SystemExit(f"All licensed Pixabay BGM downloads failed: {last_error}")
 
     fade_out = max(1.0, args.seconds - 1.5)
     cmd = [
@@ -89,7 +81,7 @@ def main():
     ]
     subprocess.run(cmd, check=True)
 
-    print(f"BGM ready: {selected['name']} | {args.seconds:.0f}s | source=Mixkit Free License")
+    print(f"BGM ready: {selected['name']} | {args.seconds:.0f}s | source=Pixabay Content License")
 
 
 if __name__ == "__main__":
