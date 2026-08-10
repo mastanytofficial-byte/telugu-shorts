@@ -1,0 +1,68 @@
+name: Romantic Quote Short - Licensed BGM
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: romantic-licensed-bgm
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout romantic branch
+        uses: actions/checkout@v4
+        with:
+          ref: romantic-quotes
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify Python
+        run: |
+          python3 --version
+          python3 -m py_compile romantic_bgm.py
+
+      - name: Install ffmpeg
+        timeout-minutes: 3
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Verify ffmpeg
+        run: ffmpeg -version
+
+      - name: Prepare safe quote layout
+        run: node prepare_romantic_layout.js
+
+      - name: Install romantic dependencies
+        timeout-minutes: 3
+        run: npm install googleapis@^140.0.0 --no-save --no-audit --no-fund
+
+      - name: Verify romantic source
+        run: node --check romantic_simple.js
+
+      - name: Generate and upload romantic short
+        timeout-minutes: 15
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: node romantic_simple.js
+
+      - name: Save romantic state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add romantic-last-article.json
+          git diff --staged --quiet || git commit -m "Update romantic quote state [skip ci]"
+          git push origin romantic-quotes
