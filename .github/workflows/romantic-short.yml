@@ -32,7 +32,50 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Verify source
+      - name: Add guaranteed quote fallback
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('romantic_simple.js')
+          s = p.read_text(encoding='utf-8')
+          marker = "  throw new Error('Could not generate a valid Tenglish romantic quote after 5 attempts.');"
+          if marker not in s:
+              raise SystemExit('Expected quote failure marker not found.')
+          replacement = r'''  const FALLBACK_QUOTES = [
+    {
+      title: 'Nee Gurthuga',
+      screen: 'Nuvvu naatho leni prathi kshanam nishabdanga gadichina, naa manasu maatram nee gurthulatho roju kothaga maatladutune untundi.',
+      voice: 'నువ్వు నాతో లేని ప్రతి క్షణం నిశ్శబ్దంగా గడిచినా, నా మనసు మాత్రం నీ జ్ఞాపకాలతో రోజు కొత్తగా మాట్లాడుతూనే ఉంటుంది.',
+      imageQuery: 'lonely person rainy window cinematic portrait'
+    },
+    {
+      title: 'Oka Kshanam',
+      screen: 'Kalisi gadipina aa chinna kshanam ippatiki naa manasulo nilichipoyi, enni rojulu gadichina malli ade anubhoothini gurtuchestundi.',
+      voice: 'కలిసి గడిపిన ఆ చిన్న క్షణం ఇప్పటికీ నా మనసులో నిలిచిపోయి, ఎన్ని రోజులు గడిచినా మళ్ళీ అదే అనుభూతిని గుర్తుచేస్తుంది.',
+      imageQuery: 'couple walking sunset silhouette warm cinematic'
+    },
+    {
+      title: 'Mounamlo Maata',
+      screen: 'Nuvvu emi cheppakapoyina nee kallalo kanipinchina aa chinna maata, naa manasulo enno rojulu cheragani gurthuga migilipoyindi.',
+      voice: 'నువ్వు ఏమీ చెప్పకపోయినా నీ కళ్ళలో కనిపించిన ఆ చిన్న మాట, నా మనసులో ఎన్నో రోజులు చెరగని జ్ఞాపకంగా మిగిలిపోయింది.',
+      imageQuery: 'couple looking sunset cinematic portrait'
+    },
+    {
+      title: 'Nee Kosam',
+      screen: 'Dooram perigina koddi nee gurthulu maatram marinta daggaravutunnayi, ninnu kalavaleni prathi roju nee kosam naa manasu marinta eduruchustundi.',
+      voice: 'దూరం పెరిగిన కొద్దీ నీ జ్ఞాపకాలు మాత్రం మరింత దగ్గరవుతున్నాయి, నిన్ను కలవలేని ప్రతి రోజు నీ కోసం నా మనసు మరింత ఎదురుచూస్తుంది.',
+      imageQuery: 'person waiting by window evening cinematic'
+    }
+  ];
+  const fallback = FALLBACK_QUOTES[runCount % FALLBACK_QUOTES.length];
+  const fallbackCheck = validate(fallback.screen, fallback.voice);
+  if (!fallbackCheck.valid) throw new Error('Guaranteed fallback failed validation: ' + fallbackCheck.problems.join(' | '));
+  log('Groq did not produce a valid quote after 5 attempts; using curated original fallback.');
+  return fallback;'''
+          p.write_text(s.replace(marker, replacement), encoding='utf-8')
+          PY
+
+      - name: Verify source after fallback injection
         run: node --check romantic_simple.js
 
       - name: Generate and upload
