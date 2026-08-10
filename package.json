@@ -1,13 +1,10 @@
 {
-  "name": "telugu-shorts",
+  "name": "telugu-romantic-shorts",
   "version": "1.0.0",
-  "description": "Automated Telugu daily Amazing Facts YouTube Shorts generator",
-  "main": "index.js",
-  "scripts": {
-    "start": "node runtime_llm_router.js"
-  },
+  "private": true,
+  "description": "Automated Telugu romantic quote YouTube Shorts generator",
+  "main": "romantic_simple.js",
   "dependencies": {
-    "googleapis": "^140.0.0",
-    "puppeteer": "^23.0.0"
+    "googleapis": "^140.0.0"
   }
 }
