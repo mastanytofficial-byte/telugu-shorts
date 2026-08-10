@@ -29,16 +29,18 @@ jobs:
       - name: Verify Python
         run: |
           python3 --version
-          python3 -m py_compile romantic_bgm.py
+          python3 -m py_compile romantic_bgm.py render_quote.py
 
-      - name: Install ffmpeg
+      - name: Install ffmpeg and Pillow
         timeout-minutes: 3
         run: |
           sudo apt-get update -o Acquire::Retries=3
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg python3-pil
 
-      - name: Verify ffmpeg
-        run: ffmpeg -version
+      - name: Verify ffmpeg and Pillow
+        run: |
+          ffmpeg -version
+          python3 -c "from PIL import Image, ImageDraw, ImageFont; print('Pillow OK')"
 
       - name: Prepare safe quote layout
         run: node prepare_romantic_layout.js
