@@ -1,0 +1,14 @@
+name: Romantic Quote Short - Licensed BGM
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 3 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  romantic:
+    uses: mastanytofficial-byte/telugu-shorts/.github/workflows/romantic-python-bgm.yml@romantic-quotes
+    secrets: inherit
