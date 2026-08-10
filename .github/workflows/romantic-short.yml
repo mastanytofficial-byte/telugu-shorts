@@ -1,0 +1,15 @@
+name: Romantic Quote Short
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 3 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  romantic:
+    name: Run romantic automation from romantic-quotes branch
+    uses: mastanytofficial-byte/telugu-shorts/.github/workflows/romantic-short.yml@romantic-quotes
+    secrets: inherit
