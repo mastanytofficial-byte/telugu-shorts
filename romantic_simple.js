@@ -23,6 +23,14 @@ const FORBIDDEN = new Set([
   'night','rain','sorry','romantic','quote'
 ]);
 
+const FALLBACKS = [
+  { title:'Nee Gurthulu', screen:'Nuvvu naatho leni prathi kshanam mounanga gadichina, nee gurthulu maatram naa manasulo mellaga palike oka madhuramaina maata la migilipoyayi', mood:'nostalgic longing', image:'a person sitting beside a rainy window at dusk, warm room light, quiet longing, cinematic romantic photography' },
+  { title:'Mounamlo Prema', screen:'Cheppaleni enno maatala madhya, nee kosam aagipoye naa mouname ninnu entha ga korukuntundo prathi roju naaku chebutune untundi', mood:'quiet affection', image:'a person sitting quietly beside a window at sunset, soft golden light, peaceful romantic atmosphere, cinematic photography' },
+  { title:'Dooramaina Kshanam', screen:'Mana madhya dooram perigina prathi adugulo, kalisi gadipina chinna kshanalu naa venta nadusthu nannu malli nee daggariki teesukeltunnayi', mood:'bittersweet remembrance', image:'an empty road at twilight with a distant couple silhouette, nostalgic romantic mood, cinematic photography' },
+  { title:'Malli Kalavalani', screen:'Entha dooram vellina manasuki nachina vyakti gurthulu povu, avi marinta daggaravutayi endukante avi manasulo nijamaina chotunu pondutayi', mood:'hopeful reunion', image:'two people meeting on a quiet beach at sunset, warm hopeful romantic mood, cinematic photography' },
+  { title:'Oka Chinna Gnapakam', screen:'Nee tho gadipina oka chinna saayantram ippatiki naa manasulo velugula undi, aa kshanam gurthosthe chaalu naa mounam antha navvuthundi', mood:'warm nostalgia', image:'a couple walking under evening lights, soft warm glow, tender nostalgic romance, cinematic photography' }
+];
+
 function log(x){ console.log(`[${new Date().toISOString()}] ${x}`); }
 async function get(url, options={}, timeout=30000){
   const c=new AbortController(); const t=setTimeout(()=>c.abort(),timeout);
@@ -48,13 +56,16 @@ function parse(raw){
 async function makeQuote(){
   const themes=['dooramaina prema','mounamaina anubandham','gurthulu','eduruchupu','malli kalavalani korika','oka madhuramaina kshanam','cheppaleni anubhoothi'];
   const theme=themes[state().runCount%themes.length];
-  const prompt=`Create ONE completely original romantic Telugu quote for a YouTube Short. Theme: ${theme}.\nSCREEN: exactly 16-28 words. Write ONLY Telugu vocabulary using English alphabet (Tenglish). ZERO English words. No hashtags. No movie lyrics, song lyrics, famous quotes or imitation. Natural Telugu, emotional, poetic, mature, simple and memorable. Make one flowing thought with 2-3 connected clauses. IMPORTANT: keep the sentence visually compact; avoid very long individual words.\nMOOD: give 2-4 English mood words only.\nIMAGE_PROMPT: write one detailed English prompt for ONE full-screen 9:16 cinematic photograph that exactly matches the quote's emotion and situation. Include subject, setting, lighting, atmosphere and emotion. No text, no watermark, no collage.\nReturn exactly four lines: TITLE: ...\nSCREEN: ...\nMOOD: ...\nIMAGE_PROMPT: ...`;
+  const prompt=`Create ONE completely original romantic Telugu quote for a YouTube Short. Theme: ${theme}.\nSCREEN: exactly 16-36 words. Write ONLY Telugu vocabulary using English alphabet (Tenglish). ZERO English words. No hashtags. No movie lyrics, song lyrics, famous quotes or imitation. Natural Telugu, emotional, poetic, mature, simple and memorable. Make one flowing thought with 2-3 connected clauses. IMPORTANT: keep the sentence visually compact; avoid very long individual words.\nMOOD: give 2-4 English mood words only.\nIMAGE_PROMPT: write one detailed English prompt for ONE full-screen 9:16 cinematic photograph that exactly matches the quote's emotion and situation. Include subject, setting, lighting, atmosphere and emotion. No text, no watermark, no collage.\nReturn exactly four lines: TITLE: ...\nSCREEN: ...\nMOOD: ...\nIMAGE_PROMPT: ...`;
   for(let i=1;i<=5;i++){
-    const q=parse(await groq(prompt+(i>1?'\nPrevious attempt was invalid. Write a completely new compact 16-24 word Telugu thought. Do not make it longer.':'')));
+    const q=parse(await groq(prompt+(i>1?'\nPrevious attempt was invalid because it was under 16 words. Write a completely new 16-24 word Telugu thought and make sure it has at least 16 space-separated words. Do not make it shorter.':'')));
     log(`Quote attempt ${i}: ${countWords(q.screen)} words, valid=${validQuote(q.screen)}`);
     if(validQuote(q.screen)&&q.image) return q;
   }
-  throw new Error('Could not generate a valid compact Telugu romantic quote after 5 attempts.');
+  const f=FALLBACKS[state().runCount%FALLBACKS.length];
+  if(!validQuote(f.screen)) throw new Error('Curated romantic fallback failed validation');
+  log(`Groq did not produce a valid quote; using curated original fallback: ${f.title}`);
+  return f;
 }
 async function makeImage(prompt){
   fs.mkdirSync(WORK_DIR,{recursive:true});
