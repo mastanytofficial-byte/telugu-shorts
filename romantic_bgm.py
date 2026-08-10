@@ -23,9 +23,9 @@ TRACKS = [
         "keywords": ("nostalgia", "nostalgic", "warm", "tender", "affection", "affectionate", "romantic", "love"),
     },
     {
-        "name": "Possible Dreams",
-        "url": "https://assets.mixkit.co/music/preview/mixkit-possible-dreams-799.mp3",
-        "keywords": ("hope", "hopeful", "reunion", "uplifting", "positive", "dreamy"),
+        "name": "Love in the Air",
+        "url": "https://assets.mixkit.co/music/preview/mixkit-love-in-the-air-41.mp3",
+        "keywords": ("hope", "hopeful", "reunion", "uplifting", "positive", "dreamy", "affection"),
     },
 ]
 
@@ -62,8 +62,8 @@ def main():
     selected = choose_track(args.mood)
     source = os.path.join(os.path.dirname(args.output), "licensed_bgm_source.mp3")
 
-    # Try the mood-selected track first. If the CDN blocks one asset, try the
-    # other licensed romantic tracks instead of failing the whole workflow.
+    # Try the mood-selected track first. If one CDN asset is blocked, try the
+    # other verified Mixkit romantic tracks instead of failing the whole run.
     ordered = [selected] + [t for t in TRACKS if t is not selected]
     last_error = None
     for track in ordered:
