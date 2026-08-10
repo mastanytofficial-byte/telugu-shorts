@@ -57,9 +57,9 @@ function parse(raw){
 async function makeQuote(){
   const themes=['dooramaina prema','mounamaina anubandham','gurthulu','eduruchupu','malli kalavalani korika','oka madhuramaina kshanam','cheppaleni anubhoothi'];
   const theme=themes[state().runCount%themes.length];
-  const prompt=`Create ONE completely original romantic Telugu quote for a YouTube Short. Theme: ${theme}.\nSCREEN: exactly 16-36 words. Write ONLY Telugu vocabulary using English alphabet (Tenglish). ZERO English words. No hashtags. No movie lyrics, song lyrics, famous quotes or imitation. Natural Telugu, emotional, poetic, mature, simple and memorable. Do not write a short slogan. Make one flowing thought with 2-3 connected clauses.\nMOOD: give 2-4 English mood words only.\nIMAGE_PROMPT: write one detailed English prompt for ONE full-screen 9:16 cinematic photograph that exactly matches the quote's emotion and situation. Include subject, setting, lighting, atmosphere and emotion. No text, no watermark, no collage.\nReturn exactly four lines: TITLE: ...\nSCREEN: ...\nMOOD: ...\nIMAGE_PROMPT: ...`;
+  const prompt=`Create ONE completely original romantic Telugu quote for a YouTube Short. Theme: ${theme}.\nSCREEN: exactly 16-36 words. Write ONLY Telugu vocabulary using English alphabet (Tenglish). ZERO English words. No hashtags. No movie lyrics, song lyrics, famous quotes or imitation. Natural Telugu, emotional, poetic, mature, simple and memorable. Do not write a short slogan. Make one flowing thought with 2-3 connected clauses. Avoid awkward literal translations and unnatural word combinations. Read the sentence once before returning it and rewrite it if the grammar is unnatural.\nMOOD: give 2-4 English mood words only.\nIMAGE_PROMPT: write one detailed English prompt for ONE full-screen 9:16 cinematic photograph that exactly matches the quote's emotion and situation. Include subject, setting, lighting, atmosphere and emotion. No text, no watermark, no collage.\nReturn exactly four lines: TITLE: ...\nSCREEN: ...\nMOOD: ...\nIMAGE_PROMPT: ...`;
   for(let i=1;i<=5;i++){
-    const q=parse(await groq(prompt+(i>1?'\nPrevious attempt was invalid. Write a completely new 20-30 word Telugu thought, not a shorter version.':'')));
+    const q=parse(await groq(prompt+(i>1?'\nPrevious attempt was invalid. Write a completely new 20-30 word Telugu thought, not a shorter version. Make the Telugu grammar natural and coherent.':'')));
     log(`Quote attempt ${i}: ${countWords(q.screen)} words, valid=${validQuote(q.screen)}`);
     if(validQuote(q.screen)&&q.image) return q;
   }
@@ -86,11 +86,25 @@ function generateBgm(file,duration,mood){
   log('Created 20-second licensed cinematic BGM matched to the quote mood.');
   return file;
 }
-function quoteLines(text,max=31){const out=[];let line='';for(const w of text.split(/\s+/)){const n=line?`${line} ${w}`:w;if(line&&n.length>max){out.push(line);line=w}else line=n}if(line)out.push(line);return out.join('\\n');}
+
+// Wrap by character count so every line stays safely inside the 1080px canvas.
+// Shorter lines are intentional: Tenglish characters vary in rendered pixel width.
+function quoteLines(text,max=24){
+  const out=[]; let line='';
+  for(const w of String(text).trim().split(/\s+/)){
+    const n=line?`${line} ${w}`:w;
+    if(line && n.length>max){out.push(line); line=w;} else line=n;
+  }
+  if(line) out.push(line);
+  return out.join('\\n');
+}
+
 function render(image,bgm,quote){
-  const out=path.join(WORK_DIR,'output.mp4'),txt=path.join(WORK_DIR,'quote.txt');fs.writeFileSync(txt,quoteLines(quote),'utf8');
+  const out=path.join(WORK_DIR,'output.mp4'),txt=path.join(WORK_DIR,'quote.txt');
+  const wrapped=quoteLines(quote,24);
+  fs.writeFileSync(txt,wrapped,'utf8');
   const font='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
-  const vf=`scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0009,1.08)':d=500:s=1080x1920:fps=25,drawbox=x=55:y=650:w=970:h=620:color=black@0.26:t=fill,drawtext=fontfile='${font}':textfile='${txt}':fontcolor=white:fontsize=46:line_spacing=18:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.9:shadowx=2:shadowy=3`;
+  const vf=`scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0009,1.08)':d=500:s=1080x1920:fps=25,drawbox=x=70:y=555:w=940:h=810:color=black@0.28:t=fill,drawtext=fontfile='${font}':textfile='${txt}':fontcolor=white:fontsize=38:line_spacing=20:x=(w-text_w)/2:y=(h-text_h)/2:shadowcolor=black@0.95:shadowx=2:shadowy=3`;
   execSync(`ffmpeg -y -loop 1 -i "${image}" -i "${bgm}" -vf "${vf}" -t ${VIDEO_SECONDS} -map 0:v:0 -map 1:a:0 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 160k -af "volume=0.82,afade=t=in:st=0:d=1,afade=t=out:st=${VIDEO_SECONDS-1.2}:d=1.2" -shortest "${out}"`,{stdio:'inherit'});
   const probe=execSync(`ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of csv=p=0 "${out}"`,{encoding:'utf8'}).trim();
   if(!probe) throw new Error('Final video has no audio stream; refusing upload');
