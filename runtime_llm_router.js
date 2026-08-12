@@ -13,6 +13,17 @@ child.execFileSync(process.execPath, ['--check', SOURCE], { stdio: 'inherit' });
 child.execFileSync(process.execPath, ['--check', QUALITY_GUARD], { stdio: 'inherit' });
 
 fs.copyFileSync(SOURCE, RUNTIME);
+
+// Current channel branding: every generated video uses FactVerse Telugu.
+// Patch only the copied runtime so index.js remains the single source of truth.
+const runtimeSource = fs.readFileSync(RUNTIME, 'utf8');
+const OLD_BRAND = "text='TELUGU ECHO'";
+const NEW_BRAND = "text='FACTVERSE TELUGU'";
+if (!runtimeSource.includes(OLD_BRAND)) {
+  throw new Error('Branding preflight failed: TELUGU ECHO marker not found in index.js');
+}
+fs.writeFileSync(RUNTIME, runtimeSource.replace(OLD_BRAND, NEW_BRAND), 'utf8');
+
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 
 // Preflight wrapper: keep every Groq request comfortably below the
