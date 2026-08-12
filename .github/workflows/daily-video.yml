@@ -2,7 +2,10 @@ name: Daily Telugu News Short
 
 on:
   schedule:
-    - cron: '30 3 * * *'
+    # Two daily runs in India time (IST / UTC+5:30):
+    # 1:00 PM IST and 8:00 PM IST
+    - cron: '30 7 * * *'
+    - cron: '30 14 * * *'
   workflow_dispatch: {}
 
 permissions:
