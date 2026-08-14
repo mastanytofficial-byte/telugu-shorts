@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,11 +31,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Verify ffmpeg is available
-        run: ffmpeg -version
+      - name: Ensure ffmpeg is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v ffmpeg >/dev/null 2>&1; then
+            echo "FFmpeg already available: $(command -v ffmpeg)"
+          else
+            echo 'FFmpeg is not preinstalled; installing from Ubuntu packages...'
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          ffmpeg -version | head -n 1
 
       - name: Install dependencies
         run: npm install
