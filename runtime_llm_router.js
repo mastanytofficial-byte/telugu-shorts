@@ -7,7 +7,7 @@ const child = require('child_process');
 const SOURCE = path.join(__dirname, 'index.js');
 const RUNTIME = path.join(__dirname, '.index.runtime.js');
 const QUALITY_GUARD = path.join(__dirname, 'narration_quality_guard.js');
-const EXPECTED_GUARD = 'NARRATION_QUALITY_GUARD_V8';
+const EXPECTED_GUARD = 'NARRATION_QUALITY_GUARD_V9';
 
 child.execFileSync(process.execPath, ['--check', SOURCE], { stdio: 'inherit' });
 child.execFileSync(process.execPath, ['--check', QUALITY_GUARD], { stdio: 'inherit' });
@@ -26,8 +26,8 @@ fs.writeFileSync(RUNTIME, runtimeSource.replace(OLD_BRAND, NEW_BRAND), 'utf8');
 
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 
-// Preflight wrapper: keep every Groq request below the configured token ceiling.
-// The narration quality guard handles only narration-specific prompt/quality work.
+// Preflight wrapper: use the current Groq completion parameter and leave
+// enough completion headroom for GPT-OSS reasoning + final narration.
 const NATIVE_FETCH = global.fetch;
 if (!NATIVE_FETCH) throw new Error('Global fetch is unavailable.');
 global.fetch = async (url, options = {}) => {
@@ -40,14 +40,9 @@ global.fetch = async (url, options = {}) => {
     return NATIVE_FETCH(url, options);
   }
 
-  body.max_tokens = Math.min(Number(body.max_tokens) || 2400, 2400);
-
-  if (Array.isArray(body.messages) && body.messages.length) {
-    const last = body.messages[body.messages.length - 1];
-    if (last && typeof last.content === 'string' && /story beats/i.test(last.content) && /STORY BEATS/i.test(last.content) && /VERIFIED FACT/i.test(last.content) && !/TARGET RHYTHM|FINAL NARRATION QUALITY CONTRACT/i.test(last.content)) {
-      last.content = last.content.replace(/VERIFIED FACT/g, 'SOURCE FACT');
-    }
-  }
+  const requested = Number(body.max_completion_tokens ?? body.max_tokens);
+  body.max_completion_tokens = Math.min(Number.isFinite(requested) && requested > 0 ? requested : 3000, 3000);
+  delete body.max_tokens;
 
   return NATIVE_FETCH(url, { ...options, body: JSON.stringify(body) });
 };
