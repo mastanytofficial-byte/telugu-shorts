@@ -1,9 +1,9 @@
-// Stable narration-quality guard V9.
+// Stable narration-quality guard V10.
+// Enforces factual, logically connected narration style without forcing pure Telugu.
 // Quality checks are non-blocking: one Groq request per narration generation.
-// This avoids retry/repair request loops that can amplify rate limits.
 
 const ORIGINAL_FETCH = global.fetch;
-const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V9';
+const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V10';
 
 if (!ORIGINAL_FETCH || ORIGINAL_FETCH.__NARRATION_QUALITY_GUARD__) {
   module.exports = { enabled: true, marker: GUARD_MARKER };
@@ -31,8 +31,6 @@ function classify(prompt) {
 }
 
 function tokenBudget(kind) {
-  // GPT-OSS reasoning tokens share the completion budget, so keep enough
-  // headroom for both reasoning and the requested Telugu narration.
   if (kind === 'narration') return 3000;
   if (kind === 'beats') return 600;
   if (kind === 'verification') return 350;
@@ -55,18 +53,6 @@ function clean(text) {
     .trim();
 }
 
-function normalizeTechnicalTerms(text) {
-  let s = String(text || '');
-  const map = {
-    'BMAL-1':'బీఎంఏఎల్ ఒకటి','BMAL1':'బీఎంఏఎల్ ఒకటి','CLOCK':'క్లాక్','GPS':'జీపీఎస్',
-    'DNA':'డీఎన్ఏ','RNA':'ఆర్ఎన్ఏ','MRI':'ఎంఆర్ఐ','CPU':'సీపీయూ','GPU':'జీపీయూ',
-    'API':'ఏపీఐ','TTS':'టీఎటీఎస్','CRISPR':'క్రిస్పర్','PER':'పీఈఆర్','CRY':'సీఆర్‌వై',
-    'SCN':'ఎస్‌సీఎన్','STM':'ఎస్‌టీఎమ్','AI':'ఏఐ'
-  };
-  for (const [from,to] of Object.entries(map)) s = s.replace(new RegExp(`\\b${from}\\b`, 'gi'), to);
-  return s.replace(/\b[A-Z]{2,8}\b/g, m => m.split('').map(c => ({A:'ఏ',B:'బీ',C:'సీ',D:'డీ',E:'ఈ',F:'ఎఫ్',G:'జీ',H:'ఏచ్',I:'ఐ',J:'జే',K:'కే',L:'ఎల్',M:'ఎమ్',N:'ఎన్',O:'ఓ',P:'పీ',Q:'క్యూ',R:'ఆర్',S:'ఎస్',T:'టీ',U:'యూ',V:'వీ',W:'డబ్ల్యూ',X:'ఎక్స్',Y:'వై',Z:'జెడ్'}[c] || c)).join(''));
-}
-
 function qualityReasons(text) {
   const s = String(text || '');
   const lines = s.split(/\n+/).map(x => x.trim()).filter(Boolean);
@@ -74,18 +60,15 @@ function qualityReasons(text) {
   if (!s) reasons.push('empty narration');
   if (lines.length < 10 || lines.length > 18) reasons.push(`line count ${lines.length}`);
   if (lines.some(x => x.length > 180)) reasons.push('line too long');
-  if (/\b\d+(?:[.,]\d+)?\b/.test(s)) reasons.push('ASCII number');
-  if (/\.\.\./.test(s)) reasons.push('ellipsis');
   if ((s.match(/\?/g) || []).length > 2) reasons.push('too many questions');
-  if (/\b(?:CLOCK|BMAL1|BMAL-1|PER|CRY|SCN|DNA|RNA|MRI|CPU|GPU|GPS|AI|API|TTS|STM|CRISPR)\b/i.test(s)) reasons.push('raw technical acronym');
-  const english = s.match(/\b[A-Za-z][A-Za-z0-9-]{2,}\b/g) || [];
-  if (english.some(w => !['YouTube','Google','Groq','Pexels'].includes(w))) reasons.push('unnecessary English');
   return [...new Set(reasons)];
 }
 
 function suffix(kind) {
-  if (kind === 'beats') return `\n\n${GUARD_MARKER}: FACT-FIRST STORY CONTRACT\n- VERIFIED FACT లోని numbers, values, names, places, dates and cause/effect claims మార్చవద్దు.\n- Fact లో లేని కొత్త number, percentage, year, person, place, comparison లేదా consequence invent చేయవద్దు.\n- Hook curiosity కోసం మాత్రమే; sensational overclaim వద్దు.`;
-  if (kind === 'narration') return `\n\n${GUARD_MARKER}: FINAL NARRATION CONTRACT\n- సహజంగా మాట్లాడే తెలుగు మాత్రమే వాడు.\n- 12-18 meaningful lines; ప్రతి line సాధారణంగా 5-18 spoken words.\n- ప్రతి line పూర్తి సహజమైన spoken sentence లేదా natural spoken beat కావాలి; చాలా చిన్న fragment మాత్రమే వద్దు.\n- మొదట curiosity hook ఉండవచ్చు, కానీ verified fact వెంటనే స్పష్టంగా చెప్పాలి.\n- VERIFIED FACT లోని numbers, values, names, places, dates, uncertainty మరియు cause/effect claims మార్చవద్దు.\n- Fact లో లేని కొత్త detail, number, comparison లేదా explanation invent చేయవద్దు.\n- Technical acronyms అవసరమైతే తెలుగు ఉచ్చారణలో రాయి; raw English acronyms వద్దు.\n- ASCII digits, unnecessary English, ellipsis, CTA, title, emoji, markdown వద్దు.\n- గరిష్ఠంగా రెండు ప్రశ్నలు. చివరి line fact-specific takeaway కావాలి.\n- Final output narration మాత్రమే.`;
+  if (kind === 'beats') return `\n\n${GUARD_MARKER}: FACT-FIRST STORY CONTRACT\n- VERIFIED FACT లోని numbers, values, names, places, dates, uncertainty and cause/effect claims మార్చవద్దు.\n- Fact లో లేని కొత్త number, percentage, year, person, place, comparison లేదా consequence invent చేయవద్దు.\n- Hook curiosity కోసం మాత్రమే; sensational overclaim వద్దు.`;
+
+  if (kind === 'narration') return `\n\n${GUARD_MARKER}: FACT-NARRATION CONTRACT — HIGHEST PRIORITY\n- Final output ఒక verified fact ని explain చేసే natural Telugu fact script అయి ఉండాలి. ఇది fiction, personal story లేదా generic motivational story కాదు.\n- నీ role storyteller కంటే fact explainer / science-documentary narrator. Story Beats ని final story గా copy చేయకుండా, వాటి information ని logically connected factual narration గా convert చేయి.\n- Information flow: hook/context → what the verified fact says → supporting detail/evidence → how or why it happens (ONLY if supported by VERIFIED FACT) → important implication/detail → fact-specific conclusion.\n- ప్రతి sentence ముందు sentence కి logical connection కలిగి ఉండాలి. ఒక sentence లో చెప్పిన విషయం తర్వాతి sentence కి context ఇవ్వాలి. Random facts లేదా disconnected punch lines వద్దు.\n- ప్రతి sentence పూర్తి అర్థం ఉన్న natural spoken sentence కావాలి. Suspense కోసం fragment-only lines ని ఎక్కువగా వాడవద్దు.\n- Hook curiosity కోసం ఉండొచ్చు, కానీ hook itself factual scope ని distort చేయకూడదు. Fake shock, fake twist, clickbait claim, exaggerated consequence వద్దు.\n- Final narration చదివినప్పుడు “ఒక విషయం/వాస్తవాన్ని narrator explain చేస్తున్నాడు” అనిపించాలి; “ఒక కథ చెప్తున్నాడు” అనిపించకూడదు.\n- VERIFIED FACT లో లేని కొత్త detail, number, example, location, person, comparison, cause/effect claim లేదా scientific explanation invent చేయవద్దు.\n- Source fact లో uncertainty/limits ఉంటే అదే uncertainty maintain చేయి. “may/can/some/certain” ని “always/all/definitely” గా మార్చవద్దు.\n- Technical terms, English words, acronyms, names and places అవసరమైనప్పుడు original form లో ఉంచవచ్చు. Pure Telugu గా మార్చాల్సిన అవసరం లేదు. Natural Telugu-English technical usage is allowed.\n- Numbers source fact లో ఉన్న form లో ఉండొచ్చు. TTS clarity కోసం మాత్రమే number wording మార్చాల్సి వస్తే meaning/value మాత్రం మార్చవద్దు.\n- Generic moral, life lesson, personal opinion, subscribe CTA లేదా unrelated conclusion వద్దు. Last line verified fact కి సంబంధించిన conclusion కావాలి.\n- గరిష్ఠంగా రెండు rhetorical questions. ప్రతి sentence తర్వాత suspense question వద్దు.\n- Punctuation natural spoken delivery కోసం వాడు; ellipsis ని overuse చేయవద్దు.\n- 12-18 meaningful lines లో రాయి. Line break visual/voice pacing కోసం మాత్రమే; ఒక logical sentence ని unnecessary fragments గా విరగొట్టవద్దు.\n- Final output narration మాత్రమే. Title, labels, emoji, markdown వద్దు.`;
+
   return '';
 }
 
@@ -133,7 +116,7 @@ async function guardedFetch(url, options = {}) {
 
   try {
     const data = await response.clone().json();
-    const content = normalizeTechnicalTerms(clean(getContent(data)));
+    const content = clean(getContent(data));
     if (!content) {
       console.log(`${GUARD_MARKER}: empty narration response; preserving primary response. No retry/repair request.`);
       return response;
@@ -143,7 +126,7 @@ async function guardedFetch(url, options = {}) {
     if (reasons.length) {
       console.log(`${GUARD_MARKER}: quality warnings — ${reasons.join(' | ')}; accepting single response without another Groq call.`);
     } else {
-      console.log(`${GUARD_MARKER}: FINAL NARRATION accepted by local quality checks.`);
+      console.log(`${GUARD_MARKER}: FINAL FACT NARRATION accepted by local quality checks.`);
     }
 
     data.choices[0].message.content = content;
@@ -156,5 +139,5 @@ async function guardedFetch(url, options = {}) {
 
 guardedFetch.__NARRATION_QUALITY_GUARD__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — single-request Groq budgets + non-blocking narration quality checks active.`);
+console.log(`${GUARD_MARKER}: enabled — factual narration contract + single-request Groq budget + non-blocking quality checks active.`);
 module.exports = { enabled:true, marker:GUARD_MARKER };
