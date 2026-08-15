@@ -1,8 +1,8 @@
-// Stable narration-quality guard V7.
+// Stable narration-quality guard V6 (strengthened).
 // Fact-first Telugu narration with strict sentence, terminology and TTS pacing checks.
 
 const ORIGINAL_FETCH = global.fetch;
-const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V7';
+const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V6';
 
 if (!ORIGINAL_FETCH || ORIGINAL_FETCH.__NARRATION_QUALITY_GUARD__) {
   module.exports = { enabled: true, marker: GUARD_MARKER };
@@ -98,7 +98,6 @@ function hasBadStyle(content) {
   if ((s.match(/\.\.\./g) || []).length > 0) return true;
   if ((s.match(/\?/g) || []).length > 2) return true;
   if (hasObviousRepetition(s)) return true;
-  if (/^(కానీ|అయితే|అసలు|ఇంకా|అంటే|అందుకే|కాబట్టి)\s*[.!?…]*$/.test(s)) return true;
   return false;
 }
 
