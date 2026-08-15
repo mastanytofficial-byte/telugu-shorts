@@ -135,7 +135,7 @@ async function guardedFetch(url, options = {}) {
 
   body = { ...body, messages:body.messages.map(m => ({ ...m })), temperature:patched.kind === 'narration' ? 0.10 : 0.05, reasoning_effort:'low', include_reasoning:false };
   body.max_tokens = tokenBudget(patched.kind);
-  if (patched.extra) body.messages[body.messages.length - 1].content = patched.prompt;
+  body.messages[body.messages.length - 1].content = patched.prompt;
   const patchedOptions = { ...options, body:JSON.stringify(body) };
 
   const response = await ORIGINAL_FETCH(url, patchedOptions);
@@ -163,7 +163,7 @@ async function guardedFetch(url, options = {}) {
       return response;
     }
 
-    let reasons = badReasons(content);
+    const reasons = badReasons(content);
     if (!reasons.length) {
       data.choices[0].message.content = content;
       console.log(`${GUARD_MARKER}: FINAL NARRATION accepted by local quality gate.`);
