@@ -1,8 +1,8 @@
-// Stable narration-quality guard V6 (strengthened).
+// Stable narration-quality guard V7 (repair-hardened).
 // Fact-first Telugu narration with strict sentence, terminology and TTS pacing checks.
 
 const ORIGINAL_FETCH = global.fetch;
-const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V6';
+const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V7';
 
 if (!ORIGINAL_FETCH || ORIGINAL_FETCH.__NARRATION_QUALITY_GUARD__) {
   module.exports = { enabled: true, marker: GUARD_MARKER };
@@ -32,7 +32,7 @@ function classifyPrompt(prompt) {
 function qualitySuffix(kind) {
   if (kind === 'beats') return `\n\n${GUARD_MARKER}: FACT-FIRST STORY CONTRACT\n- VERIFIED FACT లోని numbers, values, names, places, dates, technical terms, uncertainty and cause/effect claims మార్చవద్దు.\n- Fact లో లేని కొత్త number, percentage, year, person, place, comparison, consequence లేదా explanation జోడించవద్దు.\n- Hook curiosity కోసం మాత్రమే; sensational overclaim వద్దు.\n- Question సహజమైన curiosity కావాలి.\n- Reveal లో verified fact యొక్క core answer స్పష్టంగా ఉండాలి.\n- Twist అనే పేరు ఉన్నా కల్పిత dramatic twist వద్దు.\n- ప్రతి beat ఒకే verified fact కి నేరుగా సంబంధించినదే కావాలి.`;
 
-  if (kind === 'narration') return `\n\n${GUARD_MARKER}: FINAL FACT-NARRATION CONTRACT\n- ఇది fiction కాదు. ఇది verified fact ని clear గా explain చేసే Telugu micro-documentary narration.\n- Fact-first, drama-second. మొదటి ఒకటి లేదా రెండు lines curiosity hook కావచ్చు; వెంటనే అసలు fact ని స్పష్టంగా చెప్పాలి.\n- సహజంగా మాట్లాడే తెలుగు మాత్రమే వాడు. పుస్తక తెలుగు, news-reader style, literal translation, AI-sounding filler వద్దు.\n- మొత్తం narration 10-14 meaningful lines గా ఉండాలి. ప్రతి line సాధారణంగా 7-18 spoken words ఉండాలి.\n- ప్రతి line పూర్తి అర్థం ఉన్న సహజమైన వాక్యం కావాలి. "అవును, నిజంగా.", "అది నిజమే.", "అసలు, ఏమిటంటే." వంటి fragment-only lines వద్దు.\n- ఒక thought ని అనవసరంగా రెండు చిన్న lines గా విరగొట్టవద్దు. ప్రతి sentence లో subject/action/meaning స్పష్టంగా ఉండాలి.\n- Information flow: hook → context → verified fact → how/why → important detail → fact-specific takeaway.\n- ప్రతి sentence తరువాత suspense question లేదా cliffhanger పెట్టవద్దు. గరిష్ఠంగా రెండు ప్రశ్నలు మాత్రమే.\n- ఒకే claim ని మళ్లీ synonyms తో repeat చేయవద్దు.\n- Forced metaphors, generic morals, emotional drama, personal examples లేదా unsupported comparisons వద్దు.\n- VERIFIED FACT లోని numbers, values, names, places, dates, technical terms, uncertainty and limitations మార్చవద్దు.\n- Fact లో లేని కొత్త number, statistic, example, distance, comparison, consequence లేదా scientific/economic explanation invent చేయవద్దు.\n- Technical acronyms అవసరమైతే మాత్రమే వాడు. Final Telugu narration లో raw English acronyms ని comma-separated list లాగా ఇవ్వవద్దు. ఉదాహరణకు CLOCK, BMAL1, PER, CRY అని వరుసగా రాయకుండా, అవి అవసరమైనప్పుడు "క్లాక్", "బీఎంఏఎల్ ఒకటి", "పీఈఆర్", "సీఆర్‌వై" వంటి తెలుగు ఉచ్చారణ రూపంలో సహజమైన వాక్యంలో కలపాలి.\n- Random English words వద్దు. Brand/model/product names మాత్రమే అవసరమైతే original form లో ఉంచవచ్చు.\n- ASCII digits వద్దు. సంఖ్యలు తెలుగు మాటల్లోనే రాయి.\n- Comma breath/pause కోసం మాత్రమే అధికంగా వాడవద్దు. Meaning/grammar కి అవసరమైనప్పుడు మాత్రమే comma పెట్టు.\n- Ellipsis (...) వద్దు.\n- ప్రతి line చివర suspense punctuation పెట్టవద్దు. Full-stop లేదా సహజమైన punctuation వాడు.\n- CTA, title, emoji, labels, markdown వద్దు.\n- చివరి line verified fact కి సంబంధించిన memorable takeaway కావాలి; generic moral కాదు.\n- Final output narration మాత్రమే.`;
+  if (kind === 'narration') return `\n\n${GUARD_MARKER}: FINAL FACT-NARRATION CONTRACT\n- ఇది fiction కాదు. ఇది verified fact ని clear గా explain చేసే Telugu micro-documentary narration.\n- Fact-first, drama-second. మొదటి ఒకటి లేదా రెండు lines curiosity hook కావచ్చు; వెంటనే అసలు fact ని స్పష్టంగా చెప్పాలి.\n- సహజంగా మాట్లాడే తెలుగు మాత్రమే వాడు. పుస్తక తెలుగు, news-reader style, literal translation, AI-sounding filler వద్దు.\n- మొత్తం narration 10-14 meaningful lines గా ఉండాలి. ప్రతి line సాధారణంగా 7-18 spoken words ఉండాలి.\n- ప్రతి line పూర్తి అర్థం ఉన్న సహజమైన వాక్యం కావాలి. "అవును, నిజంగా.", "అది నిజమే.", "అసలు, ఏమిటంటే." వంటి fragment-only lines వద్దు.\n- ఒక thought ని అనవసరంగా రెండు చిన్న lines గా విరగొట్టవద్దు. ప్రతి sentence లో subject/action/meaning స్పష్టంగా ఉండాలి.\n- Information flow: hook → context → verified fact → how/why → important detail → fact-specific takeaway.\n- ప్రతి sentence తరువాత suspense question లేదా cliffhanger పెట్టవద్దు. గరిష్ఠంగా రెండు ప్రశ్నలు మాత్రమే.\n- ఒకే claim ని మళ్లీ synonyms తో repeat చేయవద్దు.\n- Forced metaphors, generic morals, emotional drama, personal examples లేదా unsupported comparisons వద్దు.\n- VERIFIED FACT లోని numbers, values, names, places, dates, technical terms, uncertainty and limitations మార్చవద్దు.\n- Fact లో లేని కొత్త number, statistic, example, distance, comparison, consequence లేదా scientific/economic explanation invent చేయవద్దు.\n- Technical acronyms అవసరమైతే మాత్రమే వాడు. Final Telugu narration లో raw English acronyms ని comma-separated list లాగా ఇవ్వవద్దు. అవి అవసరమైనప్పుడు తెలుగు ఉచ్చారణ రూపంలో సహజమైన వాక్యంలో కలపాలి.\n- Random English words వద్దు. Brand/model/product names మాత్రమే అవసరమైతే original form లో ఉంచవచ్చు.\n- ASCII digits వద్దు. సంఖ్యలు తెలుగు మాటల్లోనే రాయి.\n- Comma breath/pause కోసం మాత్రమే అధికంగా వాడవద్దు. Meaning/grammar కి అవసరమైనప్పుడు మాత్రమే comma పెట్టు.\n- Ellipsis (...) వద్దు.\n- ప్రతి line చివర suspense punctuation పెట్టవద్దు. Full-stop లేదా సహజమైన punctuation వాడు.\n- CTA, title, emoji, labels, markdown వద్దు.\n- చివరి line verified fact కి సంబంధించిన memorable takeaway కావాలి; generic moral కాదు.\n- Final output narration మాత్రమే.`;
   return '';
 }
 
@@ -61,8 +61,8 @@ function hasBadAsciiNumber(output) {
   return /\b\d+(?:[.,]\d+)?\b/.test(String(output || ''));
 }
 
-const RAW_ACRONYM_RE = /\b(?:CLOCK|BMAL1|BMAL-1|PER|CRY|SCN|DNA|RNA|MRI|CPU|GPU|GPS|AI|API|TTS|STM|CRISPR)\b/;
-const ALLOWED_ENGLISH = new Set(['YouTube', 'Google', 'Groq', 'Pexels', 'AI']);
+const RAW_ACRONYM_RE = /\b(?:CLOCK|BMAL1|BMAL-1|PER|CRY|SCN|DNA|RNA|MRI|CPU|GPU|GPS|AI|API|TTS|STM|CRISPR)\b/i;
+const ALLOWED_ENGLISH = new Set(['YouTube', 'Google', 'Groq', 'Pexels']);
 
 function hasRawTechnicalAcronym(content) {
   return RAW_ACRONYM_RE.test(String(content || ''));
@@ -71,6 +71,35 @@ function hasRawTechnicalAcronym(content) {
 function hasUnexpectedEnglish(content) {
   const words = String(content || '').match(/\b[A-Za-z][A-Za-z0-9-]{2,}\b/g) || [];
   return words.some(w => !ALLOWED_ENGLISH.has(w) && !RAW_ACRONYM_RE.test(w));
+}
+
+const TELUGU_LETTER_NAMES = {
+  A:'ఏ', B:'బీ', C:'సీ', D:'డీ', E:'ఈ', F:'ఎఫ్', G:'జీ', H:'ఏచ్', I:'ఐ', J:'జే', K:'కే', L:'ఎల్', M:'ఎమ్',
+  N:'ఎన్', O:'ఓ', P:'పీ', Q:'క్యూ', R:'ఆర్', S:'ఎస్', T:'టీ', U:'యూ', V:'వీ', W:'డబ్ల్యూ', X:'ఎక్స్', Y:'వై', Z:'జెడ్'
+};
+
+function transliterateAcronym(token) {
+  const clean = String(token || '').replace(/[^A-Za-z]/g, '').toUpperCase();
+  if (clean.length < 2 || clean.length > 8) return token;
+  return [...clean].map(ch => TELUGU_LETTER_NAMES[ch] || ch).join('');
+}
+
+function normalizeTechnicalTerms(content) {
+  let out = String(content || '');
+  out = out.replace(/\b(?:BMAL-1|BMAL1)\b/gi, 'బీఎంఏఎల్ ఒకటి');
+  out = out.replace(/\bCLOCK\b/gi, 'క్లాక్');
+  out = out.replace(/\bGPS\b/gi, 'జీపీఎస్');
+  out = out.replace(/\bDNA\b/gi, 'డీఎన్ఏ');
+  out = out.replace(/\bRNA\b/gi, 'ఆర్ఎన్ఏ');
+  out = out.replace(/\bMRI\b/gi, 'ఎంఆర్ఐ');
+  out = out.replace(/\bCPU\b/gi, 'సీపీయూ');
+  out = out.replace(/\bGPU\b/gi, 'జీపీయూ');
+  out = out.replace(/\bAPI\b/gi, 'ఏపీఐ');
+  out = out.replace(/\bTTS\b/gi, 'టీఎటీఎస్');
+  out = out.replace(/\bCRISPR\b/gi, 'క్రిస్పర్');
+  out = out.replace(/\b(?:PER|CRY|SCN|STM)\b/gi, m => transliterateAcronym(m));
+  out = out.replace(/\b[A-Z]{2,8}\b/g, m => transliterateAcronym(m));
+  return out;
 }
 
 function hasObviousRepetition(content) {
@@ -106,12 +135,24 @@ function hasFragmentPatterns(content) {
   return lines.some(line => /^(అవును|నిజంగా|సరే|అదే|అది|ఇది|అంటే|కానీ|అయితే)\s*[,.!?…]*$/.test(line));
 }
 
-function buildRepairPrompt(originalPrompt, badOutput, reasons) {
-  return `${originalPrompt}\n\n${GUARD_MARKER}: STRICT FINAL REPAIR PASS\nPrevious narration failed: ${reasons.join('; ')}.\nRewrite ONLY the narration as a natural Telugu fact-video script. Preserve every verified fact, value, limitation, name, date and cause/effect claim. Do not invent any new number, example, comparison, consequence or explanation.\n\nMANDATORY OUTPUT RULES:\n- 10-14 meaningful lines.\n- Each line should normally contain 7-18 spoken words and be a complete natural sentence.\n- Never output fragment-only lines such as "అవును, నిజంగా."\n- Do not split one thought into multiple tiny lines.\n- Use conversational Telugu with normal Telugu word order.\n- Explain the fact directly instead of stacking rhetorical questions. Maximum two questions total.\n- Do not repeat the same claim.\n- Do not use raw acronym lists such as CLOCK, BMAL1, PER, CRY. If a technical acronym is essential, render it in Telugu pronunciation inside a normal sentence: క్లాక్, బీఎంఏఎల్ ఒకటి, పీఈఆర్, సీఆర్‌వై.\n- No ASCII digits, no ellipsis, no JSON, no labels, no title, no emoji, no CTA, no markdown.\n- Commas only where grammar or meaning requires them.\n- Last line must be a fact-specific takeaway.\nReturn narration only.\n\nPREVIOUS NARRATION:\n${badOutput}`;
+function validationReasons(content) {
+  const reasons = [];
+  if (!content.trim()) reasons.push('empty narration');
+  if (hasBadAsciiNumber(content)) reasons.push('ASCII number detected');
+  if (hasRawTechnicalAcronym(content)) reasons.push('raw technical acronym detected');
+  if (hasUnexpectedEnglish(content)) reasons.push('unnecessary English word detected');
+  if (hasBadStyle(content)) reasons.push('bad sentence length/pacing/repetition detected');
+  if (hasFragmentPatterns(content)) reasons.push('sentence fragment detected');
+  return reasons;
+}
+
+function buildRepairPrompt(originalPrompt, badOutput, reasons, attempt) {
+  const forbidden = (String(badOutput || '').match(/\b[A-Za-z][A-Za-z0-9-]{1,}\b/g) || []).slice(0, 20).join(', ');
+  return `${originalPrompt}\n\n${GUARD_MARKER}: STRICT FINAL REPAIR PASS ${attempt}\nPrevious narration failed: ${reasons.join('; ')}.\nRewrite ONLY the narration as a natural Telugu fact-video script. Preserve every verified fact, value, limitation, name, date and cause/effect claim. Do not invent any new number, example, comparison, consequence or explanation.\n\nMANDATORY OUTPUT RULES:\n- 10-14 meaningful lines.\n- Each line should normally contain 7-18 spoken words and be a complete natural sentence.\n- Never output fragment-only lines.\n- Do not split one thought into multiple tiny lines.\n- Use conversational Telugu with normal Telugu word order.\n- Maximum two questions total.\n- Do not repeat the same claim.\n- Do not write ANY English words or Latin-letter acronyms in the final narration. Technical names must be written in Telugu pronunciation, for example జీపీఎస్, డీఎన్ఏ, ఎంఆర్ఐ, బీఎంఏఎల్ ఒకటి.\n- No ASCII digits, no ellipsis, no JSON, no labels, no title, no emoji, no CTA, no markdown.\n- Commas only where grammar or meaning requires them.\n- Last line must be a fact-specific takeaway.\n- Return narration only.\nWords/terms seen in the failed output that must not appear again: ${forbidden || 'none'}.\n\nPREVIOUS NARRATION:\n${badOutput}`;
 }
 
 function buildEmptyRetryPrompt(originalPrompt) {
-  return `${originalPrompt}\n\n${GUARD_MARKER}: EMPTY-OUTPUT RECOVERY\nReturn ONLY the final Telugu narration. Use 10-14 meaningful lines, 7-18 spoken words per line, complete natural sentences, fact-first and conversational. Preserve ONLY the supplied verified fact. No JSON, labels, title, CTA, emoji, markdown, ASCII digits or invented detail.`;
+  return `${originalPrompt}\n\n${GUARD_MARKER}: EMPTY-OUTPUT RECOVERY\nReturn ONLY the final Telugu narration. Use 10-14 meaningful lines, 7-18 spoken words per line, complete natural sentences, fact-first and conversational. Preserve ONLY the supplied verified fact. No JSON, labels, title, CTA, emoji, markdown, ASCII digits or invented detail. Do not use any English words or Latin-letter acronyms.`;
 }
 
 async function callOriginalGroq(options, prompt, config = {}) {
@@ -192,9 +233,10 @@ async function guardedFetch(url, options = {}) {
       const recoveryResponse = await callOriginalGroq(options, buildEmptyRetryPrompt(patched.prompt), { temperature: 0.06, max_tokens: 2400, reasoning_effort: 'low' });
       if (recoveryResponse && typeof recoveryResponse.clone === 'function') {
         const recoveryData = await recoveryResponse.clone().json();
-        const recovered = cleanNarration(getGroqContent(recoveryData));
-        const recoveryBad = hasBadAsciiNumber(recovered) || hasRawTechnicalAcronym(recovered) || hasUnexpectedEnglish(recovered) || hasBadStyle(recovered) || hasFragmentPatterns(recovered);
-        if (recovered && !recoveryBad) {
+        let recovered = cleanNarration(getGroqContent(recoveryData));
+        recovered = normalizeTechnicalTerms(recovered);
+        const recoveryBad = validationReasons(recovered);
+        if (recovered && !recoveryBad.length) {
           recoveryData.choices[0].message.content = recovered;
           console.log(`${GUARD_MARKER}: recovery accepted.`);
           console.log(`${GUARD_MARKER}: FINAL NARRATION\n${recovered}`);
@@ -204,14 +246,8 @@ async function guardedFetch(url, options = {}) {
       return response;
     }
 
-    content = cleanNarration(content);
-    const reasons = [];
-    if (!content.trim()) reasons.push('empty narration');
-    if (hasBadAsciiNumber(content)) reasons.push('ASCII number detected');
-    if (hasRawTechnicalAcronym(content)) reasons.push('raw technical acronym detected');
-    if (hasUnexpectedEnglish(content)) reasons.push('unnecessary English word detected');
-    if (hasBadStyle(content)) reasons.push('bad sentence length/pacing/repetition detected');
-    if (hasFragmentPatterns(content)) reasons.push('sentence fragment detected');
+    content = normalizeTechnicalTerms(cleanNarration(content));
+    let reasons = validationReasons(content);
 
     if (!reasons.length) {
       const factPass = await verifyNarration(patched.prompt, content, options);
@@ -221,25 +257,39 @@ async function guardedFetch(url, options = {}) {
 
     if (reasons.length) {
       console.log(`${GUARD_MARKER}: narration repair required — ${reasons.join(' | ')}`);
-      const repairResponse = await callOriginalGroq(options, buildRepairPrompt(patched.prompt, content, reasons), { temperature: 0.03, max_tokens: 2400, reasoning_effort: 'low' });
-      if (repairResponse && typeof repairResponse.clone === 'function') {
-        const repairData = await repairResponse.clone().json();
-        const repaired = cleanNarration(getGroqContent(repairData));
-        const repairedBad = !repaired || hasBadAsciiNumber(repaired) || hasRawTechnicalAcronym(repaired) || hasUnexpectedEnglish(repaired) || hasBadStyle(repaired) || hasFragmentPatterns(repaired);
-        if (!repairedBad) {
-          const repairFactPass = await verifyNarration(patched.prompt, repaired, options);
+      let repairData = null;
+      let repaired = '';
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const repairResponse = await callOriginalGroq(options, buildRepairPrompt(patched.prompt, content, reasons, attempt), { temperature: 0.02, max_tokens: 2400, reasoning_effort: 'low' });
+        if (!repairResponse || typeof repairResponse.clone !== 'function') continue;
+        const candidateData = await repairResponse.clone().json();
+        const candidate = normalizeTechnicalTerms(cleanNarration(getGroqContent(candidateData)));
+        const candidateReasons = validationReasons(candidate);
+        console.log(`${GUARD_MARKER}: repair attempt ${attempt}: ${candidateReasons.length ? candidateReasons.join(' | ') : 'local checks passed'}`);
+
+        if (candidate && !candidateReasons.length) {
+          const repairFactPass = await verifyNarration(patched.prompt, candidate, options);
           if (repairFactPass !== false) {
-            repairData.choices[0].message.content = repaired;
-            console.log(`${GUARD_MARKER}: repair accepted.`);
-            console.log(`${GUARD_MARKER}: FINAL NARRATION\n${repaired}`);
-            return makeJsonResponse(repairData, repairResponse);
+            repairData = candidateData;
+            repaired = candidate;
+            break;
           }
-          console.log(`${GUARD_MARKER}: repaired narration failed fact check.`);
-        } else {
-          console.log(`${GUARD_MARKER}: repaired narration still violates local style rules — refusing it.`);
+          console.log(`${GUARD_MARKER}: repair attempt ${attempt} failed independent fact check.`);
         }
+
+        content = candidate || content;
+        reasons = candidateReasons.length ? candidateReasons : ['independent fact check failed'];
       }
-      throw new Error(`${GUARD_MARKER}: narration quality gate failed after repair — refusing to publish broken narration.`);
+
+      if (repairData && repaired) {
+        repairData.choices[0].message.content = repaired;
+        console.log(`${GUARD_MARKER}: repair accepted after retry.`);
+        console.log(`${GUARD_MARKER}: FINAL NARRATION\n${repaired}`);
+        return makeJsonResponse(repairData, response);
+      }
+
+      throw new Error(`${GUARD_MARKER}: narration quality gate failed after 3 repair attempts — refusing to publish broken narration.`);
     }
 
     data.choices[0].message.content = content;
@@ -254,5 +304,5 @@ async function guardedFetch(url, options = {}) {
 
 guardedFetch.__NARRATION_QUALITY_GUARD__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — fact-first Telugu narration + strict natural sentence/TTS rules active.`);
+console.log(`${GUARD_MARKER}: enabled — fact-first Telugu narration + repair retries + strict natural sentence/TTS rules active.`);
 module.exports = { enabled: true, marker: GUARD_MARKER };
