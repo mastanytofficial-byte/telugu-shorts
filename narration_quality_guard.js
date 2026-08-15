@@ -1,5 +1,5 @@
 // Stable narration-quality guard V8 (rate-limit friendly).
-// Keeps the quality gate, but avoids extra Groq calls that can exhaust TPM.
+// Keeps the quality gate while enforcing bounded token budgets for every Groq call.
 
 const ORIGINAL_FETCH = global.fetch;
 const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V8';
@@ -23,7 +23,19 @@ function classify(prompt) {
   const p = String(prompt || '');
   if (/TARGET RHYTHM|high-retention storyteller|CALL A of Stage 2|final narration text only|12-18 short spoken lines|natural spoken Telugu/i.test(p) && /STORY BEATS/i.test(p)) return 'narration';
   if (/STORY BEATS/i.test(p) && /5 beats only|5 beats మాత్రమే|story beats ని JSON|"hook".*"question".*"reveal".*"twist".*"ending"/is.test(p)) return 'beats';
+  if (/ACCURACY:\s*(VERIFIED|REJECTED)|VIRAL APPEAL|SCORE:\s*\(0-100/i.test(p)) return 'verification';
+  if (/punctuation|PUNCTUATION|పదాలు ఏమీ మార్చకుండా|కేవలం punctuation మాత్రమే/i.test(p)) return 'punctuation';
+  if (/HOOK:|TITLE:|KEYWORDS:/i.test(p) && /metadata|metadata ఇవ్వు|ఖచ్చితంగా ఈ 3-లైన్ల/i.test(p)) return 'metadata';
   return 'other';
+}
+
+function tokenBudget(kind) {
+  if (kind === 'narration') return 1400;
+  if (kind === 'beats') return 450;
+  if (kind === 'verification') return 250;
+  if (kind === 'punctuation') return 600;
+  if (kind === 'metadata') return 450;
+  return 800;
 }
 
 function getContent(data) {
@@ -121,11 +133,9 @@ async function guardedFetch(url, options = {}) {
   const originalPrompt = last && typeof last.content === 'string' ? last.content : '';
   const patched = patchPrompt(originalPrompt);
 
-  if (patched.kind === 'other') return ORIGINAL_FETCH(url, options);
-
-  body = { ...body, messages:body.messages.map(m => ({ ...m })), temperature:0.10, reasoning_effort:'low', include_reasoning:false };
-  body.max_tokens = patched.kind === 'narration' ? 900 : 700;
-  body.messages[body.messages.length - 1].content = patched.prompt;
+  body = { ...body, messages:body.messages.map(m => ({ ...m })), temperature:patched.kind === 'narration' ? 0.10 : 0.05, reasoning_effort:'low', include_reasoning:false };
+  body.max_tokens = tokenBudget(patched.kind);
+  if (patched.extra) body.messages[body.messages.length - 1].content = patched.prompt;
   const patchedOptions = { ...options, body:JSON.stringify(body) };
 
   const response = await ORIGINAL_FETCH(url, patchedOptions);
@@ -136,20 +146,20 @@ async function guardedFetch(url, options = {}) {
     let content = normalizeTechnicalTerms(clean(getContent(data)));
 
     if (!content) {
-      console.log(`${GUARD_MARKER}: empty narration response; waiting before one low-token retry.`);
-      await wait(20000);
-      const retry = await retryGroq(patchedOptions, `${patched.prompt}\n\nReturn ONLY the narration now. Do not explain your process.`, 900);
+      console.log(`${GUARD_MARKER}: empty narration response; waiting before one bounded retry.`);
+      await wait(12000);
+      const retry = await retryGroq(patchedOptions, `${patched.prompt}\n\nReturn ONLY the narration now. Do not explain your process.`, 1400);
       if (retry && typeof retry.clone === 'function') {
         const retryData = await retry.clone().json();
         content = normalizeTechnicalTerms(clean(getContent(retryData)));
         const retryReasons = badReasons(content);
         if (content && !retryReasons.length) {
           retryData.choices[0].message.content = content;
-          console.log(`${GUARD_MARKER}: low-token retry accepted.`);
+          console.log(`${GUARD_MARKER}: bounded narration retry accepted.`);
           return new Response(JSON.stringify(retryData), { status:retry.status, statusText:retry.statusText, headers:retry.headers });
         }
       }
-      console.log(`${GUARD_MARKER}: narration still empty/invalid after one retry; returning primary response so the main pipeline can handle it.`);
+      console.log(`${GUARD_MARKER}: narration still empty/invalid after one bounded retry; returning primary response.`);
       return response;
     }
 
@@ -161,9 +171,9 @@ async function guardedFetch(url, options = {}) {
     }
 
     console.log(`${GUARD_MARKER}: repair required — ${reasons.join(' | ')}`);
-    await wait(5000);
+    await wait(4000);
     const repairPrompt = `${patched.prompt}\n\n${GUARD_MARKER}: REPAIR\nPrevious output failed: ${reasons.join('; ')}. Rewrite ONLY the narration. Preserve the supplied verified fact exactly. Use natural Telugu, 10-14 complete lines, 7-18 spoken words per line, no English words, no Latin acronyms, no ASCII digits, no title or labels.`;
-    const repair = await retryGroq(patchedOptions, repairPrompt, 900);
+    const repair = await retryGroq(patchedOptions, repairPrompt, 1400);
     if (repair && typeof repair.clone === 'function') {
       const repairData = await repair.clone().json();
       const repaired = normalizeTechnicalTerms(clean(getContent(repairData)));
@@ -185,5 +195,5 @@ async function guardedFetch(url, options = {}) {
 
 guardedFetch.__NARRATION_QUALITY_GUARD__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — low-token narration checks + rate-limit-friendly recovery active.`);
+console.log(`${GUARD_MARKER}: enabled — bounded Groq budgets + narration quality gate active.`);
 module.exports = { enabled:true, marker:GUARD_MARKER };
