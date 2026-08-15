@@ -1,54 +1,37 @@
-// Stable narration-quality guard V7 (repair-hardened).
-// Fact-first Telugu narration with strict sentence, terminology and TTS pacing checks.
+// Stable narration-quality guard V8 (rate-limit friendly).
+// Keeps the quality gate, but avoids extra Groq calls that can exhaust TPM.
 
 const ORIGINAL_FETCH = global.fetch;
-const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V7';
+const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V8';
 
 if (!ORIGINAL_FETCH || ORIGINAL_FETCH.__NARRATION_QUALITY_GUARD__) {
   module.exports = { enabled: true, marker: GUARD_MARKER };
   return;
 }
 
-function isGroqChatRequest(url, options) {
+function isGroq(url, options) {
   return String(url).includes('api.groq.com/openai/v1/chat/completions') &&
     options && String(options.method || 'GET').toUpperCase() === 'POST';
 }
 
-function isGoogleTtsRequest(url, options) {
+function isTts(url, options) {
   return String(url).includes('texttospeech.googleapis.com/v1/text:synthesize') &&
     options && String(options.method || 'GET').toUpperCase() === 'POST';
 }
 
-function classifyPrompt(prompt) {
+function classify(prompt) {
   const p = String(prompt || '');
-  if (
-    /TARGET RHYTHM|high-retention storyteller|CALL A of Stage 2|final narration text only|12-18 short spoken lines|natural spoken Telugu/i.test(p) &&
-    /STORY BEATS/i.test(p)
-  ) return 'narration';
+  if (/TARGET RHYTHM|high-retention storyteller|CALL A of Stage 2|final narration text only|12-18 short spoken lines|natural spoken Telugu/i.test(p) && /STORY BEATS/i.test(p)) return 'narration';
   if (/STORY BEATS/i.test(p) && /5 beats only|5 beats మాత్రమే|story beats ని JSON|"hook".*"question".*"reveal".*"twist".*"ending"/is.test(p)) return 'beats';
   return 'other';
 }
 
-function qualitySuffix(kind) {
-  if (kind === 'beats') return `\n\n${GUARD_MARKER}: FACT-FIRST STORY CONTRACT\n- VERIFIED FACT లోని numbers, values, names, places, dates, technical terms, uncertainty and cause/effect claims మార్చవద్దు.\n- Fact లో లేని కొత్త number, percentage, year, person, place, comparison, consequence లేదా explanation జోడించవద్దు.\n- Hook curiosity కోసం మాత్రమే; sensational overclaim వద్దు.\n- Question సహజమైన curiosity కావాలి.\n- Reveal లో verified fact యొక్క core answer స్పష్టంగా ఉండాలి.\n- Twist అనే పేరు ఉన్నా కల్పిత dramatic twist వద్దు.\n- ప్రతి beat ఒకే verified fact కి నేరుగా సంబంధించినదే కావాలి.`;
-
-  if (kind === 'narration') return `\n\n${GUARD_MARKER}: FINAL FACT-NARRATION CONTRACT\n- ఇది fiction కాదు. ఇది verified fact ని clear గా explain చేసే Telugu micro-documentary narration.\n- Fact-first, drama-second. మొదటి ఒకటి లేదా రెండు lines curiosity hook కావచ్చు; వెంటనే అసలు fact ని స్పష్టంగా చెప్పాలి.\n- సహజంగా మాట్లాడే తెలుగు మాత్రమే వాడు. పుస్తక తెలుగు, news-reader style, literal translation, AI-sounding filler వద్దు.\n- మొత్తం narration 10-14 meaningful lines గా ఉండాలి. ప్రతి line సాధారణంగా 7-18 spoken words ఉండాలి.\n- ప్రతి line పూర్తి అర్థం ఉన్న సహజమైన వాక్యం కావాలి. "అవును, నిజంగా.", "అది నిజమే.", "అసలు, ఏమిటంటే." వంటి fragment-only lines వద్దు.\n- ఒక thought ని అనవసరంగా రెండు చిన్న lines గా విరగొట్టవద్దు. ప్రతి sentence లో subject/action/meaning స్పష్టంగా ఉండాలి.\n- Information flow: hook → context → verified fact → how/why → important detail → fact-specific takeaway.\n- ప్రతి sentence తరువాత suspense question లేదా cliffhanger పెట్టవద్దు. గరిష్ఠంగా రెండు ప్రశ్నలు మాత్రమే.\n- ఒకే claim ని మళ్లీ synonyms తో repeat చేయవద్దు.\n- Forced metaphors, generic morals, emotional drama, personal examples లేదా unsupported comparisons వద్దు.\n- VERIFIED FACT లోని numbers, values, names, places, dates, technical terms, uncertainty and limitations మార్చవద్దు.\n- Fact లో లేని కొత్త number, statistic, example, distance, comparison, consequence లేదా scientific/economic explanation invent చేయవద్దు.\n- Technical acronyms అవసరమైతే మాత్రమే వాడు. Final Telugu narration లో raw English acronyms ని comma-separated list లాగా ఇవ్వవద్దు. అవి అవసరమైనప్పుడు తెలుగు ఉచ్చారణ రూపంలో సహజమైన వాక్యంలో కలపాలి.\n- Random English words వద్దు. Brand/model/product names మాత్రమే అవసరమైతే original form లో ఉంచవచ్చు.\n- ASCII digits వద్దు. సంఖ్యలు తెలుగు మాటల్లోనే రాయి.\n- Comma breath/pause కోసం మాత్రమే అధికంగా వాడవద్దు. Meaning/grammar కి అవసరమైనప్పుడు మాత్రమే comma పెట్టు.\n- Ellipsis (...) వద్దు.\n- ప్రతి line చివర suspense punctuation పెట్టవద్దు. Full-stop లేదా సహజమైన punctuation వాడు.\n- CTA, title, emoji, labels, markdown వద్దు.\n- చివరి line verified fact కి సంబంధించిన memorable takeaway కావాలి; generic moral కాదు.\n- Final output narration మాత్రమే.`;
-  return '';
-}
-
-function patchPrompt(prompt) {
-  const kind = classifyPrompt(prompt);
-  const suffix = qualitySuffix(kind);
-  if (!suffix || String(prompt).includes(GUARD_MARKER)) return { prompt: String(prompt), kind };
-  return { prompt: String(prompt) + suffix, kind };
-}
-
-function getGroqContent(data) {
+function getContent(data) {
   return data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : null;
 }
 
-function cleanNarration(content) {
-  return String(content || '')
+function clean(text) {
+  return String(text || '')
     .replace(/^```(?:text|telugu)?\s*/i, '')
     .replace(/```$/i, '')
     .replace(/^SCRIPT:\s*/i, '')
@@ -57,252 +40,150 @@ function cleanNarration(content) {
     .trim();
 }
 
-function hasBadAsciiNumber(output) {
-  return /\b\d+(?:[.,]\d+)?\b/.test(String(output || ''));
+function normalizeTechnicalTerms(text) {
+  let s = String(text || '');
+  const map = {
+    'BMAL-1':'బీఎంఏఎల్ ఒకటి','BMAL1':'బీఎంఏఎల్ ఒకటి','CLOCK':'క్లాక్','GPS':'జీపీఎస్',
+    'DNA':'డీఎన్ఏ','RNA':'ఆర్ఎన్ఏ','MRI':'ఎంఆర్ఐ','CPU':'సీపీయూ','GPU':'జీపీయూ',
+    'API':'ఏపీఐ','TTS':'టీఎటీఎస్','CRISPR':'క్రిస్పర్','PER':'పీఈఆర్','CRY':'సీఆర్‌వై',
+    'SCN':'ఎస్‌సీఎన్','STM':'ఎస్‌టీఎమ్','AI':'ఏఐ'
+  };
+  for (const [from,to] of Object.entries(map)) s = s.replace(new RegExp(`\\b${from}\\b`, 'gi'), to);
+  return s.replace(/\b[A-Z]{2,8}\b/g, m => m.split('').map(c => ({A:'ఏ',B:'బీ',C:'సీ',D:'డీ',E:'ఈ',F:'ఎఫ్',G:'జీ',H:'ఏచ్',I:'ఐ',J:'జే',K:'కే',L:'ఎల్',M:'ఎమ్',N:'ఎన్',O:'ఓ',P:'పీ',Q:'క్యూ',R:'ఆర్',S:'ఎస్',T:'టీ',U:'యూ',V:'వీ',W:'డబ్ల్యూ',X:'ఎక్స్',Y:'వై',Z:'జెడ్'}[c] || c)).join(''));
 }
 
-const RAW_ACRONYM_RE = /\b(?:CLOCK|BMAL1|BMAL-1|PER|CRY|SCN|DNA|RNA|MRI|CPU|GPU|GPS|AI|API|TTS|STM|CRISPR)\b/i;
-const ALLOWED_ENGLISH = new Set(['YouTube', 'Google', 'Groq', 'Pexels']);
-
-function hasRawTechnicalAcronym(content) {
-  return RAW_ACRONYM_RE.test(String(content || ''));
-}
-
-function hasUnexpectedEnglish(content) {
-  const words = String(content || '').match(/\b[A-Za-z][A-Za-z0-9-]{2,}\b/g) || [];
-  return words.some(w => !ALLOWED_ENGLISH.has(w) && !RAW_ACRONYM_RE.test(w));
-}
-
-const TELUGU_LETTER_NAMES = {
-  A:'ఏ', B:'బీ', C:'సీ', D:'డీ', E:'ఈ', F:'ఎఫ్', G:'జీ', H:'ఏచ్', I:'ఐ', J:'జే', K:'కే', L:'ఎల్', M:'ఎమ్',
-  N:'ఎన్', O:'ఓ', P:'పీ', Q:'క్యూ', R:'ఆర్', S:'ఎస్', T:'టీ', U:'యూ', V:'వీ', W:'డబ్ల్యూ', X:'ఎక్స్', Y:'వై', Z:'జెడ్'
-};
-
-function transliterateAcronym(token) {
-  const clean = String(token || '').replace(/[^A-Za-z]/g, '').toUpperCase();
-  if (clean.length < 2 || clean.length > 8) return token;
-  return [...clean].map(ch => TELUGU_LETTER_NAMES[ch] || ch).join('');
-}
-
-function normalizeTechnicalTerms(content) {
-  let out = String(content || '');
-  out = out.replace(/\b(?:BMAL-1|BMAL1)\b/gi, 'బీఎంఏఎల్ ఒకటి');
-  out = out.replace(/\bCLOCK\b/gi, 'క్లాక్');
-  out = out.replace(/\bGPS\b/gi, 'జీపీఎస్');
-  out = out.replace(/\bDNA\b/gi, 'డీఎన్ఏ');
-  out = out.replace(/\bRNA\b/gi, 'ఆర్ఎన్ఏ');
-  out = out.replace(/\bMRI\b/gi, 'ఎంఆర్ఐ');
-  out = out.replace(/\bCPU\b/gi, 'సీపీయూ');
-  out = out.replace(/\bGPU\b/gi, 'జీపీయూ');
-  out = out.replace(/\bAPI\b/gi, 'ఏపీఐ');
-  out = out.replace(/\bTTS\b/gi, 'టీఎటీఎస్');
-  out = out.replace(/\bCRISPR\b/gi, 'క్రిస్పర్');
-  out = out.replace(/\b(?:PER|CRY|SCN|STM)\b/gi, m => transliterateAcronym(m));
-  out = out.replace(/\b[A-Z]{2,8}\b/g, m => transliterateAcronym(m));
-  return out;
-}
-
-function hasObviousRepetition(content) {
-  const lines = String(content || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
-  const normalized = lines.map(s => s.replace(/[!?.,…]+$/g, '').replace(/\s+/g, ' '));
-  const seen = new Set();
-  for (const line of normalized) {
-    if (line.length >= 12 && seen.has(line)) return true;
-    if (line.length >= 12) seen.add(line);
-  }
-  for (let i = 0; i < normalized.length - 1; i++) {
-    const a = normalized[i].split(/\s+/).slice(0, 6).join(' ');
-    const b = normalized[i + 1].split(/\s+/).slice(0, 6).join(' ');
-    if (a.length >= 14 && a === b) return true;
-  }
-  return false;
-}
-
-function hasBadStyle(content) {
-  const s = String(content || '');
+function badReasons(text) {
+  const s = String(text || '');
   const lines = s.split(/\n+/).map(x => x.trim()).filter(Boolean);
-  if (lines.length < 9 || lines.length > 14) return true;
-  if (lines.filter(x => x.split(/\s+/).filter(Boolean).length < 5).length >= 2) return true;
-  if (lines.some(x => x.length > 150)) return true;
-  if ((s.match(/\.\.\./g) || []).length > 0) return true;
-  if ((s.match(/\?/g) || []).length > 2) return true;
-  if (hasObviousRepetition(s)) return true;
-  return false;
-}
-
-function hasFragmentPatterns(content) {
-  const lines = String(content || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
-  return lines.some(line => /^(అవును|నిజంగా|సరే|అదే|అది|ఇది|అంటే|కానీ|అయితే)\s*[,.!?…]*$/.test(line));
-}
-
-function validationReasons(content) {
   const reasons = [];
-  if (!content.trim()) reasons.push('empty narration');
-  if (hasBadAsciiNumber(content)) reasons.push('ASCII number detected');
-  if (hasRawTechnicalAcronym(content)) reasons.push('raw technical acronym detected');
-  if (hasUnexpectedEnglish(content)) reasons.push('unnecessary English word detected');
-  if (hasBadStyle(content)) reasons.push('bad sentence length/pacing/repetition detected');
-  if (hasFragmentPatterns(content)) reasons.push('sentence fragment detected');
-  return reasons;
-}
-
-function buildRepairPrompt(originalPrompt, badOutput, reasons, attempt) {
-  const forbidden = (String(badOutput || '').match(/\b[A-Za-z][A-Za-z0-9-]{1,}\b/g) || []).slice(0, 20).join(', ');
-  return `${originalPrompt}\n\n${GUARD_MARKER}: STRICT FINAL REPAIR PASS ${attempt}\nPrevious narration failed: ${reasons.join('; ')}.\nRewrite ONLY the narration as a natural Telugu fact-video script. Preserve every verified fact, value, limitation, name, date and cause/effect claim. Do not invent any new number, example, comparison, consequence or explanation.\n\nMANDATORY OUTPUT RULES:\n- 10-14 meaningful lines.\n- Each line should normally contain 7-18 spoken words and be a complete natural sentence.\n- Never output fragment-only lines.\n- Do not split one thought into multiple tiny lines.\n- Use conversational Telugu with normal Telugu word order.\n- Maximum two questions total.\n- Do not repeat the same claim.\n- Do not write ANY English words or Latin-letter acronyms in the final narration. Technical names must be written in Telugu pronunciation, for example జీపీఎస్, డీఎన్ఏ, ఎంఆర్ఐ, బీఎంఏఎల్ ఒకటి.\n- No ASCII digits, no ellipsis, no JSON, no labels, no title, no emoji, no CTA, no markdown.\n- Commas only where grammar or meaning requires them.\n- Last line must be a fact-specific takeaway.\n- Return narration only.\nWords/terms seen in the failed output that must not appear again: ${forbidden || 'none'}.\n\nPREVIOUS NARRATION:\n${badOutput}`;
-}
-
-function buildEmptyRetryPrompt(originalPrompt) {
-  return `${originalPrompt}\n\n${GUARD_MARKER}: EMPTY-OUTPUT RECOVERY\nReturn ONLY the final Telugu narration. Use 10-14 meaningful lines, 7-18 spoken words per line, complete natural sentences, fact-first and conversational. Preserve ONLY the supplied verified fact. No JSON, labels, title, CTA, emoji, markdown, ASCII digits or invented detail. Do not use any English words or Latin-letter acronyms.`;
-}
-
-async function callOriginalGroq(options, prompt, config = {}) {
-  let parsed;
-  try { parsed = JSON.parse(String(options.body || '{}')); } catch (_) { return null; }
-  const messages = Array.isArray(parsed.messages) ? parsed.messages.map(m => ({ ...m })) : [];
-  if (!messages.length) return null;
-  messages[messages.length - 1].content = prompt;
-  parsed.messages = messages;
-  parsed.temperature = config.temperature ?? 0.08;
-  parsed.reasoning_effort = config.reasoning_effort || 'low';
-  parsed.include_reasoning = false;
-  parsed.max_tokens = config.max_tokens || 2400;
-  return ORIGINAL_FETCH('https://api.groq.com/openai/v1/chat/completions', { ...options, body: JSON.stringify(parsed) });
-}
-
-async function verifyNarration(originalPrompt, narration, options) {
-  const verifyPrompt = `${GUARD_MARKER}: FACT-CONSISTENCY CHECK\n\nSOURCE CONTEXT:\n${originalPrompt}\n\nNARRATION:\n${narration}\n\nCheck every number/value, named entity, place, technical term, quantity, limitation and cause/effect claim against the supplied verified fact. Telugu pronunciation forms of the same technical acronym are allowed. Any changed value, invented detail, stronger claim or unsupported explanation is FAIL. Return exactly one word: PASS or FAIL`;
-  try {
-    const response = await callOriginalGroq(options, verifyPrompt, { temperature: 0, max_tokens: 24, reasoning_effort: 'low' });
-    if (!response || typeof response.clone !== 'function') return null;
-    const data = await response.clone().json();
-    const result = String(getGroqContent(data) || '').trim().toUpperCase();
-    console.log(`${GUARD_MARKER}: independent fact check = ${result || 'EMPTY'}`);
-    if (result.startsWith('PASS')) return true;
-    if (result.startsWith('FAIL')) return false;
-    return null;
-  } catch (e) {
-    console.log(`${GUARD_MARKER}: independent fact check = ERROR (${e.message})`);
-    return null;
+  if (!s) reasons.push('empty narration');
+  if (lines.length < 9 || lines.length > 14) reasons.push('wrong line count');
+  if (lines.filter(x => x.split(/\s+/).filter(Boolean).length < 5).length >= 2) reasons.push('fragment lines');
+  if (lines.some(x => x.length > 150)) reasons.push('line too long');
+  if (/\b\d+(?:[.,]\d+)?\b/.test(s)) reasons.push('ASCII number');
+  if (/\.\.\./.test(s)) reasons.push('ellipsis');
+  if ((s.match(/\?/g) || []).length > 2) reasons.push('too many questions');
+  if (/\b(?:CLOCK|BMAL1|BMAL-1|PER|CRY|SCN|DNA|RNA|MRI|CPU|GPU|GPS|AI|API|TTS|STM|CRISPR)\b/i.test(s)) reasons.push('raw technical acronym');
+  const english = s.match(/\b[A-Za-z][A-Za-z0-9-]{2,}\b/g) || [];
+  if (english.some(w => !['YouTube','Google','Groq','Pexels'].includes(w))) reasons.push('unnecessary English');
+  const seen = new Set();
+  for (const line of lines) {
+    const n = line.replace(/[!?.,…]+$/g,'').replace(/\s+/g,' ');
+    if (n.length >= 12 && seen.has(n)) reasons.push('repetition');
+    if (n.length >= 12) seen.add(n);
   }
+  return [...new Set(reasons)];
 }
 
-function makeJsonResponse(data, response) {
-  return new Response(JSON.stringify(data), { status: response.status, statusText: response.statusText, headers: response.headers });
+function suffix(kind) {
+  if (kind === 'beats') return `\n\n${GUARD_MARKER}: FACT-FIRST STORY CONTRACT\n- VERIFIED FACT లోని numbers, values, names, places, dates and cause/effect claims మార్చవద్దు.\n- Fact లో లేని కొత్త number, percentage, year, person, place, comparison లేదా consequence invent చేయవద్దు.\n- Hook curiosity కోసం మాత్రమే; sensational overclaim వద్దు.`;
+  if (kind === 'narration') return `\n\n${GUARD_MARKER}: FINAL NARRATION CONTRACT\n- సహజంగా మాట్లాడే తెలుగు మాత్రమే వాడు.\n- 10-14 meaningful lines; ప్రతి line సాధారణంగా 7-18 spoken words.\n- ప్రతి line పూర్తి సహజమైన వాక్యం కావాలి; fragment-only lines వద్దు.\n- మొదట curiosity hook ఉండవచ్చు, కానీ verified fact వెంటనే స్పష్టంగా చెప్పాలి.\n- VERIFIED FACT లోని numbers, values, names, places, dates, uncertainty మరియు cause/effect claims మార్చవద్దు.\n- Fact లో లేని కొత్త detail, number, comparison లేదా explanation invent చేయవద్దు.\n- Technical acronyms అవసరమైతే తెలుగు ఉచ్చారణలో రాయి; raw English acronyms వద్దు.\n- ASCII digits, unnecessary English, ellipsis, CTA, title, emoji, markdown వద్దు.\n- గరిష్ఠంగా రెండు ప్రశ్నలు. చివరి line fact-specific takeaway కావాలి.\n- Final output narration మాత్రమే.`;
+  return '';
+}
+
+function patchPrompt(prompt) {
+  const kind = classify(prompt);
+  const extra = suffix(kind);
+  if (!extra || String(prompt).includes(GUARD_MARKER)) return { prompt:String(prompt), kind };
+  return { prompt:String(prompt) + extra, kind };
+}
+
+function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+async function retryGroq(options, prompt, maxTokens) {
+  let body;
+  try { body = JSON.parse(String(options.body || '{}')); } catch (_) { return null; }
+  if (!Array.isArray(body.messages) || !body.messages.length) return null;
+  body.messages = body.messages.map(m => ({ ...m }));
+  body.messages[body.messages.length - 1].content = prompt;
+  body.temperature = 0.05;
+  body.max_tokens = maxTokens;
+  body.reasoning_effort = 'low';
+  body.include_reasoning = false;
+  return ORIGINAL_FETCH('https://api.groq.com/openai/v1/chat/completions', { ...options, body:JSON.stringify(body) });
 }
 
 async function guardedFetch(url, options = {}) {
-  if (isGoogleTtsRequest(url, options)) {
+  if (isTts(url, options)) {
     try {
-      const parsed = JSON.parse(String(options.body || '{}'));
-      const raw = JSON.stringify(parsed.input || {});
-      const isCta = /సబ్‌స్క్రైబ్|subscribe/i.test(raw);
-      parsed.audioConfig = { ...(parsed.audioConfig || {}), speakingRate: isCta ? 1.10 : 1.06 };
-      return ORIGINAL_FETCH(url, { ...options, body: JSON.stringify(parsed) });
-    } catch (_) {
-      return ORIGINAL_FETCH(url, options);
-    }
+      const body = JSON.parse(String(options.body || '{}'));
+      const raw = JSON.stringify(body.input || {});
+      body.audioConfig = { ...(body.audioConfig || {}), speakingRate:/సబ్‌స్క్రైబ్|subscribe/i.test(raw) ? 1.10 : 1.06 };
+      return ORIGINAL_FETCH(url, { ...options, body:JSON.stringify(body) });
+    } catch (_) { return ORIGINAL_FETCH(url, options); }
   }
 
-  if (!isGroqChatRequest(url, options)) return ORIGINAL_FETCH(url, options);
+  if (!isGroq(url, options)) return ORIGINAL_FETCH(url, options);
 
-  let parsed;
-  try { parsed = JSON.parse(String(options.body || '{}')); } catch (_) { return ORIGINAL_FETCH(url, options); }
-  const messages = Array.isArray(parsed.messages) ? parsed.messages.map(m => ({ ...m })) : [];
-  const last = messages.length ? messages[messages.length - 1] : null;
+  let body;
+  try { body = JSON.parse(String(options.body || '{}')); } catch (_) { return ORIGINAL_FETCH(url, options); }
+  const last = Array.isArray(body.messages) && body.messages.length ? body.messages[body.messages.length - 1] : null;
   const originalPrompt = last && typeof last.content === 'string' ? last.content : '';
   const patched = patchPrompt(originalPrompt);
 
-  parsed.reasoning_effort = 'low';
-  parsed.include_reasoning = false;
-  parsed.max_tokens = patched.kind === 'narration' ? 2400 : patched.kind === 'beats' ? 900 : 1600;
-  if (patched.kind !== 'other') {
-    parsed.temperature = 0.10;
-    if (last) last.content = patched.prompt;
-  }
-  options = { ...options, body: JSON.stringify(parsed) };
+  if (patched.kind === 'other') return ORIGINAL_FETCH(url, options);
 
-  const response = await ORIGINAL_FETCH(url, options);
+  body = { ...body, messages:body.messages.map(m => ({ ...m })), temperature:0.10, reasoning_effort:'low', include_reasoning:false };
+  body.max_tokens = patched.kind === 'narration' ? 900 : 700;
+  body.messages[body.messages.length - 1].content = patched.prompt;
+  const patchedOptions = { ...options, body:JSON.stringify(body) };
+
+  const response = await ORIGINAL_FETCH(url, patchedOptions);
   if (patched.kind !== 'narration' || !response || typeof response.clone !== 'function') return response;
 
   try {
     const data = await response.clone().json();
-    let content = getGroqContent(data);
+    let content = normalizeTechnicalTerms(clean(getContent(data)));
 
-    if (typeof content !== 'string' || !content.trim()) {
-      console.log(`${GUARD_MARKER}: empty narration response detected — running recovery pass.`);
-      const recoveryResponse = await callOriginalGroq(options, buildEmptyRetryPrompt(patched.prompt), { temperature: 0.06, max_tokens: 2400, reasoning_effort: 'low' });
-      if (recoveryResponse && typeof recoveryResponse.clone === 'function') {
-        const recoveryData = await recoveryResponse.clone().json();
-        let recovered = cleanNarration(getGroqContent(recoveryData));
-        recovered = normalizeTechnicalTerms(recovered);
-        const recoveryBad = validationReasons(recovered);
-        if (recovered && !recoveryBad.length) {
-          recoveryData.choices[0].message.content = recovered;
-          console.log(`${GUARD_MARKER}: recovery accepted.`);
-          console.log(`${GUARD_MARKER}: FINAL NARRATION\n${recovered}`);
-          return makeJsonResponse(recoveryData, recoveryResponse);
+    if (!content) {
+      console.log(`${GUARD_MARKER}: empty narration response; waiting before one low-token retry.`);
+      await wait(20000);
+      const retry = await retryGroq(patchedOptions, `${patched.prompt}\n\nReturn ONLY the narration now. Do not explain your process.`, 900);
+      if (retry && typeof retry.clone === 'function') {
+        const retryData = await retry.clone().json();
+        content = normalizeTechnicalTerms(clean(getContent(retryData)));
+        const retryReasons = badReasons(content);
+        if (content && !retryReasons.length) {
+          retryData.choices[0].message.content = content;
+          console.log(`${GUARD_MARKER}: low-token retry accepted.`);
+          return new Response(JSON.stringify(retryData), { status:retry.status, statusText:retry.statusText, headers:retry.headers });
         }
       }
+      console.log(`${GUARD_MARKER}: narration still empty/invalid after one retry; returning primary response so the main pipeline can handle it.`);
       return response;
     }
 
-    content = normalizeTechnicalTerms(cleanNarration(content));
-    let reasons = validationReasons(content);
-
+    let reasons = badReasons(content);
     if (!reasons.length) {
-      const factPass = await verifyNarration(patched.prompt, content, options);
-      if (factPass === false) reasons.push('independent fact check failed');
-      else if (factPass === null) console.log(`${GUARD_MARKER}: independent fact check unavailable — keeping locally clean narration.`);
+      data.choices[0].message.content = content;
+      console.log(`${GUARD_MARKER}: FINAL NARRATION accepted by local quality gate.`);
+      return new Response(JSON.stringify(data), { status:response.status, statusText:response.statusText, headers:response.headers });
     }
 
-    if (reasons.length) {
-      console.log(`${GUARD_MARKER}: narration repair required — ${reasons.join(' | ')}`);
-      let repairData = null;
-      let repaired = '';
-
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        const repairResponse = await callOriginalGroq(options, buildRepairPrompt(patched.prompt, content, reasons, attempt), { temperature: 0.02, max_tokens: 2400, reasoning_effort: 'low' });
-        if (!repairResponse || typeof repairResponse.clone !== 'function') continue;
-        const candidateData = await repairResponse.clone().json();
-        const candidate = normalizeTechnicalTerms(cleanNarration(getGroqContent(candidateData)));
-        const candidateReasons = validationReasons(candidate);
-        console.log(`${GUARD_MARKER}: repair attempt ${attempt}: ${candidateReasons.length ? candidateReasons.join(' | ') : 'local checks passed'}`);
-
-        if (candidate && !candidateReasons.length) {
-          const repairFactPass = await verifyNarration(patched.prompt, candidate, options);
-          if (repairFactPass !== false) {
-            repairData = candidateData;
-            repaired = candidate;
-            break;
-          }
-          console.log(`${GUARD_MARKER}: repair attempt ${attempt} failed independent fact check.`);
-        }
-
-        content = candidate || content;
-        reasons = candidateReasons.length ? candidateReasons : ['independent fact check failed'];
-      }
-
-      if (repairData && repaired) {
+    console.log(`${GUARD_MARKER}: repair required — ${reasons.join(' | ')}`);
+    await wait(5000);
+    const repairPrompt = `${patched.prompt}\n\n${GUARD_MARKER}: REPAIR\nPrevious output failed: ${reasons.join('; ')}. Rewrite ONLY the narration. Preserve the supplied verified fact exactly. Use natural Telugu, 10-14 complete lines, 7-18 spoken words per line, no English words, no Latin acronyms, no ASCII digits, no title or labels.`;
+    const repair = await retryGroq(patchedOptions, repairPrompt, 900);
+    if (repair && typeof repair.clone === 'function') {
+      const repairData = await repair.clone().json();
+      const repaired = normalizeTechnicalTerms(clean(getContent(repairData)));
+      const repairReasons = badReasons(repaired);
+      if (repaired && !repairReasons.length) {
         repairData.choices[0].message.content = repaired;
-        console.log(`${GUARD_MARKER}: repair accepted after retry.`);
-        console.log(`${GUARD_MARKER}: FINAL NARRATION\n${repaired}`);
-        return makeJsonResponse(repairData, response);
+        console.log(`${GUARD_MARKER}: repair accepted.`);
+        return new Response(JSON.stringify(repairData), { status:repair.status, statusText:repair.statusText, headers:repair.headers });
       }
-
-      throw new Error(`${GUARD_MARKER}: narration quality gate failed after 3 repair attempts — refusing to publish broken narration.`);
+      console.log(`${GUARD_MARKER}: repair rejected — ${repairReasons.join(' | ')}`);
     }
-
-    data.choices[0].message.content = content;
-    console.log(`${GUARD_MARKER}: FINAL NARRATION\n${content}`);
-    return makeJsonResponse(data, response);
+    throw new Error(`${GUARD_MARKER}: narration quality gate failed after one repair — refusing to publish broken narration.`);
   } catch (e) {
     if (String(e.message || '').includes('narration quality gate failed')) throw e;
-    console.log(`${GUARD_MARKER}: post-processing failed (${e.message}) — preserving primary response.`);
+    console.log(`${GUARD_MARKER}: response parsing/guard handling failed (${e.message}); preserving primary response.`);
     return response;
   }
 }
 
 guardedFetch.__NARRATION_QUALITY_GUARD__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — fact-first Telugu narration + repair retries + strict natural sentence/TTS rules active.`);
-module.exports = { enabled: true, marker: GUARD_MARKER };
+console.log(`${GUARD_MARKER}: enabled — low-token narration checks + rate-limit-friendly recovery active.`);
+module.exports = { enabled:true, marker:GUARD_MARKER };
