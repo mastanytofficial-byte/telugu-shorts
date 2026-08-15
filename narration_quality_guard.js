@@ -1,6 +1,6 @@
 // Stable narration-quality guard V10.
-// Enforces factual, logically connected narration style without forcing pure Telugu.
-// Quality checks are non-blocking: one Groq request per narration generation.
+// Enforces factual, logically connected narration without requiring pure Telugu.
+// Quality checks are non-blocking and never create retry/repair Groq calls.
 
 const ORIGINAL_FETCH = global.fetch;
 const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V10';
@@ -40,7 +40,8 @@ function tokenBudget(kind) {
 }
 
 function getContent(data) {
-  return data && data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : null;
+  return data && data.choices && data.choices[0] && data.choices[0].message
+    ? data.choices[0].message.content : null;
 }
 
 function clean(text) {
@@ -60,39 +61,37 @@ function qualityReasons(text) {
   if (!s) reasons.push('empty narration');
   if (lines.length < 10 || lines.length > 18) reasons.push(`line count ${lines.length}`);
   if (lines.some(x => x.length > 180)) reasons.push('line too long');
-  if ((s.match(/\?/g) || []).length > 2) reasons.push('too many questions');
+  if (/\b\d+(?:[.,]\d+)?\b/.test(s)) reasons.push('ASCII number');
+  if ((s.match(/\? /g) || []).length > 2) reasons.push('too many questions');
   return [...new Set(reasons)];
 }
 
-function suffix(kind) {
-  if (kind === 'beats') return `\n\n${GUARD_MARKER}: FACT-FIRST STORY CONTRACT\n- VERIFIED FACT లోని numbers, values, names, places, dates, uncertainty and cause/effect claims మార్చవద్దు.\n- Fact లో లేని కొత్త number, percentage, year, person, place, comparison లేదా consequence invent చేయవద్దు.\n- Hook curiosity కోసం మాత్రమే; sensational overclaim వద్దు.`;
-
-  if (kind === 'narration') return `\n\n${GUARD_MARKER}: FACT-NARRATION CONTRACT — HIGHEST PRIORITY\n- Final output ఒక verified fact ని explain చేసే natural Telugu fact script అయి ఉండాలి. ఇది fiction, personal story లేదా generic motivational story కాదు.\n- నీ role storyteller కంటే fact explainer / science-documentary narrator. Story Beats ని final story గా copy చేయకుండా, వాటి information ని logically connected factual narration గా convert చేయి.\n- Information flow: hook/context → what the verified fact says → supporting detail/evidence → how or why it happens (ONLY if supported by VERIFIED FACT) → important implication/detail → fact-specific conclusion.\n- ప్రతి sentence ముందు sentence కి logical connection కలిగి ఉండాలి. ఒక sentence లో చెప్పిన విషయం తర్వాతి sentence కి context ఇవ్వాలి. Random facts లేదా disconnected punch lines వద్దు.\n- ప్రతి sentence పూర్తి అర్థం ఉన్న natural spoken sentence కావాలి. Suspense కోసం fragment-only lines ని ఎక్కువగా వాడవద్దు.\n- Hook curiosity కోసం ఉండొచ్చు, కానీ hook itself factual scope ని distort చేయకూడదు. Fake shock, fake twist, clickbait claim, exaggerated consequence వద్దు.\n- Final narration చదివినప్పుడు “ఒక విషయం/వాస్తవాన్ని narrator explain చేస్తున్నాడు” అనిపించాలి; “ఒక కథ చెప్తున్నాడు” అనిపించకూడదు.\n- VERIFIED FACT లో లేని కొత్త detail, number, example, location, person, comparison, cause/effect claim లేదా scientific explanation invent చేయవద్దు.\n- Source fact లో uncertainty/limits ఉంటే అదే uncertainty maintain చేయి. “may/can/some/certain” ని “always/all/definitely” గా మార్చవద్దు.\n- Technical terms, English words, acronyms, names and places అవసరమైనప్పుడు original form లో ఉంచవచ్చు. Pure Telugu గా మార్చాల్సిన అవసరం లేదు. Natural Telugu-English technical usage is allowed.\n- Numbers source fact లో ఉన్న form లో ఉండొచ్చు. TTS clarity కోసం మాత్రమే number wording మార్చాల్సి వస్తే meaning/value మాత్రం మార్చవద్దు.\n- Generic moral, life lesson, personal opinion, subscribe CTA లేదా unrelated conclusion వద్దు. Last line verified fact కి సంబంధించిన conclusion కావాలి.\n- గరిష్ఠంగా రెండు rhetorical questions. ప్రతి sentence తర్వాత suspense question వద్దు.\n- Punctuation natural spoken delivery కోసం వాడు; ellipsis ని overuse చేయవద్దు.\n- 12-18 meaningful lines లో రాయి. Line break visual/voice pacing కోసం మాత్రమే; ఒక logical sentence ని unnecessary fragments గా విరగొట్టవద్దు.\n- Final output narration మాత్రమే. Title, labels, emoji, markdown వద్దు.`;
-
-  return '';
+function narrationContract() {
+  return `\n\n${GUARD_MARKER}: FACT-EXPLANATION NARRATION CONTRACT\n- ఇది verified fact ని explain చేసే narration. Dramatic story, fictional storytelling లేదా news-reader style వద్దు.\n- ప్రతి line ఒక complete, natural spoken Telugu sentence/meaningful spoken thought గా ఉండాలి. అవసరం లేని sentence fragments వద్దు.\n- ప్రతి sentence ముందున్న sentence కి logically connect అవ్వాలి. Context → fact → supporting detail/evidence → explanation → fact-specific conclusion అనే సహజమైన progression వాడు.\n- ప్రతి line కి కొత్త suspense/twist అవసరం లేదు. Information naturally advance అవ్వాలి.\n- Hook curiosity కోసం ఉండొచ్చు, కానీ fake suspense లేదా sensational wording వద్దు. Question వాడితే అది fact ని explain చేయడానికి ఉపయోగపడాలి.\n- ఒక sentence లో vague reference వద్దు. “అది”, “ఇది”, “అక్కడ”, “అప్పుడు” వంటి words కి clear context ఉండాలి.\n- VERIFIED FACT లో ఉన్న numbers, dates, names, places, uncertainty, cause/effect మరియు scope మార్చవద్దు.\n- VERIFIED FACT లేదా story beats లో లేని new fact, number, example, comparison, cause, consequence లేదా claim invent చేయవద్దు.\n- “may/can/some/certain” వంటి limitations ని “అన్నీ/ఎప్పుడూ/ఖచ్చితంగా”గా overclaim చేయవద్దు.\n- English technical terms, brands, names, places, acronyms అవసరమైతే natural Telugu sentence లో వాడొచ్చు. Pure Telugu compulsory కాదు. Random English మాత్రం వద్దు.\n- Generic moral, motivational lesson, personal opinion, subscribe/CTA, title, labels, emoji, markdown వద్దు.\n- Final line తప్పనిసరిగా ఈ fact కి సంబంధించిన concise factual takeaway కావాలి; generic moral కాదు.\n- 12-18 spoken lines. Line breaks pacing కోసం మాత్రమే; grammar ని line-break కోసం break చేయవద్దు.\n- Final narration text మాత్రమే ఇవ్వు.`;
 }
 
 function patchPrompt(prompt) {
   const kind = classify(prompt);
-  const extra = suffix(kind);
-  if (!extra || String(prompt).includes(GUARD_MARKER)) return { prompt:String(prompt), kind };
-  return { prompt:String(prompt) + extra, kind };
+  if (kind !== 'narration' || String(prompt).includes(GUARD_MARKER)) return { prompt: String(prompt), kind };
+  return { prompt: String(prompt) + narrationContract(), kind };
 }
 
 async function guardedFetch(url, options = {}) {
   if (isTts(url, options)) {
     try {
       const body = JSON.parse(String(options.body || '{}'));
-      const raw = JSON.stringify(body.input || {});
-      body.audioConfig = { ...(body.audioConfig || {}), speakingRate:/సబ్‌స్క్రైబ్|subscribe/i.test(raw) ? 1.10 : 1.06 };
-      return ORIGINAL_FETCH(url, { ...options, body:JSON.stringify(body) });
-    } catch (_) { return ORIGINAL_FETCH(url, options); }
+      body.audioConfig = { ...(body.audioConfig || {}), speakingRate: /సబ్‌స్క్రైబ్|subscribe/i.test(JSON.stringify(body.input || {})) ? 1.10 : 1.06 };
+      return ORIGINAL_FETCH(url, { ...options, body: JSON.stringify(body) });
+    } catch (_) {
+      return ORIGINAL_FETCH(url, options);
+    }
   }
 
   if (!isGroq(url, options)) return ORIGINAL_FETCH(url, options);
 
   let body;
-  try { body = JSON.parse(String(options.body || '{}')); } catch (_) { return ORIGINAL_FETCH(url, options); }
+  try { body = JSON.parse(String(options.body || '{}')); }
+  catch (_) { return ORIGINAL_FETCH(url, options); }
   if (!Array.isArray(body.messages) || !body.messages.length) return ORIGINAL_FETCH(url, options);
 
   const last = body.messages[body.messages.length - 1];
@@ -110,8 +109,8 @@ async function guardedFetch(url, options = {}) {
   delete body.max_tokens;
   body.messages[body.messages.length - 1].content = patched.prompt;
 
-  // Exactly ONE upstream Groq request for this generation.
-  const response = await ORIGINAL_FETCH(url, { ...options, body:JSON.stringify(body) });
+  // Exactly one upstream Groq request for each generation.
+  const response = await ORIGINAL_FETCH(url, { ...options, body: JSON.stringify(body) });
   if (patched.kind !== 'narration' || !response || typeof response.clone !== 'function') return response;
 
   try {
@@ -130,14 +129,14 @@ async function guardedFetch(url, options = {}) {
     }
 
     data.choices[0].message.content = content;
-    return new Response(JSON.stringify(data), { status:response.status, statusText:response.statusText, headers:response.headers });
+    return new Response(JSON.stringify(data), { status: response.status, statusText: response.statusText, headers: response.headers });
   } catch (e) {
     console.log(`${GUARD_MARKER}: response parsing/guard handling failed (${e.message}); preserving primary response.`);
     return response;
   }
 }
 
-guardedFetch.__NARRATION_QUALITY_GUARD__ = true;
+gardedFetch.__NARRATION_QUALITY_GUARD__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — factual narration contract + single-request Groq budget + non-blocking quality checks active.`);
-module.exports = { enabled:true, marker:GUARD_MARKER };
+console.log(`${GUARD_MARKER}: enabled — fact-explanation sentence style + single-request Groq budgets active.`);
+module.exports = { enabled: true, marker: GUARD_MARKER };
