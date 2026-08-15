@@ -7,7 +7,7 @@ const child = require('child_process');
 const SOURCE = path.join(__dirname, 'index.js');
 const RUNTIME = path.join(__dirname, '.index.runtime.js');
 const QUALITY_GUARD = path.join(__dirname, 'narration_quality_guard.js');
-const EXPECTED_GUARD = 'NARRATION_QUALITY_GUARD_V7';
+const EXPECTED_GUARD = 'NARRATION_QUALITY_GUARD_V8';
 
 child.execFileSync(process.execPath, ['--check', SOURCE], { stdio: 'inherit' });
 child.execFileSync(process.execPath, ['--check', QUALITY_GUARD], { stdio: 'inherit' });
@@ -26,9 +26,8 @@ fs.writeFileSync(RUNTIME, runtimeSource.replace(OLD_BRAND, NEW_BRAND), 'utf8');
 
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 
-// Preflight wrapper: keep every Groq request comfortably below the
-// organization's 8k TPM request ceiling. Also prevent the quality guard
-// from mistaking the Stage-1 story-beats prompt for final narration.
+// Preflight wrapper: keep every Groq request below the configured token ceiling.
+// The narration quality guard handles only narration-specific prompt/quality work.
 const NATIVE_FETCH = global.fetch;
 if (!NATIVE_FETCH) throw new Error('Global fetch is unavailable.');
 global.fetch = async (url, options = {}) => {
