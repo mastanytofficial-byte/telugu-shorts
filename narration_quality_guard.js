@@ -1,9 +1,10 @@
-// Stable narration-quality guard V10.
-// Enforces factual, logically connected narration without requiring pure Telugu.
-// Quality checks are non-blocking and never create retry/repair Groq calls.
+// Stable narration-quality guard V11.
+// Overrides legacy story-teller prompting so verified facts are narrated as
+// factual explanations with connected, grammatically complete sentences.
+// Quality checks remain non-blocking and no repair/retry Groq call is added.
 
 const ORIGINAL_FETCH = global.fetch;
-const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V10';
+const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V11';
 
 if (!ORIGINAL_FETCH || ORIGINAL_FETCH.__NARRATION_QUALITY_GUARD__) {
   module.exports = { enabled: true, marker: GUARD_MARKER };
@@ -66,14 +67,28 @@ function qualityReasons(text) {
   return [...new Set(reasons)];
 }
 
+function factBeatContract() {
+  return `\n\n${GUARD_MARKER}: FACT BEAT OVERRIDE\n- These are planning beats for a VERIFIED FACT, not a fictional story.\n- Build the beats around factual information flow: context → exact fact → supporting detail → explanation → factual takeaway.\n- Do not require a twist, suspense reveal, dramatic reversal, personal scenario, or artificial consequence.\n- hook may create curiosity, but it must not hide or distort the fact merely to create suspense.\n- question is optional in spirit: it must represent a genuine factual question, not manufactured drama.\n- reveal must state the verified core fact accurately.\n- twist must be replaced by the most interesting VERIFIED DETAIL already supported by the source; if there is no such detail, use another clarifying fact.\n- ending must be a fact-specific takeaway, never a generic moral.\n- Never invent facts, numbers, names, causes, consequences, comparisons, or examples.`;
+}
+
 function narrationContract() {
-  return `\n\n${GUARD_MARKER}: FACT-EXPLANATION NARRATION CONTRACT\n- ఇది verified fact ని explain చేసే narration. Dramatic story, fictional storytelling లేదా news-reader style వద్దు.\n- ప్రతి line ఒక complete, natural spoken Telugu sentence/meaningful spoken thought గా ఉండాలి. అవసరం లేని sentence fragments వద్దు.\n- ప్రతి sentence ముందున్న sentence కి logically connect అవ్వాలి. Context → fact → supporting detail/evidence → explanation → fact-specific conclusion అనే సహజమైన progression వాడు.\n- ప్రతి line కి కొత్త suspense/twist అవసరం లేదు. Information naturally advance అవ్వాలి.\n- Hook curiosity కోసం ఉండొచ్చు, కానీ fake suspense లేదా sensational wording వద్దు. Question వాడితే అది fact ని explain చేయడానికి ఉపయోగపడాలి.\n- ఒక sentence లో vague reference వద్దు. “అది”, “ఇది”, “అక్కడ”, “అప్పుడు” వంటి words కి clear context ఉండాలి.\n- VERIFIED FACT లో ఉన్న numbers, dates, names, places, uncertainty, cause/effect మరియు scope మార్చవద్దు.\n- VERIFIED FACT లేదా story beats లో లేని new fact, number, example, comparison, cause, consequence లేదా claim invent చేయవద్దు.\n- “may/can/some/certain” వంటి limitations ని “అన్నీ/ఎప్పుడూ/ఖచ్చితంగా”గా overclaim చేయవద్దు.\n- English technical terms, brands, names, places, acronyms అవసరమైతే natural Telugu sentence లో వాడొచ్చు. Pure Telugu compulsory కాదు. Random English మాత్రం వద్దు.\n- Generic moral, motivational lesson, personal opinion, subscribe/CTA, title, labels, emoji, markdown వద్దు.\n- Final line తప్పనిసరిగా ఈ fact కి సంబంధించిన concise factual takeaway కావాలి; generic moral కాదు.\n- 12-18 spoken lines. Line breaks pacing కోసం మాత్రమే; grammar ని line-break కోసం break చేయవద్దు.\n- Final narration text మాత్రమే ఇవ్వు.`;
+  return `\n\n${GUARD_MARKER}: FINAL FACT-EXPLAINER OVERRIDE — THIS OVERRIDES EARLIER STORYTELLER EXAMPLES AND STYLE RULES\n- This output is a factual explanation of a VERIFIED FACT. It is NOT a fictional story, dramatic story, personal anecdote, or suspense story.\n- Ignore any earlier instruction in this same prompt that says to act as a "high-retention storyteller", hide the answer for suspense, force a twist, or make every line create a "what happens next" feeling. Factual accuracy and sentence clarity take priority.\n- The narration should sound like a knowledgeable person naturally explaining one interesting fact to a viewer. Retention comes from the information itself, not from artificial drama.\n- Every line must be a complete, grammatically correct spoken sentence or a complete meaningful clause. Do not create fragment-only lines such as “అయితే...”, “కానీ...”, “అసలు విషయం...”, “ఇంకా షాక్...” unless they are grammatically attached to a complete thought; preferably avoid standalone fragments entirely.\n- Sentences must form one logical chain. Each sentence should add, clarify, qualify, or conclude information from the VERIFIED FACT.\n- Use this factual progression when supported: identify the subject → state the exact fact → explain the relevant condition/process → give the supported detail or measurement → clarify what it means → finish with a concise fact-specific takeaway.\n- Do not force hook → question → reveal → twist → ending. That structure is optional and must never distort factual explanation.\n- Preserve the source's exact scope. If the fact is about a specific object, location, process, condition, or substance, do not generalize it to a broader subject. For example, a temperature measured at a hydrothermal vent must not be narrated as the temperature of all deep-ocean water.\n- Preserve qualifiers such as “some”, “certain”, “may”, “can”, “under these conditions”, ranges, approximate values, and exceptions. Never turn a qualified claim into an absolute claim.\n- Never infer a cause, effect, comparison, implication, or consequence unless the VERIFIED FACT explicitly supports it.\n- Never invent a new fact, number, date, name, place, example, comparison, scientific explanation, or consequence.\n- English technical terms, brands, names, places, and acronyms are allowed when needed for accuracy. Pure Telugu is NOT required. Avoid random English.\n- Natural spoken Telugu is required, but factual precision is more important than dramatic wording.\n- Do not use generic morals, motivation, opinions, calls to action, title labels, emoji, or markdown.\n- Use Telugu words for numbers in the final narration when the existing project rule requires it; do not change the underlying numerical value.\n- Final line must summarize the verified fact or its supported significance, not give a generic life lesson.\n- Keep 12-18 spoken lines, but do not break grammar merely to satisfy line count.\n- Return only the final narration text.`;
 }
 
 function patchPrompt(prompt) {
-  const kind = classify(prompt);
-  if (kind !== 'narration' || String(prompt).includes(GUARD_MARKER)) return { prompt: String(prompt), kind };
-  return { prompt: String(prompt) + narrationContract(), kind };
+  const original = String(prompt || '');
+  const kind = classify(original);
+  if (original.includes(GUARD_MARKER)) return { prompt: original, kind };
+
+  if (kind === 'beats') {
+    return { prompt: original + factBeatContract(), kind };
+  }
+
+  if (kind === 'narration') {
+    return { prompt: original + narrationContract(), kind };
+  }
+
+  return { prompt: original, kind };
 }
 
 async function guardedFetch(url, options = {}) {
@@ -101,7 +116,7 @@ async function guardedFetch(url, options = {}) {
   body = {
     ...body,
     messages: body.messages.map(m => ({ ...m })),
-    temperature: patched.kind === 'narration' ? 0.10 : 0.05,
+    temperature: (patched.kind === 'narration' || patched.kind === 'beats') ? 0.08 : 0.05,
     reasoning_effort: 'low',
     include_reasoning: false,
     max_completion_tokens: tokenBudget(patched.kind)
@@ -138,5 +153,5 @@ async function guardedFetch(url, options = {}) {
 
 guardedFetch.__NARRATION_QUALITY_GUARD__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — fact-explanation sentence style + single-request Groq budgets active.`);
+console.log(`${GUARD_MARKER}: enabled — factual explainer style + single-request Groq budgets active.`);
 module.exports = { enabled: true, marker: GUARD_MARKER };
