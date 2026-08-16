@@ -7,7 +7,7 @@ const child = require('child_process');
 const SOURCE = path.join(__dirname, 'index.js');
 const RUNTIME = path.join(__dirname, '.index.runtime.js');
 const QUALITY_GUARD = path.join(__dirname, 'narration_quality_guard.js');
-const EXPECTED_GUARD = 'NARRATION_QUALITY_GUARD_V10';
+const EXPECTED_GUARD = 'NARRATION_QUALITY_GUARD_V11';
 
 child.execFileSync(process.execPath, ['--check', SOURCE], { stdio: 'inherit' });
 child.execFileSync(process.execPath, ['--check', QUALITY_GUARD], { stdio: 'inherit' });
