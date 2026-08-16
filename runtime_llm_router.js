@@ -7,7 +7,7 @@ const child = require('child_process');
 const SOURCE = path.join(__dirname, 'index.js');
 const RUNTIME = path.join(__dirname, '.index.runtime.js');
 const QUALITY_GUARD = path.join(__dirname, 'narration_quality_guard.js');
-const EXPECTED_GUARD = 'NARRATION_QUALITY_GUARD_V11';
+const EXPECTED_GUARD = 'NARRATION_QUALITY_GUARD_V12';
 
 child.execFileSync(process.execPath, ['--check', SOURCE], { stdio: 'inherit' });
 child.execFileSync(process.execPath, ['--check', QUALITY_GUARD], { stdio: 'inherit' });
@@ -51,5 +51,5 @@ const guard = require(QUALITY_GUARD);
 if (!guard || guard.marker !== EXPECTED_GUARD) {
   throw new Error(`Narration quality guard ${EXPECTED_GUARD} failed to load — refusing to run the video pipeline.`);
 }
-console.log(`${EXPECTED_GUARD}: source + runtime syntax checks passed; factual narration guard loaded.`);
+console.log(`${EXPECTED_GUARD}: source + runtime syntax checks passed; structured factual narration guard loaded.`);
 require(RUNTIME);
