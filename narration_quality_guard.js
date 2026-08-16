@@ -136,7 +136,7 @@ async function guardedFetch(url, options = {}) {
   }
 }
 
-gardedFetch.__NARRATION_QUALITY_GUARD__ = true;
+guardedFetch.__NARRATION_QUALITY_GUARD__ = true;
 global.fetch = guardedFetch;
 console.log(`${GUARD_MARKER}: enabled — fact-explanation sentence style + single-request Groq budgets active.`);
 module.exports = { enabled: true, marker: GUARD_MARKER };
