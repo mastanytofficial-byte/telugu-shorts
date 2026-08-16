@@ -1,7 +1,8 @@
 // Stable narration-quality guard V11.
-// Rebuilds the narration prompt so legacy storyteller instructions and
-// examples cannot compete with the factual-explainer requirements.
-// Quality checks remain non-blocking and no repair/retry Groq call is added.
+// Restores the actual approved Telugu Amazing Facts Shorts target:
+// conversational Telugu storyteller narration, 20-30 seconds, short spoken
+// beats, curiosity -> reveal -> surprising detail -> factual takeaway.
+// The verified fact remains the only factual source. No repair/retry Groq call.
 
 const ORIGINAL_FETCH = global.fetch;
 const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V11';
@@ -32,7 +33,7 @@ function classify(prompt) {
 }
 
 function tokenBudget(kind) {
-  if (kind === 'narration') return 3000;
+  if (kind === 'narration') return 1800;
   if (kind === 'beats') return 600;
   if (kind === 'verification') return 350;
   if (kind === 'punctuation') return 700;
@@ -55,15 +56,22 @@ function clean(text) {
     .trim();
 }
 
+function wordCount(text) {
+  return String(text || '').split(/\s+/).map(x => x.trim()).filter(Boolean).length;
+}
+
 function qualityReasons(text) {
   const s = String(text || '');
   const lines = s.split(/\n+/).map(x => x.trim()).filter(Boolean);
+  const words = wordCount(s);
   const reasons = [];
   if (!s) reasons.push('empty narration');
-  if (lines.length < 10 || lines.length > 18) reasons.push(`line count ${lines.length}`);
-  if (lines.some(x => x.length > 180)) reasons.push('line too long');
+  if (lines.length < 12 || lines.length > 18) reasons.push(`line count ${lines.length}`);
+  if (words < 45 || words > 80) reasons.push(`word count ${words} (target 55-75)`);
+  if (lines.some(x => x.length > 120)) reasons.push('line too long');
   if (/\b\d+(?:[.,]\d+)?\b/.test(s)) reasons.push('ASCII number');
   if ((s.match(/\? /g) || []).length > 2) reasons.push('too many questions');
+  if (/\b(అసలు విషయం ఏంటంటే|ఇంకా షాక్ ఏంటంటే|ఇది వింటే షాక్|అయితే\.\.\.|కానీ\.\.\.)/gi.test(s)) reasons.push('template transition');
   return [...new Set(reasons)];
 }
 
@@ -76,23 +84,59 @@ function extractBlock(text, startMarker, endMarker) {
   return source.slice(from, end >= 0 ? end : source.length).trim();
 }
 
-function buildFactExplainerPrompt(original) {
-  const beats = extractBlock(original, 'STORY BEATS:', 'VERIFIED FACT — ACCURACY GROUNDING:');
+function buildTargetNarrationPrompt(original) {
   const fact = extractBlock(original, 'VERIFIED FACT — ACCURACY GROUNDING:', 'నీ ROLE:');
-  const topic = extractBlock(original, 'ఒక original Telugu YouTube Shorts narration రాయి.', 'STORY BEATS:');
 
-  return `Write the final narration for a Telugu YouTube Short using ONLY the verified fact supplied below.\n\nVERIFIED FACT:\n${fact || original}\n\nOPTIONAL PLANNING BEATS:\n${beats || '(none)'}\n\nCORE TASK:\nExplain this one fact clearly, naturally, and accurately to a viewer. This is a factual explainer, not a fictional story. The planning beats are only organizational hints; the VERIFIED FACT is the source of truth. If a beat conflicts with, broadens, or adds information beyond the verified fact, ignore the beat.\n\nFACTUAL STRUCTURE:\n1. Start with a natural opening that identifies the subject or creates curiosity without hiding or distorting the core fact.\n2. State the exact core fact early enough that the viewer understands what is being explained.\n3. Add only relevant supporting details that are present in the verified fact.\n4. Explain what the fact means, how the stated condition/process works, or why the stated detail matters, but only when supported by the verified fact.\n5. End with a concise fact-specific takeaway.\n\nSTRICT ACCURACY:\n- Do not invent or infer any new fact, number, date, name, place, cause, effect, comparison, example, mechanism, or consequence.\n- Preserve the exact scope and subject. Do not turn a fact about one object, location, process, condition, or substance into a claim about a broader category.\n- Preserve qualifiers such as some, certain, may, can, under these conditions, approximate values, ranges, and exceptions. Never turn them into absolute claims.\n- Preserve numerical values and units exactly in meaning.\n- Do not use the planning beats as a second source of facts.\n\nSENTENCE QUALITY:\n- Use natural spoken Telugu suitable for a knowledgeable narrator.\n- Every sentence must be grammatically complete and logically connected to the previous sentence.\n- Each sentence should add, clarify, qualify, or conclude information. Remove filler that adds no information.\n- Avoid disconnected one-line fragments such as “అయితే...”, “కానీ...”, “అసలు విషయం...”, or “ఇంకా షాక్...”.\n- Do not force a hook → question → reveal → twist → ending pattern. A question is optional. A twist is not required.\n- Do not create artificial suspense or emotional exaggeration just to increase retention. Retention should come from the interesting fact and clear explanation.\n- Do not repeat the same fact in slightly different words.\n- Do not add generic morals, motivation, opinions, CTA, title labels, emoji, or markdown.\n- English technical terms, scientific names, brands, places, and acronyms are allowed when they improve accuracy or naturalness. Pure Telugu is not required.\n\nOUTPUT FORMAT:\n- 12-18 spoken lines.\n- Target approximately 85-115 Telugu words.\n- Line breaks are for voice pacing only; never break a grammatical sentence merely to satisfy line count.\n- Final line must be a factual takeaway directly supported by the verified fact.\n- Return ONLY the narration text.`;
+  return `కింద ఉన్న VERIFIED FACT ఆధారంగా Telugu YouTube Short కోసం final narration రాయి.
+
+VERIFIED FACT — ఇదొక్కటే factual source:
+${fact || original}
+
+TARGET:
+ఇది 20-30 seconds లో సహజంగా వినిపించే conversational Telugu fact narration. Viewer కి ఒక knowledgeable friend ఒక ఆశ్చర్యకరమైన నిజం చెబుతున్నట్టు ఉండాలి. Textbook, documentary, news-reader లేదా formal lecture లాగా ఉండకూడదు.
+
+NARRATION FLOW:
+- మొదటి 1-2 lines: curiosity కలిగించే natural hook. Core answer ని వెంటనే పూర్తిగా reveal చేయకు.
+- తర్వాత: viewer కి “అయితే అసలు విషయం ఏమిటి?” అనిపించేలా fact ని step-by-step reveal చేయి.
+- మధ్యలో: verified fact లో ఉన్న అత్యంత interesting supporting detail మాత్రమే ఇవ్వు.
+- తర్వాత: ఆ detail ఎందుకు surprising/important అనేది, verified fact support చేస్తే, సహజంగా చెప్పు.
+- చివర: memorable, fact-specific takeaway. Generic moral కాదు.
+- “hook → curiosity → reveal → surprising detail → twist → takeaway” ఒక guide మాత్రమే. Twist తప్పనిసరి కాదు; verified fact లో genuine interesting detail లేకపోతే twist invent చేయకుండా clean takeaway ఇవ్వు.
+
+STRICT FACT SAFETY:
+- VERIFIED FACT మాత్రమే source. దాని బయట కొత్త fact, number, date, name, place, cause, effect, comparison, example, mechanism లేదా consequence invent చేయకు.
+- Story beats, imagination, common knowledge లేదా your own inference ని factual source గా ఉపయోగించకు.
+- Fact ఒక specific object/location/process/condition గురించి ఉంటే అదే scope లో ఉంచు. Broader claim గా మార్చకు.
+- “may/can/some/certain/under these conditions” వంటి qualifiers ఉంటే వాటి meaning మార్చకు.
+- Numerical/scientific notation అవసరం లేకపోతే narration లో raw equation లాగా చెప్పకు. Fact ని simplify చేయవచ్చు, కానీ numerical meaning మార్చకూడదు.
+- ASCII digits (`3`, `10^21`, `97×10^24`, `0005`) final spoken narration లో పెట్టకు. అవసరమైన numbers ని natural Telugu words లో చెప్పు. Number essential కాకపోతే, verified fact ని మార్చకుండా దాన్ని omit చేయి.
+
+SPOKEN STYLE:
+- Natural Telugu conversation. అవసరమైన English technical terms/names/brands/acronyms మాత్రమే natural గా వాడొచ్చు. Pure Telugu compulsory కాదు.
+- మొత్తం 12-18 short spoken lines.
+- మొత్తం target 55-75 words; absolute range 45-80 words.
+- సాధారణంగా ప్రతి line 2-8 words; కొన్ని lines 9-10 words ఉండొచ్చు.
+- ప్రతి line ఒక natural spoken beat. కానీ grammar ని కావాలనే విరగ్గొట్టే fragments వద్దు.
+- ఒక line లో చాలా clauses పెట్టొద్దు.
+- అదే fact ని వేరే పదాలతో repeat చేయొద్దు.
+- ప్రతి 1-3 lines కి కొత్త relevant information లేదా clarification ఉండాలి.
+- “అయితే...”, “కానీ...”, “అసలు విషయం ఏంటంటే...”, “ఇంకా షాక్ ఏంటంటే...” వంటి template transitions ని repeated pattern గా వాడొద్దు. అవసరమైతే natural sentence లో మాత్రమే వాడు.
+- Forced personal scenarios, family examples, food examples, daily-life comparisons, motivational lessons, generic morals, opinions, CTA, title, labels, emoji, markdown వద్దు.
+- Final narration text మాత్రమే ఇవ్వు.
+
+IMPORTANT:
+ఈ script ని 45-60 seconds లేదా 80 seconds script లాగా expand చేయకు. ఇది 20-30 second Short. Shortగా ఉండటం వల్ల fact incomplete అవుతుందని అనిపిస్తే, irrelevant detail తొలగించి core fact + strongest supported detail + takeaway మాత్రమే ఉంచు.`;
 }
 
 function factBeatContract() {
-  return `\n\n${GUARD_MARKER}: FACT BEAT OVERRIDE\n- These are planning beats for a VERIFIED FACT, not a fictional story.\n- Build beats around factual information flow: context → exact fact → supporting detail → explanation → factual takeaway.\n- Twist is optional and must never be invented. If there is no supported twist, use a clarifying detail.\n- Never invent facts, numbers, names, causes, consequences, comparisons, or examples.`;
+  return `\n\n${GUARD_MARKER}: TARGET BEAT OVERRIDE\n- These are planning beats for a 20-30 second Telugu fact Short.\n- Prefer curiosity → reveal → strongest supported detail → takeaway.\n- Twist is optional; never invent one.\n- Keep beats short and factual. Never invent facts, numbers, causes, consequences, comparisons, or examples.`;
 }
 
 function patchPrompt(prompt) {
   const original = String(prompt || '');
   const kind = classify(original);
   if (original.includes(GUARD_MARKER)) return { prompt: original, kind };
-  if (kind === 'narration') return { prompt: buildFactExplainerPrompt(original), kind };
+  if (kind === 'narration') return { prompt: buildTargetNarrationPrompt(original), kind };
   if (kind === 'beats') return { prompt: original + factBeatContract(), kind };
   return { prompt: original, kind };
 }
@@ -122,7 +166,7 @@ async function guardedFetch(url, options = {}) {
   body = {
     ...body,
     messages: body.messages.map(m => ({ ...m })),
-    temperature: (patched.kind === 'narration' || patched.kind === 'beats') ? 0.08 : 0.05,
+    temperature: patched.kind === 'narration' ? 0.15 : (patched.kind === 'beats' ? 0.08 : 0.05),
     reasoning_effort: 'low',
     include_reasoning: false,
     max_completion_tokens: tokenBudget(patched.kind)
@@ -146,7 +190,7 @@ async function guardedFetch(url, options = {}) {
     if (reasons.length) {
       console.log(`${GUARD_MARKER}: quality warnings — ${reasons.join(' | ')}; accepting single response without another Groq call.`);
     } else {
-      console.log(`${GUARD_MARKER}: FINAL FACT NARRATION accepted by local quality checks.`);
+      console.log(`${GUARD_MARKER}: TARGET 20-30s FACT NARRATION accepted by local quality checks.`);
     }
 
     data.choices[0].message.content = content;
@@ -159,5 +203,5 @@ async function guardedFetch(url, options = {}) {
 
 guardedFetch.__NARRATION_QUALITY_GUARD__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — rebuilt factual-explainer prompt + single-request Groq budgets active.`);
+console.log(`${GUARD_MARKER}: enabled — target 20-30s conversational fact narration + single-request Groq budgets active.`);
 module.exports = { enabled: true, marker: GUARD_MARKER };
