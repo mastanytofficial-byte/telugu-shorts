@@ -1,6 +1,6 @@
 // Stable narration-quality guard V11.
-// Overrides legacy story-teller prompting so verified facts are narrated as
-// factual explanations with connected, grammatically complete sentences.
+// Rebuilds the narration prompt so legacy storyteller instructions and
+// examples cannot compete with the factual-explainer requirements.
 // Quality checks remain non-blocking and no repair/retry Groq call is added.
 
 const ORIGINAL_FETCH = global.fetch;
@@ -67,27 +67,33 @@ function qualityReasons(text) {
   return [...new Set(reasons)];
 }
 
-function factBeatContract() {
-  return `\n\n${GUARD_MARKER}: FACT BEAT OVERRIDE\n- These are planning beats for a VERIFIED FACT, not a fictional story.\n- Build the beats around factual information flow: context → exact fact → supporting detail → explanation → factual takeaway.\n- Do not require a twist, suspense reveal, dramatic reversal, personal scenario, or artificial consequence.\n- hook may create curiosity, but it must not hide or distort the fact merely to create suspense.\n- question is optional in spirit: it must represent a genuine factual question, not manufactured drama.\n- reveal must state the verified core fact accurately.\n- twist must be replaced by the most interesting VERIFIED DETAIL already supported by the source; if there is no such detail, use another clarifying fact.\n- ending must be a fact-specific takeaway, never a generic moral.\n- Never invent facts, numbers, names, causes, consequences, comparisons, or examples.`;
+function extractBlock(text, startMarker, endMarker) {
+  const source = String(text || '');
+  const start = source.indexOf(startMarker);
+  if (start < 0) return '';
+  const from = start + startMarker.length;
+  const end = endMarker ? source.indexOf(endMarker, from) : -1;
+  return source.slice(from, end >= 0 ? end : source.length).trim();
 }
 
-function narrationContract() {
-  return `\n\n${GUARD_MARKER}: FINAL FACT-EXPLAINER OVERRIDE — THIS OVERRIDES EARLIER STORYTELLER EXAMPLES AND STYLE RULES\n- This output is a factual explanation of a VERIFIED FACT. It is NOT a fictional story, dramatic story, personal anecdote, or suspense story.\n- Ignore any earlier instruction in this same prompt that says to act as a "high-retention storyteller", hide the answer for suspense, force a twist, or make every line create a "what happens next" feeling. Factual accuracy and sentence clarity take priority.\n- The narration should sound like a knowledgeable person naturally explaining one interesting fact to a viewer. Retention comes from the information itself, not from artificial drama.\n- Every line must be a complete, grammatically correct spoken sentence or a complete meaningful clause. Do not create fragment-only lines such as “అయితే...”, “కానీ...”, “అసలు విషయం...”, “ఇంకా షాక్...” unless they are grammatically attached to a complete thought; preferably avoid standalone fragments entirely.\n- Sentences must form one logical chain. Each sentence should add, clarify, qualify, or conclude information from the VERIFIED FACT.\n- Use this factual progression when supported: identify the subject → state the exact fact → explain the relevant condition/process → give the supported detail or measurement → clarify what it means → finish with a concise fact-specific takeaway.\n- Do not force hook → question → reveal → twist → ending. That structure is optional and must never distort factual explanation.\n- Preserve the source's exact scope. If the fact is about a specific object, location, process, condition, or substance, do not generalize it to a broader subject. For example, a temperature measured at a hydrothermal vent must not be narrated as the temperature of all deep-ocean water.\n- Preserve qualifiers such as “some”, “certain”, “may”, “can”, “under these conditions”, ranges, approximate values, and exceptions. Never turn a qualified claim into an absolute claim.\n- Never infer a cause, effect, comparison, implication, or consequence unless the VERIFIED FACT explicitly supports it.\n- Never invent a new fact, number, date, name, place, example, comparison, scientific explanation, or consequence.\n- English technical terms, brands, names, places, and acronyms are allowed when needed for accuracy. Pure Telugu is NOT required. Avoid random English.\n- Natural spoken Telugu is required, but factual precision is more important than dramatic wording.\n- Do not use generic morals, motivation, opinions, calls to action, title labels, emoji, or markdown.\n- Use Telugu words for numbers in the final narration when the existing project rule requires it; do not change the underlying numerical value.\n- Final line must summarize the verified fact or its supported significance, not give a generic life lesson.\n- Keep 12-18 spoken lines, but do not break grammar merely to satisfy line count.\n- Return only the final narration text.`;
+function buildFactExplainerPrompt(original) {
+  const beats = extractBlock(original, 'STORY BEATS:', 'VERIFIED FACT — ACCURACY GROUNDING:');
+  const fact = extractBlock(original, 'VERIFIED FACT — ACCURACY GROUNDING:', 'నీ ROLE:');
+  const topic = extractBlock(original, 'ఒక original Telugu YouTube Shorts narration రాయి.', 'STORY BEATS:');
+
+  return `Write the final narration for a Telugu YouTube Short using ONLY the verified fact supplied below.\n\nVERIFIED FACT:\n${fact || original}\n\nOPTIONAL PLANNING BEATS:\n${beats || '(none)'}\n\nCORE TASK:\nExplain this one fact clearly, naturally, and accurately to a viewer. This is a factual explainer, not a fictional story. The planning beats are only organizational hints; the VERIFIED FACT is the source of truth. If a beat conflicts with, broadens, or adds information beyond the verified fact, ignore the beat.\n\nFACTUAL STRUCTURE:\n1. Start with a natural opening that identifies the subject or creates curiosity without hiding or distorting the core fact.\n2. State the exact core fact early enough that the viewer understands what is being explained.\n3. Add only relevant supporting details that are present in the verified fact.\n4. Explain what the fact means, how the stated condition/process works, or why the stated detail matters, but only when supported by the verified fact.\n5. End with a concise fact-specific takeaway.\n\nSTRICT ACCURACY:\n- Do not invent or infer any new fact, number, date, name, place, cause, effect, comparison, example, mechanism, or consequence.\n- Preserve the exact scope and subject. Do not turn a fact about one object, location, process, condition, or substance into a claim about a broader category.\n- Preserve qualifiers such as some, certain, may, can, under these conditions, approximate values, ranges, and exceptions. Never turn them into absolute claims.\n- Preserve numerical values and units exactly in meaning.\n- Do not use the planning beats as a second source of facts.\n\nSENTENCE QUALITY:\n- Use natural spoken Telugu suitable for a knowledgeable narrator.\n- Every sentence must be grammatically complete and logically connected to the previous sentence.\n- Each sentence should add, clarify, qualify, or conclude information. Remove filler that adds no information.\n- Avoid disconnected one-line fragments such as “అయితే...”, “కానీ...”, “అసలు విషయం...”, or “ఇంకా షాక్...”.\n- Do not force a hook → question → reveal → twist → ending pattern. A question is optional. A twist is not required.\n- Do not create artificial suspense or emotional exaggeration just to increase retention. Retention should come from the interesting fact and clear explanation.\n- Do not repeat the same fact in slightly different words.\n- Do not add generic morals, motivation, opinions, CTA, title labels, emoji, or markdown.\n- English technical terms, scientific names, brands, places, and acronyms are allowed when they improve accuracy or naturalness. Pure Telugu is not required.\n\nOUTPUT FORMAT:\n- 12-18 spoken lines.\n- Target approximately 85-115 Telugu words.\n- Line breaks are for voice pacing only; never break a grammatical sentence merely to satisfy line count.\n- Final line must be a factual takeaway directly supported by the verified fact.\n- Return ONLY the narration text.`;
+}
+
+function factBeatContract() {
+  return `\n\n${GUARD_MARKER}: FACT BEAT OVERRIDE\n- These are planning beats for a VERIFIED FACT, not a fictional story.\n- Build beats around factual information flow: context → exact fact → supporting detail → explanation → factual takeaway.\n- Twist is optional and must never be invented. If there is no supported twist, use a clarifying detail.\n- Never invent facts, numbers, names, causes, consequences, comparisons, or examples.`;
 }
 
 function patchPrompt(prompt) {
   const original = String(prompt || '');
   const kind = classify(original);
   if (original.includes(GUARD_MARKER)) return { prompt: original, kind };
-
-  if (kind === 'beats') {
-    return { prompt: original + factBeatContract(), kind };
-  }
-
-  if (kind === 'narration') {
-    return { prompt: original + narrationContract(), kind };
-  }
-
+  if (kind === 'narration') return { prompt: buildFactExplainerPrompt(original), kind };
+  if (kind === 'beats') return { prompt: original + factBeatContract(), kind };
   return { prompt: original, kind };
 }
 
@@ -153,5 +159,5 @@ async function guardedFetch(url, options = {}) {
 
 guardedFetch.__NARRATION_QUALITY_GUARD__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — factual explainer style + single-request Groq budgets active.`);
+console.log(`${GUARD_MARKER}: enabled — rebuilt factual-explainer prompt + single-request Groq budgets active.`);
 module.exports = { enabled: true, marker: GUARD_MARKER };
