@@ -25,13 +25,51 @@ child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' })
 
 // GPT-OSS 120B is reserved for the final narration. Helper calls remain on
 // 20B so the 120B bucket is available for the one request that matters.
-// The final request budget is deliberately small enough to stay below the
-// observed 8000 TPM request ceiling while leaving room for reasoning.
 const NATIVE_FETCH = global.fetch;
 if (!NATIVE_FETCH) throw new Error('Global fetch is unavailable.');
 
+// Final TTS safety net. The narration boundary should already return plain
+// text, but TTS must NEVER speak structural JSON labels such as "hook:" or
+// "fact:" if an older/bypassed generation path slips through. Also normalize
+// common 3D spellings to Telugu words so Google Chirp does not read the digit
+// in an unwanted English/number style.
+function sanitizeTtsText(text) {
+  let t = String(text || '');
+  t = t.replace(/['\"]?(?:hook|fact|explanation|context|meaning|conclusion)['\"]?\s*:\s*/gi, '');
+  t = t.replace(/[{}]/g, '');
+  t = t.replace(/\b3\s*[-]?\s*d\b/gi, 'మూడు డీ');
+  return t.trim();
+}
+
+function sanitizeTtsBody(body) {
+  if (!body || !body.input) return body;
+  const out = { ...body, input: { ...body.input } };
+  if (typeof out.input.text === 'string') {
+    out.input.text = sanitizeTtsText(out.input.text);
+  }
+  if (typeof out.input.ssml === 'string') {
+    out.input.ssml = sanitizeTtsText(out.input.ssml);
+  }
+  return out;
+}
+
 global.fetch = async (url, options = {}) => {
-  if (!String(url).includes('api.groq.com/openai/v1/chat/completions')) {
+  const urlString = String(url);
+
+  // Intercept Google Cloud TTS requests and clean only the actual speech
+  // payload. This does not alter the visible script/title/metadata.
+  if (urlString.includes('texttospeech.googleapis.com')) {
+    let body;
+    try {
+      body = JSON.parse(String(options.body || '{}'));
+      body = sanitizeTtsBody(body);
+      return NATIVE_FETCH(url, { ...options, body: JSON.stringify(body) });
+    } catch (_) {
+      return NATIVE_FETCH(url, options);
+    }
+  }
+
+  if (!urlString.includes('api.groq.com/openai/v1/chat/completions')) {
     return NATIVE_FETCH(url, options);
   }
 
@@ -44,12 +82,16 @@ global.fetch = async (url, options = {}) => {
   const last = messages[messages.length - 1];
   const prompt = last && typeof last.content === 'string' ? last.content : '';
 
-  // The guard replaces the original prompt with a clean VERIFIED SOURCE /
-  // FACT-EXPLAINER request. Detect both the original and guarded forms.
-  const isFinalNarration = (
-    /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(prompt) &&
-    (/STORY BEATS/i.test(prompt) || /VERIFIED SOURCE:/i.test(prompt) || /FACT-EXPLAINER/i.test(prompt))
-  );
+  // Detect BOTH the original narration request and the guard's rewritten
+  // VERIFIED SOURCE / FACT-EXPLAINER request. The previous version required
+  // VERIFIED FACT even after the guard had replaced it with VERIFIED SOURCE,
+  // which accidentally routed the guarded final call to 20B.
+  const isOriginalFinalNarration = /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(prompt)
+    && (/STORY BEATS/i.test(prompt) || /high-retention storyteller/i.test(prompt));
+  const isGuardedFinalNarration = /VERIFIED SOURCE:/i.test(prompt)
+    && /FACT-EXPLAINER/i.test(prompt)
+    && /EXACTLY 6 complete sentences/i.test(prompt);
+  const isFinalNarration = isOriginalFinalNarration || isGuardedFinalNarration;
 
   if (isFinalNarration) {
     body.model = 'openai/gpt-oss-120b';
