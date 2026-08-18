@@ -13,8 +13,6 @@ child.execFileSync(process.execPath, ['--check', QUALITY_GUARD], { stdio: 'inher
 
 fs.copyFileSync(SOURCE, RUNTIME);
 
-// Current channel branding: every generated video uses FactVerse Telugu.
-// Patch only the copied runtime so index.js remains the single source of truth.
 const runtimeSource = fs.readFileSync(RUNTIME, 'utf8');
 const OLD_BRAND = "text='TELUGU ECHO'";
 const NEW_BRAND = "text='FACTVERSE TELUGU'";
@@ -25,19 +23,10 @@ fs.writeFileSync(RUNTIME, runtimeSource.replace(OLD_BRAND, NEW_BRAND), 'utf8');
 
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 
-// Groq routing/preflight.
-// GPT-OSS 120B is reserved for the final narration where its stronger
-// reasoning/language quality matters. Fact discovery, verification, story
-// beats, punctuation and metadata use 20B so repeated helper calls do not
-// consume the 120B bucket before the important narration call.
-//
-// IMPORTANT: Groq's TPM limit counts the prompt plus the requested
-// completion budget. The previous 6000-token final request was too large:
-// the log showed a request of 8110 tokens against an 8000 TPM limit, so the
-// request was rejected BEFORE generation. A 2500-token completion budget is
-// more than enough for the required six Telugu sentences and leaves ample
-// room under the 8000-token request-size ceiling even with the long guard
-// prompt.
+// GPT-OSS 120B is reserved for the final narration. Helper calls remain on
+// 20B so the 120B bucket is available for the one request that matters.
+// The final request budget is deliberately small enough to stay below the
+// observed 8000 TPM request ceiling while leaving room for reasoning.
 const NATIVE_FETCH = global.fetch;
 if (!NATIVE_FETCH) throw new Error('Global fetch is unavailable.');
 
@@ -55,9 +44,12 @@ global.fetch = async (url, options = {}) => {
   const last = messages[messages.length - 1];
   const prompt = last && typeof last.content === 'string' ? last.content : '';
 
-  // This is the actual final narration request before the quality guard.
-  const isFinalNarration = /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(prompt)
-    && /STORY BEATS/i.test(prompt);
+  // The guard replaces the original prompt with a clean VERIFIED SOURCE /
+  // FACT-EXPLAINER request. Detect both the original and guarded forms.
+  const isFinalNarration = (
+    /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(prompt) &&
+    (/STORY BEATS/i.test(prompt) || /VERIFIED SOURCE:/i.test(prompt) || /FACT-EXPLAINER/i.test(prompt))
+  );
 
   if (isFinalNarration) {
     body.model = 'openai/gpt-oss-120b';
