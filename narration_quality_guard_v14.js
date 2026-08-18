@@ -1,14 +1,14 @@
-// Narration quality guard V14 — final implementation.
-// Stable final-narration boundary: replace legacy storyteller instructions,
-// request one structured six-part fact explanation, validate it, and return
-// plain narration text to index.js.
+// Narration quality guard V14 — hardened final implementation.
+// One authoritative boundary: verified fact -> exactly six fact-explainer sentences.
 const PREVIOUS = global.fetch;
 const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V14';
+const PRIMARY_MODEL = 'openai/gpt-oss-120b';
+const FALLBACK_MODEL = 'openai/gpt-oss-20b';
 if (!PREVIOUS || PREVIOUS.__NARRATION_QUALITY_GUARD_V14__) {
   module.exports = { enabled: true, marker: GUARD_MARKER };
   return;
 }
-function isGroq(url, options) { return String(url).includes('api.groq.com/openai/v1/chat/completions') && options && String(options.method || 'GET').toUpperCase() === 'POST'; }
+function isGroq(url, options) { return String(url).includes('api.groq.com/openai/v1/chat/completions') && String(options?.method || 'GET').toUpperCase() === 'POST'; }
 function isNarrationPrompt(prompt) {
   const p = String(prompt || '');
   return /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(p) && (/STORY BEATS/i.test(p) || /high-retention storyteller/i.test(p) || /final narration/i.test(p));
@@ -25,13 +25,12 @@ function extractVerifiedSource(prompt) {
 function cleanSentence(text) { return String(text || '').replace(/\s+/g, ' ').replace(/^["“”'`]+|["“”'`]+$/g, '').replace(/[.!?।]+$/g, '').trim(); }
 function countWords(text) { return String(text || '').split(/\s+/).filter(Boolean).length; }
 function oneSentence(text) { const s = String(text || '').trim(); return !!s && !/[.!?।]/.test(s); }
-function parseContent(data) {
+function parseContent(data, status) {
+  if (data?.error) return { reason: `Groq API error ${status || ''}: ${data.error.message || data.error.code || 'unknown error'}`, apiError: true, code: data.error.code || '' };
   const choice = data?.choices?.[0];
   const message = choice?.message;
   const raw = message?.content;
-  if (!raw) {
-    return { reason: `model returned empty content (finish_reason=${choice?.finish_reason || 'unknown'}, refusal=${message?.refusal || 'none'}, reasoning_present=${Boolean(message?.reasoning)})` };
-  }
+  if (!raw) return { reason: `model returned empty content (finish_reason=${choice?.finish_reason || 'unknown'}, refusal=${message?.refusal || 'none'}, reasoning_present=${Boolean(message?.reasoning)})` };
   let obj;
   try { obj = JSON.parse(String(raw).replace(/^```json\s*/i, '').replace(/```$/i, '').trim()); }
   catch (_) { return { reason: 'model returned non-JSON content' }; }
@@ -40,23 +39,15 @@ function parseContent(data) {
   if (!keys.every(k => oneSentence(cleanSentence(obj[k])))) return { reason: 'one or more fields contained multiple sentences' };
   const parts = keys.map((k, i) => { const s = cleanSentence(obj[k]); return i === 0 ? `${s}?` : `${s}.`; });
   const script = parts.join(' ');
-
-  // Word count is a guidance signal, NOT a hard quality gate.
-  // A verified fact may be fully and naturally explained in fewer than 75 words.
-  // Rejecting such a script caused valid narrations (for example 69 words) to
-  // be discarded and triggered unnecessary retries, which could then hit rate
-  // limits or return an empty response. Semantic structure and factual scope
-  // are the actual target; do not pad or shorten a script just to hit a number.
   if (script.length < 40) return { reason: `narration is too short to contain the six required ideas (${countWords(script)} words)` };
   if ((script.match(/\?/g) || []).length !== 1) return { reason: 'hook question count is not exactly one' };
   if (/అసలు విషయం ఏంటంటే|ఇంకా షాక్ ఏంటంటే|ఇది వింటే షాక్|కానీ\.\.\.|అయితే\.\.\./i.test(script)) return { reason: 'storyteller filler detected' };
   if (/\b(?:hook|fact|explanation|context|meaning|conclusion)\s*:/i.test(script) || /(?:హుక్|ఫ్యాక్ట్|వివరణ|సందర్భం|అర్థం|ముగింపు)\s*[:：-]/i.test(script)) return { reason: 'structural labels leaked into narration' };
   return { script };
 }
-function buildFactNarrationPrompt(originalPrompt, attempt) {
+function buildFactNarrationPrompt(originalPrompt) {
   const source = extractVerifiedSource(originalPrompt);
-  const retry = attempt > 0 ? '\nమునుపటి ప్రయత్నం output constraints కి సరిపోలలేదు. ఈసారి concise, complete, natural six-sentence narration ఇవ్వు.\n' : '';
-  return `నువ్వు ఒక VERIFIED FACT ని Telugu YouTube Shorts కోసం ఒక సహజమైన FACT-EXPLAINER narration గా మార్చాలి.
+  return `నువ్వు ఒక VERIFIED FACT ని Telugu YouTube Shorts కోసం సహజమైన FACT-EXPLAINER narration గా మార్చాలి.
 
 VERIFIED SOURCE:
 ${source}
@@ -87,34 +78,48 @@ STRICT RULES:
 - Sentences must connect naturally; do not make six unrelated facts.
 - Sentence 2 must answer the hook directly.
 - Each JSON field must contain exactly ONE sentence and no sentence-ending punctuation inside the field.
-- No labels, JSON outside the schema, CTA, title, keywords, emoji, generic moral, personal example, forced engagement, twist or cliffhanger.
+- No labels, CTA, title, keywords, emoji, generic moral, personal example, forced engagement, twist or cliffhanger.
 - No unsupported hype or new information.
 - Preserve source qualifiers and scope.
-- Technical English terms may remain when needed for accuracy; do not translate technical notation into awkward Telugu.
-- Keep terms such as 3D in their normal technical form; do not write “మూడు D” or “మూడు డీ”.
-- Do not force a word count. Completeness, natural sentence flow, and factual accuracy are more important than hitting a numeric length target.
-${retry}
+- Technical English terms may remain when needed for accuracy.
+- Keep terms such as 3D in normal technical form; never write “మూడు D” or “మూడు డీ”.
+- Do not force a word count; completeness, natural flow and factual accuracy are more important.
 
 OUTPUT: Strict JSON object only with exactly these six keys:
 {"hook":"one complete sentence","fact":"one complete sentence","explanation":"one complete sentence","context":"one complete sentence","meaning":"one complete sentence","conclusion":"one complete sentence"}`;
 }
-async function requestStructuredNarration(url, options, prompt, attempt) {
+async function requestStructuredNarration(url, options, originalPrompt, model) {
   let body;
   try { body = JSON.parse(String(options.body || '{}')); } catch (_) { throw new Error('Could not parse original Groq request body.'); }
-  body.messages = [{ role: 'user', content: buildFactNarrationPrompt(prompt, attempt) }];
-  body.temperature = attempt === 0 ? 0.05 : 0.0;
+  body.model = model;
+  body.messages = [{ role: 'user', content: buildFactNarrationPrompt(originalPrompt) }];
+  body.temperature = 0.2;
   body.reasoning_effort = 'low';
   body.include_reasoning = false;
-  body.max_completion_tokens = 4000;
+  body.max_completion_tokens = 2500;
   delete body.max_tokens;
   body.response_format = { type: 'json_schema', json_schema: { name: 'telugu_fact_narration', strict: true, schema: {
     type: 'object', properties: {
-      hook: { type: 'string' }, fact: { type: 'string' }, explanation: { type: 'string' },
-      context: { type: 'string' }, meaning: { type: 'string' }, conclusion: { type: 'string' }
+      hook: { type: 'string' }, fact: { type: 'string' }, explanation: { type: 'string' }, context: { type: 'string' }, meaning: { type: 'string' }, conclusion: { type: 'string' }
     }, required: ['hook','fact','explanation','context','meaning','conclusion'], additionalProperties: false
   } } };
-  return PREVIOUS(url, { ...options, body: JSON.stringify(body) });
+  const response = await PREVIOUS(url, { ...options, body: JSON.stringify(body) });
+  let data = null;
+  try { data = await response.clone().json(); } catch (_) { throw new Error(`Groq returned non-JSON response (HTTP ${response.status}).`); }
+  if (!response.ok || data?.error) {
+    const error = new Error(`Groq API error ${response.status}: ${data?.error?.message || data?.error?.code || 'unknown error'}`);
+    error.status = response.status;
+    error.code = data?.error?.code || '';
+    error.retryAfter = Number(response.headers.get('retry-after') || 0);
+    throw error;
+  }
+  return { response, data };
 }
+function retryDelay(error, attempt) {
+  if (error.retryAfter > 0) return Math.min(Math.max(error.retryAfter * 1000, 1000), 60000);
+  return Math.min(15000 * Math.pow(2, attempt), 60000);
+}
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 async function guardedFetch(url, options = {}) {
   if (!isGroq(url, options)) return PREVIOUS(url, options);
   let body; try { body = JSON.parse(String(options.body || '{}')); } catch (_) { return PREVIOUS(url, options); }
@@ -122,28 +127,44 @@ async function guardedFetch(url, options = {}) {
   const originalPrompt = last?.content || '';
   if (!isNarrationPrompt(originalPrompt)) return PREVIOUS(url, options);
   console.log(`${GUARD_MARKER}: intercepted final narration request at generation boundary.`);
+
+  let model = PRIMARY_MODEL;
   let lastReason = 'unknown validation failure';
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await requestStructuredNarration(url, options, originalPrompt, attempt);
+  let transientFailures = 0;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
-      const data = await response.clone().json();
-      const result = parseContent(data);
-      if (result.script) {
-        data.choices[0].message.content = result.script;
-        data.choices[0].finish_reason = 'stop';
-        console.log(`${GUARD_MARKER}: FINAL FACT NARRATION accepted — ${countWords(result.script)} words, 6 connected sentences.`);
-        return new Response(JSON.stringify(data), { status: response.status, statusText: response.statusText, headers: response.headers });
+      const result = await requestStructuredNarration(url, options, originalPrompt, model);
+      const validation = parseContent(result.data, result.response.status);
+      if (validation.script) {
+        result.data.choices[0].message.content = validation.script;
+        result.data.choices[0].finish_reason = 'stop';
+        console.log(`${GUARD_MARKER}: FINAL FACT NARRATION accepted — ${countWords(validation.script)} words, 6 connected sentences, model=${model}.`);
+        return new Response(JSON.stringify(result.data), { status: result.response.status, statusText: result.response.statusText, headers: result.response.headers });
       }
-      lastReason = result.reason;
-      console.log(`${GUARD_MARKER}: validation attempt ${attempt + 1}/2 rejected — ${lastReason}`);
-    } catch (e) {
-      lastReason = `response processing error: ${e.message}`;
-      console.log(`${GUARD_MARKER}: attempt ${attempt + 1}/2 failed — ${lastReason}`);
+      lastReason = validation.reason;
+      console.log(`${GUARD_MARKER}: validation attempt ${attempt + 1}/4 rejected — ${lastReason}`);
+      if (!validation.apiError && attempt < 3) continue;
+      throw new Error(`Clean fact narration failed — ${lastReason}`);
+    } catch (error) {
+      lastReason = error.message;
+      const status = error.status || 0;
+      const transient = status === 429 || status === 500 || status === 502 || status === 503 || status === 498;
+      if (!transient) throw new Error(`Clean fact narration failed — ${lastReason}`);
+      transientFailures += 1;
+      if (transientFailures >= 2 && model === PRIMARY_MODEL) {
+        model = FALLBACK_MODEL;
+        transientFailures = 0;
+        console.log(`${GUARD_MARKER}: primary model temporarily unavailable — switching final narration to ${FALLBACK_MODEL}.`);
+        continue;
+      }
+      const delay = retryDelay(error, transientFailures - 1);
+      console.log(`${GUARD_MARKER}: transient Groq error ${status || 'unknown'} — waiting ${Math.ceil(delay / 1000)}s before retry.`);
+      await sleep(delay);
     }
   }
-  throw new Error(`Clean fact narration failed after 2 bounded attempts — ${lastReason}`);
+  throw new Error(`Clean fact narration failed after bounded retries — ${lastReason}`);
 }
 guardedFetch.__NARRATION_QUALITY_GUARD_V14__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — semantic six-part fact narration boundary loaded.`);
+console.log(`${GUARD_MARKER}: enabled — semantic six-part fact narration boundary loaded with explicit Groq error handling and fallback.`);
 module.exports = { enabled: true, marker: GUARD_MARKER };
