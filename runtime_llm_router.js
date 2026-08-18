@@ -30,14 +30,14 @@ if (!NATIVE_FETCH) throw new Error('Global fetch is unavailable.');
 
 // Final TTS safety net. The narration boundary should already return plain
 // text, but TTS must NEVER speak structural JSON labels such as "hook:" or
-// "fact:" if an older/bypassed generation path slips through. Also normalize
-// common 3D spellings to Telugu words so Google Chirp does not read the digit
-// in an unwanted English/number style.
+// "fact:" if an older/bypassed generation path slips through. Normalize 3D
+// to the English spoken form "three D" so Telugu TTS does not read it as
+// the Telugu number "మూడు".
 function sanitizeTtsText(text) {
   let t = String(text || '');
   t = t.replace(/['\"]?(?:hook|fact|explanation|context|meaning|conclusion)['\"]?\s*:\s*/gi, '');
   t = t.replace(/[{}]/g, '');
-  t = t.replace(/\b3\s*[-]?\s*d\b/gi, 'మూడు డీ');
+  t = t.replace(/\b3\s*[-]?\s*d\b/gi, 'three D');
   return t.trim();
 }
 
