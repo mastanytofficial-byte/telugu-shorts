@@ -25,10 +25,19 @@ fs.writeFileSync(RUNTIME, runtimeSource.replace(OLD_BRAND, NEW_BRAND), 'utf8');
 
 child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' });
 
-// Preflight wrapper: use the current Groq completion parameter and leave
-// enough completion headroom for GPT-OSS reasoning + final narration.
+// Groq routing/preflight.
+// GPT-OSS 120B is reserved for the final narration where its stronger
+// reasoning/language quality matters. Fact discovery, verification, story
+// beats, punctuation and metadata use 20B so repeated helper calls do not
+// consume the 120B rate-limit bucket before the important narration call.
+// The previous router also capped every request at 3000 completion tokens.
+// That caused the 120B narration request to end with finish_reason="length"
+// and an empty message after reasoning consumed the cap. Groq currently
+// allows much more for GPT-OSS 120B; we give the final narration enough
+// headroom while keeping reasoning effort low and hidden.
 const NATIVE_FETCH = global.fetch;
 if (!NATIVE_FETCH) throw new Error('Global fetch is unavailable.');
+
 global.fetch = async (url, options = {}) => {
   if (!String(url).includes('api.groq.com/openai/v1/chat/completions')) {
     return NATIVE_FETCH(url, options);
@@ -39,9 +48,49 @@ global.fetch = async (url, options = {}) => {
     return NATIVE_FETCH(url, options);
   }
 
-  const requested = Number(body.max_completion_tokens ?? body.max_tokens);
-  body.max_completion_tokens = Math.min(Number.isFinite(requested) && requested > 0 ? requested : 3000, 3000);
-  delete body.max_tokens;
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const last = messages[messages.length - 1];
+  const prompt = last && typeof last.content === 'string' ? last.content : '';
+
+  // This is the actual narration request before the quality guard rewrites it.
+  const isFinalNarration = /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(prompt)
+    && /STORY BEATS/i.test(prompt);
+
+  if (isFinalNarration) {
+    body.model = 'openai/gpt-oss-120b';
+    body.max_completion_tokens = 6000;
+    delete body.max_tokens;
+    body.reasoning_effort = 'low';
+    body.include_reasoning = false;
+    // The V14 guard asks for this exact six-field JSON object. Structured
+    // output prevents the model from spending tokens on malformed wrappers.
+    body.response_format = {
+      type: 'json_schema',
+      json_schema: {
+        name: 'telugu_fact_narration',
+        strict: true,
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            hook: { type: 'string' },
+            fact: { type: 'string' },
+            explanation: { type: 'string' },
+            context: { type: 'string' },
+            meaning: { type: 'string' },
+            conclusion: { type: 'string' }
+          },
+          required: ['hook', 'fact', 'explanation', 'context', 'meaning', 'conclusion']
+        }
+      }
+    };
+  } else {
+    body.model = 'openai/gpt-oss-20b';
+    body.max_completion_tokens = 2500;
+    delete body.max_tokens;
+    body.reasoning_effort = 'low';
+    body.include_reasoning = false;
+  }
 
   return NATIVE_FETCH(url, { ...options, body: JSON.stringify(body) });
 };
