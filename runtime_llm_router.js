@@ -29,12 +29,15 @@ child.execFileSync(process.execPath, ['--check', RUNTIME], { stdio: 'inherit' })
 // GPT-OSS 120B is reserved for the final narration where its stronger
 // reasoning/language quality matters. Fact discovery, verification, story
 // beats, punctuation and metadata use 20B so repeated helper calls do not
-// consume the 120B rate-limit bucket before the important narration call.
-// The previous router also capped every request at 3000 completion tokens.
-// That caused the 120B narration request to end with finish_reason="length"
-// and an empty message after reasoning consumed the cap. Groq currently
-// allows much more for GPT-OSS 120B; we give the final narration enough
-// headroom while keeping reasoning effort low and hidden.
+// consume the 120B bucket before the important narration call.
+//
+// IMPORTANT: Groq's TPM limit counts the prompt plus the requested
+// completion budget. The previous 6000-token final request was too large:
+// the log showed a request of 8110 tokens against an 8000 TPM limit, so the
+// request was rejected BEFORE generation. A 2500-token completion budget is
+// more than enough for the required six Telugu sentences and leaves ample
+// room under the 8000-token request-size ceiling even with the long guard
+// prompt.
 const NATIVE_FETCH = global.fetch;
 if (!NATIVE_FETCH) throw new Error('Global fetch is unavailable.');
 
@@ -52,18 +55,16 @@ global.fetch = async (url, options = {}) => {
   const last = messages[messages.length - 1];
   const prompt = last && typeof last.content === 'string' ? last.content : '';
 
-  // This is the actual narration request before the quality guard rewrites it.
+  // This is the actual final narration request before the quality guard.
   const isFinalNarration = /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(prompt)
     && /STORY BEATS/i.test(prompt);
 
   if (isFinalNarration) {
     body.model = 'openai/gpt-oss-120b';
-    body.max_completion_tokens = 6000;
+    body.max_completion_tokens = 2500;
     delete body.max_tokens;
     body.reasoning_effort = 'low';
     body.include_reasoning = false;
-    // The V14 guard asks for this exact six-field JSON object. Structured
-    // output prevents the model from spending tokens on malformed wrappers.
     body.response_format = {
       type: 'json_schema',
       json_schema: {
@@ -86,7 +87,7 @@ global.fetch = async (url, options = {}) => {
     };
   } else {
     body.model = 'openai/gpt-oss-20b';
-    body.max_completion_tokens = 2500;
+    body.max_completion_tokens = 2000;
     delete body.max_tokens;
     body.reasoning_effort = 'low';
     body.include_reasoning = false;
