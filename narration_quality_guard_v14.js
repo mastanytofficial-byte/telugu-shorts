@@ -1,10 +1,7 @@
 // Narration quality guard V14 — final implementation.
-// Kept at V14 deliberately: no more version-by-version patching.
-// The root bug was that index.js still sent a storyteller prompt to the model
-// and the old guard only repaired sentence count after generation.
-// This guard replaces that request at the actual Groq generation boundary.
-// Target: one connected factual explanation:
-// Hook -> Fact -> Explanation -> Important Context -> Meaning -> Conclusion.
+// This is the single narration boundary guard. It must intercept the actual
+// final narration request, replace the legacy storyteller prompt, validate the
+// six semantic parts, and return plain narration text to index.js.
 
 const PREVIOUS = global.fetch;
 const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V14';
@@ -18,12 +15,13 @@ function isGroq(url, options) {
   return String(url).includes('api.groq.com/openai/v1/chat/completions') && options && String(options.method || 'GET').toUpperCase() === 'POST';
 }
 
+// Do NOT depend on STORY BEATS being present. The real failure was that the
+// final request can be formatted differently by index.js/runtime routing.
+// The stable markers are the verified source and the final narration role.
 function isNarrationPrompt(prompt) {
   const p = String(prompt || '');
-  return /VERIFIED FACT — ACCURACY GROUNDING:/i.test(p)
-    && /STORY BEATS:/i.test(p)
-    && /TARGET RHYTHM/i.test(p)
-    && /final narration text only/i.test(p);
+  return /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(p)
+    && (/final narration text only/i.test(p) || /high-retention storyteller/i.test(p) || /12-18 short spoken lines/i.test(p));
 }
 
 function extractVerifiedSource(prompt) {
@@ -75,11 +73,11 @@ function parseStructuredContent(data) {
   const script = parts.join(' ');
   const wordCount = countWords(script);
 
-  // Match the project's real 45–60 second target range. If this fails, the
-  // guard performs one clean retry; it never falls back to the legacy prompt.
   if (wordCount < 85 || wordCount > 115) return null;
   if ((script.match(/\?/g) || []).length !== 1) return null;
   if (/అసలు విషయం ఏంటంటే|ఇంకా షాక్ ఏంటంటే|ఇది వింటే షాక్|కానీ\.\.\.|అయితే\.\.\./i.test(script)) return null;
+  if (/\b(?:hook|fact|explanation|context|meaning|conclusion)\s*:/i.test(script)) return null;
+  if (/\"(?:hook|fact|explanation|context|meaning|conclusion)\"\s*:/i.test(script)) return null;
 
   return script;
 }
@@ -116,7 +114,8 @@ STRICT RULES:
 - Sentence 1 = Hook; sentence 2 = direct fact; sentence 3 = explanation; sentence 4 = important context; sentence 5 = meaning; sentence 6 = conclusion.
 - ప్రతి sentence ముందు sentence నుంచి naturally continue కావాలి. ఆరు unrelated facts లాగా ఉండకూడదు.
 - Hook తర్వాత fact ని దాచవద్దు; sentence 2 లో core fact స్పష్టంగా చెప్పు.
-- “అసలు విషయం ఏంటంటే”, “ఇంకా షాక్ ఏంటంటే”, “ఇది వింటే షాక్”, “కానీ...”, “అయితే...” వంటి viral-template transitions వద్దు.
+- ప్రతి JSON field లో exactly ONE grammatical sentence మాత్రమే. Field లో comma clauses ఉండవచ్చు, కానీ sentence-ending punctuation వద్దు.
+- “అసలు విషయం ఏంటంటే”, “ఇంకా షాక్ ఏంటంటే”, “ఇది వింటే షాక్” వంటి viral-template transitions వద్దు.
 - “నమ్మగలరా?”, “ఊహించండి” వంటి forced engagement వద్దు.
 - Unsupported hype, superlatives, generic moral, life lesson, personal example, CTA, title, keywords, emoji, labels వద్దు.
 - “కేవలం... కాదు” వంటి dramatic framing అవసరం లేకపోతే వాడవద్దు.
@@ -177,6 +176,8 @@ async function guardedFetch(url, options = {}) {
   const originalPrompt = last?.content || '';
   if (!isNarrationPrompt(originalPrompt)) return PREVIOUS(url, options);
 
+  console.log(`${GUARD_MARKER}: intercepted final narration request at generation boundary.`);
+
   let response = await requestStructuredNarration(url, options, originalPrompt, false);
 
   try {
@@ -193,6 +194,7 @@ async function guardedFetch(url, options = {}) {
     if (!script) throw new Error('Clean fact narration failed six-part validation after one bounded retry — refusing to publish it.');
 
     data.choices[0].message.content = script;
+    data.choices[0].finish_reason = 'stop';
     console.log(`${GUARD_MARKER}: FINAL FACT NARRATION accepted — exactly 6 connected sentences, ${countWords(script)} words.`);
     return new Response(JSON.stringify(data), { status: response.status, statusText: response.statusText, headers: response.headers });
   } catch (e) {
