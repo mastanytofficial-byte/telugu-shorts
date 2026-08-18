@@ -40,8 +40,14 @@ function parseContent(data) {
   if (!keys.every(k => oneSentence(cleanSentence(obj[k])))) return { reason: 'one or more fields contained multiple sentences' };
   const parts = keys.map((k, i) => { const s = cleanSentence(obj[k]); return i === 0 ? `${s}?` : `${s}.`; });
   const script = parts.join(' ');
-  const words = countWords(script);
-  if (words < 75 || words > 125) return { reason: `word count ${words} outside safety band 75-125` };
+
+  // Word count is a guidance signal, NOT a hard quality gate.
+  // A verified fact may be fully and naturally explained in fewer than 75 words.
+  // Rejecting such a script caused valid narrations (for example 69 words) to
+  // be discarded and triggered unnecessary retries, which could then hit rate
+  // limits or return an empty response. Semantic structure and factual scope
+  // are the actual target; do not pad or shorten a script just to hit a number.
+  if (script.length < 40) return { reason: `narration is too short to contain the six required ideas (${countWords(script)} words)` };
   if ((script.match(/\?/g) || []).length !== 1) return { reason: 'hook question count is not exactly one' };
   if (/అసలు విషయం ఏంటంటే|ఇంకా షాక్ ఏంటంటే|ఇది వింటే షాక్|కానీ\.\.\.|అయితే\.\.\./i.test(script)) return { reason: 'storyteller filler detected' };
   if (/\b(?:hook|fact|explanation|context|meaning|conclusion)\s*:/i.test(script) || /(?:హుక్|ఫ్యాక్ట్|వివరణ|సందర్భం|అర్థం|ముగింపు)\s*[:：-]/i.test(script)) return { reason: 'structural labels leaked into narration' };
@@ -86,7 +92,7 @@ STRICT RULES:
 - Preserve source qualifiers and scope.
 - Technical English terms may remain when needed for accuracy; do not translate technical notation into awkward Telugu.
 - Keep terms such as 3D in their normal technical form; do not write “మూడు D” or “మూడు డీ”.
-- Target roughly 85-115 Telugu words, but clarity and completeness are more important than filler.
+- Do not force a word count. Completeness, natural sentence flow, and factual accuracy are more important than hitting a numeric length target.
 ${retry}
 
 OUTPUT: Strict JSON object only with exactly these six keys:
@@ -99,9 +105,6 @@ async function requestStructuredNarration(url, options, prompt, attempt) {
   body.temperature = attempt === 0 ? 0.05 : 0.0;
   body.reasoning_effort = 'low';
   body.include_reasoning = false;
-  // GPT-OSS reasoning tokens count against completion budget. 1800 was too
-  // tight and repeatedly produced an empty message. 4000 leaves safe headroom
-  // while staying below the known 8000 TPM request ceiling for this workflow.
   body.max_completion_tokens = 4000;
   delete body.max_tokens;
   body.response_format = { type: 'json_schema', json_schema: { name: 'telugu_fact_narration', strict: true, schema: {
@@ -142,5 +145,5 @@ async function guardedFetch(url, options = {}) {
 }
 guardedFetch.__NARRATION_QUALITY_GUARD_V14__ = true;
 global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — final narration boundary loaded with GPT-OSS completion headroom.`);
+console.log(`${GUARD_MARKER}: enabled — semantic six-part fact narration boundary loaded.`);
 module.exports = { enabled: true, marker: GUARD_MARKER };
