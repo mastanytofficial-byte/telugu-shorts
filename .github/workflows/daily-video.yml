@@ -2,8 +2,6 @@ name: Daily Telugu News Short
 
 on:
   schedule:
-    # Two daily runs in India time (IST / UTC+5:30):
-    # 1:00 PM IST and 8:00 PM IST
     - cron: '30 7 * * *'
     - cron: '30 14 * * *'
   workflow_dispatch: {}
@@ -31,27 +29,24 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Ensure ffmpeg is available
+      - name: Install dependencies
+        run: npm install
+
+      - name: Ensure bundled ffmpeg is available
         shell: bash
         run: |
           set -euo pipefail
-          if command -v ffmpeg >/dev/null 2>&1; then
-            echo "FFmpeg already available: $(command -v ffmpeg)"
-          else
-            echo 'FFmpeg is not preinstalled; installing from Ubuntu packages with extended network timeout...'
-            sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=120 -o Acquire::https::Timeout=120
-            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=120 -o Acquire::https::Timeout=120 ffmpeg
-          fi
-          command -v ffmpeg >/dev/null 2>&1
+          FFMPEG_BIN="$(node -e "process.stdout.write(require('ffmpeg-static'))")"
+          test -x "$FFMPEG_BIN"
+          sudo ln -sf "$FFMPEG_BIN" /usr/local/bin/ffmpeg
+          command -v ffmpeg
           ffmpeg -version | head -n 1
-
-      - name: Install dependencies
-        run: npm install
 
       - name: Validate automation source
         run: |
           node --check runtime_llm_router.js
           node --check index.js
+          node --check narration_quality_guard_v14.js
           node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"
 
       - name: Generate and upload video
