@@ -1,170 +1,20 @@
-// Narration quality guard V14 — hardened final implementation.
-// One authoritative boundary: verified fact -> exactly six fact-explainer sentences.
+// NARRATION_QUALITY_GUARD_V14 — authoritative final fact narration boundary.
 const PREVIOUS = global.fetch;
 const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V14';
 const PRIMARY_MODEL = 'openai/gpt-oss-120b';
 const FALLBACK_MODEL = 'openai/gpt-oss-20b';
-if (!PREVIOUS || PREVIOUS.__NARRATION_QUALITY_GUARD_V14__) {
-  module.exports = { enabled: true, marker: GUARD_MARKER };
-  return;
-}
-function isGroq(url, options) { return String(url).includes('api.groq.com/openai/v1/chat/completions') && String(options?.method || 'GET').toUpperCase() === 'POST'; }
-function isNarrationPrompt(prompt) {
-  const p = String(prompt || '');
-  return /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(p) && (/STORY BEATS/i.test(p) || /high-retention storyteller/i.test(p) || /final narration/i.test(p));
-}
-function extractVerifiedSource(prompt) {
-  const source = String(prompt || '');
-  const marker = 'VERIFIED FACT — ACCURACY GROUNDING:';
-  const start = source.indexOf(marker);
-  if (start < 0) return '';
-  const from = start + marker.length;
-  const end = source.indexOf('\n\nనీ ROLE:', from);
-  return source.slice(from, end >= 0 ? end : source.length).trim();
-}
-function cleanSentence(text) { return String(text || '').replace(/\s+/g, ' ').replace(/^["“”'`]+|["“”'`]+$/g, '').replace(/[.!?।]+$/g, '').trim(); }
-function countWords(text) { return String(text || '').split(/\s+/).filter(Boolean).length; }
-function oneSentence(text) { const s = String(text || '').trim(); return !!s && !/[.!?।]/.test(s); }
-function parseContent(data, status) {
-  if (data?.error) return { reason: `Groq API error ${status || ''}: ${data.error.message || data.error.code || 'unknown error'}`, apiError: true, code: data.error.code || '' };
-  const choice = data?.choices?.[0];
-  const message = choice?.message;
-  const raw = message?.content;
-  if (!raw) return { reason: `model returned empty content (finish_reason=${choice?.finish_reason || 'unknown'}, refusal=${message?.refusal || 'none'}, reasoning_present=${Boolean(message?.reasoning)})` };
-  let obj;
-  try { obj = JSON.parse(String(raw).replace(/^```json\s*/i, '').replace(/```$/i, '').trim()); }
-  catch (_) { return { reason: 'model returned non-JSON content' }; }
-  const keys = ['hook','fact','explanation','context','meaning','conclusion'];
-  if (!keys.every(k => typeof obj[k] === 'string' && obj[k].trim())) return { reason: 'one or more six-part fields were missing/empty' };
-  if (!keys.every(k => oneSentence(cleanSentence(obj[k])))) return { reason: 'one or more fields contained multiple sentences' };
-  const parts = keys.map((k, i) => { const s = cleanSentence(obj[k]); return i === 0 ? `${s}?` : `${s}.`; });
-  const script = parts.join(' ');
-  if (script.length < 40) return { reason: `narration is too short to contain the six required ideas (${countWords(script)} words)` };
-  if ((script.match(/\?/g) || []).length !== 1) return { reason: 'hook question count is not exactly one' };
-  if (/అసలు విషయం ఏంటంటే|ఇంకా షాక్ ఏంటంటే|ఇది వింటే షాక్|కానీ\.\.\.|అయితే\.\.\./i.test(script)) return { reason: 'storyteller filler detected' };
-  if (/\b(?:hook|fact|explanation|context|meaning|conclusion)\s*:/i.test(script) || /(?:హుక్|ఫ్యాక్ట్|వివరణ|సందర్భం|అర్థం|ముగింపు)\s*[:：-]/i.test(script)) return { reason: 'structural labels leaked into narration' };
-  return { script };
-}
-function buildFactNarrationPrompt(originalPrompt) {
-  const source = extractVerifiedSource(originalPrompt);
-  return `నువ్వు ఒక VERIFIED FACT ని Telugu YouTube Shorts కోసం సహజమైన FACT-EXPLAINER narration గా మార్చాలి.
-
-VERIFIED SOURCE:
-${source}
-
-ఈ source మాత్రమే factual authority. Source లో లేని కొత్త fact, number, date, name, cause, effect, example, comparison, background లేదా conclusion జోడించకూడదు.
-
-ఇది STORY కాదు. Twist, cliffhanger, dramatic reveal, artificial suspense, viral-template narration వద్దు. ఒక knowledgeable person ఒక interesting verified fact ని viewer కి స్పష్టంగా explain చేస్తున్నట్టు ఉండాలి.
-
-TARGET LOGIC:
-1) Hook — topic పై సహజమైన curiosity question/statement.
-2) Fact — hook కి నేరుగా సమాధానం ఇచ్చే core verified fact.
-3) Explanation — ఆ fact లోని ముఖ్యమైన concept/term/mechanism/value ని సులభంగా explain చేయాలి.
-4) Important Context — source లో ఉన్న relevant date/background/condition/detail మాత్రమే.
-5) Meaning — ముందు చెప్పిన information ఎందుకు significantో source ఆధారంగా logically connect చేయాలి.
-6) Conclusion — అదే verified fact నుంచి వచ్చే clear fact-specific takeaway.
-
-REFERENCE FOR FORMATION ONLY:
-“వెలుతురు ఎంత వేగంగా ప్రయాణిస్తుందో తెలుసా?”
-“శూన్యంలో వెలుతురు సెకనుకు సుమారు రెండు లక్షల తొంభై తొమ్మిది వేల కిలోమీటర్ల వేగంతో ప్రయాణిస్తుంది.”
-“ఈ వేగాన్ని శాస్త్రవేత్తలు ‘c’ అనే గుర్తుతో సూచిస్తారు.”
-“1983లో మీటర్‌ను నిర్వచించే విధానాన్ని మార్చినప్పుడు, ఈ వేగాన్ని ఖచ్చితమైన విలువగా ఉపయోగించారు.”
-“అందుకే ఇప్పుడు మీటర్ నిర్వచనం కూడా వెలుతురు వేగంతో నేరుగా సంబంధం కలిగి ఉంది.”
-“అంటే వెలుతురు వేగం కేవలం ఒక శాస్త్రీయ సంఖ్య కాదు; మన పొడవు కొలతకు కూడా అది ప్రాథమిక ఆధారం.”
-
-STRICT RULES:
-- EXACTLY 6 complete sentences.
-- Sentence 1=Hook, 2=Fact, 3=Explanation, 4=Context, 5=Meaning, 6=Conclusion.
-- Sentences must connect naturally; do not make six unrelated facts.
-- Sentence 2 must answer the hook directly.
-- Each JSON field must contain exactly ONE sentence and no sentence-ending punctuation inside the field.
-- No labels, CTA, title, keywords, emoji, generic moral, personal example, forced engagement, twist or cliffhanger.
-- No unsupported hype or new information.
-- Preserve source qualifiers and scope.
-- Technical English terms may remain when needed for accuracy.
-- Keep terms such as 3D in normal technical form; never write “మూడు D” or “మూడు డీ”.
-- Do not force a word count; completeness, natural flow and factual accuracy are more important.
-
-OUTPUT: Strict JSON object only with exactly these six keys:
-{"hook":"one complete sentence","fact":"one complete sentence","explanation":"one complete sentence","context":"one complete sentence","meaning":"one complete sentence","conclusion":"one complete sentence"}`;
-}
-async function requestStructuredNarration(url, options, originalPrompt, model) {
-  let body;
-  try { body = JSON.parse(String(options.body || '{}')); } catch (_) { throw new Error('Could not parse original Groq request body.'); }
-  body.model = model;
-  body.messages = [{ role: 'user', content: buildFactNarrationPrompt(originalPrompt) }];
-  body.temperature = 0.2;
-  body.reasoning_effort = 'low';
-  body.include_reasoning = false;
-  body.max_completion_tokens = 2500;
-  delete body.max_tokens;
-  body.response_format = { type: 'json_schema', json_schema: { name: 'telugu_fact_narration', strict: true, schema: {
-    type: 'object', properties: {
-      hook: { type: 'string' }, fact: { type: 'string' }, explanation: { type: 'string' }, context: { type: 'string' }, meaning: { type: 'string' }, conclusion: { type: 'string' }
-    }, required: ['hook','fact','explanation','context','meaning','conclusion'], additionalProperties: false
-  } } };
-  const response = await PREVIOUS(url, { ...options, body: JSON.stringify(body) });
-  let data = null;
-  try { data = await response.clone().json(); } catch (_) { throw new Error(`Groq returned non-JSON response (HTTP ${response.status}).`); }
-  if (!response.ok || data?.error) {
-    const error = new Error(`Groq API error ${response.status}: ${data?.error?.message || data?.error?.code || 'unknown error'}`);
-    error.status = response.status;
-    error.code = data?.error?.code || '';
-    error.retryAfter = Number(response.headers.get('retry-after') || 0);
-    throw error;
-  }
-  return { response, data };
-}
-function retryDelay(error, attempt) {
-  if (error.retryAfter > 0) return Math.min(Math.max(error.retryAfter * 1000, 1000), 60000);
-  return Math.min(15000 * Math.pow(2, attempt), 60000);
-}
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-async function guardedFetch(url, options = {}) {
-  if (!isGroq(url, options)) return PREVIOUS(url, options);
-  let body; try { body = JSON.parse(String(options.body || '{}')); } catch (_) { return PREVIOUS(url, options); }
-  const last = Array.isArray(body.messages) && body.messages[body.messages.length - 1];
-  const originalPrompt = last?.content || '';
-  if (!isNarrationPrompt(originalPrompt)) return PREVIOUS(url, options);
-  console.log(`${GUARD_MARKER}: intercepted final narration request at generation boundary.`);
-
-  let model = PRIMARY_MODEL;
-  let lastReason = 'unknown validation failure';
-  let transientFailures = 0;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    try {
-      const result = await requestStructuredNarration(url, options, originalPrompt, model);
-      const validation = parseContent(result.data, result.response.status);
-      if (validation.script) {
-        result.data.choices[0].message.content = validation.script;
-        result.data.choices[0].finish_reason = 'stop';
-        console.log(`${GUARD_MARKER}: FINAL FACT NARRATION accepted — ${countWords(validation.script)} words, 6 connected sentences, model=${model}.`);
-        return new Response(JSON.stringify(result.data), { status: result.response.status, statusText: result.response.statusText, headers: result.response.headers });
-      }
-      lastReason = validation.reason;
-      console.log(`${GUARD_MARKER}: validation attempt ${attempt + 1}/4 rejected — ${lastReason}`);
-      if (!validation.apiError && attempt < 3) continue;
-      throw new Error(`Clean fact narration failed — ${lastReason}`);
-    } catch (error) {
-      lastReason = error.message;
-      const status = error.status || 0;
-      const transient = status === 429 || status === 500 || status === 502 || status === 503 || status === 498;
-      if (!transient) throw new Error(`Clean fact narration failed — ${lastReason}`);
-      transientFailures += 1;
-      if (transientFailures >= 2 && model === PRIMARY_MODEL) {
-        model = FALLBACK_MODEL;
-        transientFailures = 0;
-        console.log(`${GUARD_MARKER}: primary model temporarily unavailable — switching final narration to ${FALLBACK_MODEL}.`);
-        continue;
-      }
-      const delay = retryDelay(error, transientFailures - 1);
-      console.log(`${GUARD_MARKER}: transient Groq error ${status || 'unknown'} — waiting ${Math.ceil(delay / 1000)}s before retry.`);
-      await sleep(delay);
-    }
-  }
-  throw new Error(`Clean fact narration failed after bounded retries — ${lastReason}`);
-}
-guardedFetch.__NARRATION_QUALITY_GUARD_V14__ = true;
-global.fetch = guardedFetch;
-console.log(`${GUARD_MARKER}: enabled — semantic six-part fact narration boundary loaded with explicit Groq error handling and fallback.`);
-module.exports = { enabled: true, marker: GUARD_MARKER };
+if (!PREVIOUS || PREVIOUS.__NARRATION_QUALITY_GUARD_V14__) { module.exports = { enabled:true, marker:GUARD_MARKER }; return; }
+function isGroq(url,options){return String(url).includes('api.groq.com/openai/v1/chat/completions')&&String(options?.method||'GET').toUpperCase()==='POST';}
+function isNarrationPrompt(p){return /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(String(p||''));}
+function sourceFrom(p){const m='VERIFIED FACT — ACCURACY GROUNDING:',s=String(p||''),i=s.indexOf(m);if(i<0)return '';const a=i+m.length,b=s.indexOf('\n\nనీ ROLE:',a);return s.slice(a,b<0?s.length:b).trim();}
+function clean(s){return String(s||'').replace(/\s+/g,' ').replace(/^["“”'`]+|["“”'`]+$/g,'').replace(/[.!?।]+$/g,'').trim();}
+function words(s){return String(s||'').split(/\s+/).filter(Boolean).length;}
+function oneSentence(s){s=String(s||'').trim();return !!s&&!/[.!?।]/.test(s);}
+function nums(s){return (String(s||'').match(/\b\d+(?:\.\d+)?\b/g)||[]).map(Number);}
+function grounded(script,source){const allowed=new Set(nums(source));for(const n of nums(script))if(!allowed.has(n))return 'unsupported number introduced';if(/(?:^|\s)कि(?:\s|$)|\b(?:hook|fact|explanation|context|meaning|conclusion)\s*:/i.test(script))return 'language or structural contamination detected';const tokens=(source.toLowerCase().match(/[a-z0-9]{4,}|[\u0c00-\u0c7f]{4,}/g)||[]),low=script.toLowerCase(),hits=tokens.filter(t=>low.includes(t));if(tokens.length>=3&&new Set(hits).size<2)return 'script is insufficiently grounded in verified source';return '';}
+function parse(data,status,source){if(data?.error)return{api:true,reason:`Groq API error ${status}: ${data.error.message||data.error.code||'unknown'}`};const c=data?.choices?.[0],m=c?.message,r=m?.content;if(!r)return{reason:`model returned empty content (finish_reason=${c?.finish_reason||'unknown'})`};let o;try{o=JSON.parse(String(r).replace(/^```(?:json|text)?\s*/i,'').replace(/```$/i,'').trim());}catch{return{reason:'model returned non-JSON content'}}const k=['hook','fact','explanation','context','meaning','conclusion'];if(!k.every(x=>typeof o[x]==='string'&&o[x].trim()))return{reason:'six-part field missing'};if(!k.every(x=>oneSentence(clean(o[x]))))return{reason:'field contains multiple sentences'};const p=k.map((x,i)=>i?clean(o[x])+'.':clean(o[x])+'?'),script=p.join(' '),wc=words(script);if(wc<85||wc>115)return{reason:`word count ${wc} outside 85-115`};if((script.match(/\?/g)||[]).length!==1)return{reason:'expected exactly one hook question'};if(/అసలు విషయం ఏంటంటే|ఇంకా షాక్ ఏంటంటే|ఇది వింటే షాక్|నమ్మలేకపోతారు|షాక్ అవుతారు|ఊహించండి|కానీ\.\.\.|అయితే\.\.\./i.test(script))return{reason:'storyteller filler detected'};const g=grounded(script,source);if(g)return{reason:g};for(let i=0;i<p.length;i++)for(let j=i+1;j<p.length;j++){const a=p[i].toLowerCase().split(/\s+/),b=new Set(p[j].toLowerCase().split(/\s+/));const overlap=a.filter(x=>x.length>=4&&b.has(x)).length;if(a.length>=8&&overlap/a.length>.65)return{reason:'repetitive sentences detected'};}return{script};}
+function makePrompt(original){const source=sourceFrom(original);return `నువ్వు ఒక VERIFIED FACT ని Telugu YouTube Shorts కోసం సహజమైన, అర్థవంతమైన fact-explainer narration గా మార్చాలి.\n\nVERIFIED SOURCE:\n${source}\n\nఈ source మాత్రమే factual authority. Source లో లేని కొత్త fact, number, date, name, cause, effect, example, statistic, comparison లేదా background జోడించకూడదు. Source లో ఒక విషయం మాత్రమే ఉంటే దానినే ఆరు connected sentences లో explain చేయాలి; unrelated facts కలపకూడదు.\n\nఇది STORY కాదు. Fake suspense, shock language, dramatic reveal, twist, cliffhanger, generic viral-template wording వద్దు. ఒక knowledgeable person ఒక verified fact ని viewer కి స్పష్టంగా explain చేస్తున్నట్టు ఉండాలి.\n\nFLOW: 1 Hook — సహజమైన curiosity question. 2 Fact — hook కి నేరుగా సమాధానం. 3 Explanation — core concept ని సులభంగా explain చేయి. 4 Important context — source లో ఉన్న relevant date/background/condition మాత్రమే. 5 Meaning — ముందు చెప్పిన facts ఎందుకు significantో source ఆధారంగా logically connect చేయి. 6 Conclusion — అదే fact నుంచి వచ్చే clear takeaway.\n\nSTRICT: EXACTLY 6 complete sentences. EXACTLY 85-115 whitespace-separated words. Sentence 1 మాత్రమే question. Sentence 2 hook కి direct answer. అన్ని sentences ఒకే fact కి connected. Source లో లేని number/date/name/claim వద్దు. Source qualifier మార్చవద్దు. Natural spoken Telugu. Technical English terms అవసరమైతే అలాగే ఉంచు; 3D ని ఎప్పుడూ మూడు D/మూడు డీగా మార్చవద్దు. Labels, CTA, title, keywords, emoji, moral, personal example, engagement request వద్దు. “అసలు విషయం ఏంటంటే”, “ఇంకా షాక్ ఏంటంటే”, “ఇది వింటే షాక్”, “నమ్మలేకపోతారు” వంటి filler వద్దు. ఒకే idea ని repeat చేయవద్దు.\n\nJSON మాత్రమే ఇవ్వాలి: {"hook":"one sentence","fact":"one sentence","explanation":"one sentence","context":"one sentence","meaning":"one sentence","conclusion":"one sentence"}`;}
+async function request(url,options,original,model){let b=JSON.parse(String(options.body||'{}'));b.model=model;b.messages=[{role:'user',content:makePrompt(original)}];b.temperature=.15;b.reasoning_effort='low';b.include_reasoning=false;b.max_completion_tokens=2500;delete b.max_tokens;b.response_format={type:'json_schema',json_schema:{name:'telugu_fact_narration',strict:true,schema:{type:'object',properties:{hook:{type:'string'},fact:{type:'string'},explanation:{type:'string'},context:{type:'string'},meaning:{type:'string'},conclusion:{type:'string'}},required:['hook','fact','explanation','context','meaning','conclusion'],additionalProperties:false}}};const r=await PREVIOUS(url,{...options,body:JSON.stringify(b)});let d;try{d=await r.clone().json();}catch{throw new Error(`Groq returned non-JSON response (HTTP ${r.status})`);}if(!r.ok||d?.error){const e=new Error(`Groq API error ${r.status}: ${d?.error?.message||d?.error?.code||'unknown'}`);e.status=r.status;e.retryAfter=Number(r.headers.get('retry-after')||0);throw e;}return{r,d};}
+const sleep=ms=>new Promise(x=>setTimeout(x,ms));
+async function guardedFetch(url,options={}){if(!isGroq(url,options))return PREVIOUS(url,options);let b;try{b=JSON.parse(String(options.body||'{}'));}catch{return PREVIOUS(url,options);}const last=Array.isArray(b.messages)?b.messages[b.messages.length-1]:null,original=last?.content||'';if(!isNarrationPrompt(original))return PREVIOUS(url,options);const source=sourceFrom(original);if(!source)throw new Error('Clean fact narration failed — verified source missing');console.log(`${GUARD_MARKER}: intercepted final narration request.`);let model=PRIMARY_MODEL,lastReason='unknown';for(let attempt=0;attempt<6;attempt++){try{const x=await request(url,options,original,model),v=parse(x.d,x.r.status,source);if(v.script){x.d.choices[0].message.content=v.script;x.d.choices[0].finish_reason='stop';console.log(`${GUARD_MARKER}: FINAL FACT NARRATION accepted — ${words(v.script)} words, 6 connected sentences, model=${model}.`);return new Response(JSON.stringify(x.d),{status:x.r.status,statusText:x.r.statusText,headers:x.r.headers});}lastReason=v.reason;console.log(`${GUARD_MARKER}: validation ${attempt+1}/6 rejected — ${lastReason}`);}catch(e){lastReason=e.message;const transient=[429,498,500,502,503,504].includes(e.status);if(!transient)throw new Error(`Clean fact narration failed — ${lastReason}`);if(model===PRIMARY_MODEL&&attempt>=1){model=FALLBACK_MODEL;console.log(`${GUARD_MARKER}: switching to ${model}.`);}const delay=e.retryAfter?Math.min(e.retryAfter*1000,60000):Math.min(8000*Math.pow(2,attempt),30000);await sleep(delay);}}throw new Error(`Clean fact narration failed after bounded attempts — ${lastReason}`);}
+global.fetch=guardedFetch;guardedFetch.__NARRATION_QUALITY_GUARD_V14__=true;module.exports={enabled:true,marker:GUARD_MARKER};console.log(`${GUARD_MARKER}: enabled — strict grounded six-sentence fact narration guard loaded.`);
