@@ -32,15 +32,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Ensure bundled ffmpeg is available
+      - name: Ensure ffmpeg and ffprobe are available
         shell: bash
         run: |
           set -euo pipefail
-          FFMPEG_BIN="$(node -e "process.stdout.write(require('ffmpeg-static'))")"
-          test -x "$FFMPEG_BIN"
-          sudo ln -sf "$FFMPEG_BIN" /usr/local/bin/ffmpeg
+          if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+            echo 'System ffmpeg and ffprobe already available.'
+          else
+            echo 'Installing ffmpeg package (provides both ffmpeg and ffprobe)...'
+            sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=120 -o Acquire::https::Timeout=120
+            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=120 -o Acquire::https::Timeout=120 ffmpeg
+          fi
           command -v ffmpeg
+          command -v ffprobe
           ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
 
       - name: Validate automation source
         run: |
