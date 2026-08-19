@@ -32,16 +32,42 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Cache ffmpeg apt packages
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-ffmpeg-${{ runner.os }}-v1
+
       - name: Ensure ffmpeg and ffprobe are available
         shell: bash
+        timeout-minutes: 15
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
             echo 'System ffmpeg and ffprobe already available.'
           else
             echo 'Installing ffmpeg package (provides both ffmpeg and ffprobe)...'
-            sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=120 -o Acquire::https::Timeout=120
-            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=120 -o Acquire::https::Timeout=120 ffmpeg
+            # The Ubuntu archive mirror GitHub-hosted runners land on can occasionally
+            # be very slow or stall entirely (seen hanging 8+ minutes on one package).
+            # A per-attempt `timeout` caps the damage from a stalled connection instead
+            # of silently eating into the job's 60-minute budget, and the apt cache
+            # above means most runs skip the network download altogether.
+            install_ok=0
+            for attempt in 1 2 3; do
+              echo "apt-get install attempt ${attempt}/3..."
+              if timeout 240 sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+                 && timeout 240 sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 ffmpeg; then
+                install_ok=1
+                break
+              fi
+              echo "Attempt ${attempt} failed or timed out; retrying with backoff..."
+              sleep $((attempt * 15))
+            done
+            if [ "$install_ok" -ne 1 ]; then
+              echo 'ffmpeg install failed after 3 attempts.'
+              exit 1
+            fi
           fi
           command -v ffmpeg
           command -v ffprobe
