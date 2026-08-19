@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,9 +38,9 @@ jobs:
           if command -v ffmpeg >/dev/null 2>&1; then
             echo "FFmpeg already available: $(command -v ffmpeg)"
           else
-            echo 'FFmpeg is not preinstalled; installing from Ubuntu packages with a hard timeout...'
-            timeout 120s sudo apt-get update -o Acquire::Retries=2
-            timeout 120s sudo apt-get install -y ffmpeg
+            echo 'FFmpeg is not preinstalled; installing from Ubuntu packages...'
+            timeout 300s sudo apt-get update -o Acquire::Retries=2
+            timeout 300s sudo apt-get install -y --no-install-recommends ffmpeg
           fi
           command -v ffmpeg >/dev/null 2>&1
           ffmpeg -version | head -n 1
