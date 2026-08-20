@@ -516,7 +516,7 @@ ${script}
 - **"." (period):** ఒక పూర్తి ఆలోచన ముగిసిన చోటే. ఎప్పుడూ వాక్యం మధ్యలో, ఒక పదబంధం మధ్యలో, లేదా క్రియకి ముందు వద్దు.
 - **"," (comma):** ఒక వాక్యంలో రెండు సంబంధిత భావాలు ఉన్నప్పుడు, చిన్న breath కోసం.
 - **"..." (ellipsis):** suspense/surprise/emotional pause కోసం మాత్రమే — reveal కి ముందు వాడు. **ప్రతి 2-3 వాక్యాలకు ఒకసారి కన్నా ఎక్కువ వాడకు** — overuse చేస్తే artificial గా వినిపిస్తుంది.
-- **ఏ line merge చేయకు, ఏ line split చేయకు. Original line breaks సంఖ్య మరియు క్రమం తప్పనిసరిగా అలాగే ఉంచు.**
+- **ఏ line merge చేయకు, ఏ line split చేయకు. Original line breaks సంఖ్య మరియు క్రమం తప్పనిసరిగా అలాగే ఉంచు.**\n- **కొత్త \'?\' (question mark) ఎప్పుడూ జోడించకు, తీసేయకు. Script లో ఇప్పటికే ఎన్ని \'?\' ఉన్నాయో అన్నే ఉండాలి — ఒక పొడవైన వాక్యాన్ని రెండు ప్రశ్నలుగా విడగొట్టడానికి కూడా కొత్త \'?\' పెట్టకు; అలాంటప్పుడు \'.\' లేదా \',\' తోనే విడగొట్టు.**
 - పదాలు ఒక్కటి కూడా జోడించకు, తీసేయకు, మార్చకు — కేవలం punctuation మాత్రమే మార్చు..
 
 కేవలం సరిచేసిన స్క్రిప్ట్ టెక్స్ట్ మాత్రమే ఇవ్వు — వేరే ఏమీ ముందు/వెనుక రాయకు, వివరణ వద్దు.`;
@@ -835,10 +835,12 @@ ${beatsJSON}
     const optimized = (await callLLM(punctPrompt)).trim();
     const originalLineCount = script.split(/\n+/).filter(Boolean).length;
     const optimizedLineCount = optimized.split(/\n+/).filter(Boolean).length;
-    if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount) {
+    const originalQuestionCount = (script.match(/\?/g) || []).length;
+    const optimizedQuestionCount = (optimized.match(/\?/g) || []).length;
+    if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount && optimizedQuestionCount === originalQuestionCount) {
       script = optimized;
     } else {
-      log('⚠️ WARNING: punctuation optimizer changed too many words — rejecting its output, keeping the original script.');
+      log('⚠️ WARNING: punctuation optimizer changed too many words or the question count — rejecting its output, keeping the original script.');
     }
   } catch (e) {
     log(`WARNING: punctuation optimizer call failed (${e.message}) — continuing with the unoptimized script.`);
