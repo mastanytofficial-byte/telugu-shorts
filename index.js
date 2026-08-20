@@ -1292,7 +1292,7 @@ async function getSentenceKeywords(sentences, outline) {
 
 SUBJECT: ఈ fact యొక్క ప్రధాన విషయం ఏమిటో ఒక లైన్‌లో ఇవ్వు (ఒక జంతువు/వస్తువు/ప్రదేశం/వ్యక్తి — ఏదైతే అది, నిర్దిష్టంగా, ఆంగ్లంలో). ఇదే వర్ణన ప్రతి scene లోనూ వాడతాం, visual consistency కోసం. ఉదా: "Greenland shark, dark grey skin, slow-moving, deep ocean" లేదా "Great Pyramid of Giza, limestone blocks, desert".
 
-KEYWORDS: ప్రతి వాక్యానికి 3-5 పదాల Pexels-సెర్చ్ keyword — ఇది ఒక **real video/photo footage లో ఉండే అవకాశం ఉన్న**, నిర్దిష్ట, documentary-style దృశ్యం కావాలి.
+KEYWORDS: ప్రతి వాక్యానికి 2-4 పదాల Pexels-సెర్చ్ keyword — ఇది ఒక **real video/photo footage లో ఉండే అవకాశం ఉన్న**, నిర్దిష్ట, documentary-style దృశ్యం కావాలి. ఒకే ఒక్క concrete visual idea మాత్రమే ఉండాలి — రెండు మూడు వేర్వేరు నిర్దిష్ట విషయాలని ఒకే keyword లో కలపొద్దు, ఎందుకంటే stock libraries కి అంత specific compound footage దొరకదు, దాంతో సంబంధం లేని video వస్తుంది. ఉదా: తప్పు: "open-air Viking longhouse stone hearth tools" (నాలుగు వేర్వేరు specific concepts కలిపేసింది — ఇది real video లో "hearth"/fire మాత్రమే match అయ్యి, పూర్తిగా సంబంధం లేని fire-pit footage వచ్చింది) | సరైనది: "ancient stone hearth" లేదా "medieval stone dwelling" (ఏదో ఒక్కటే core idea). Compound/multi-concept వర్ణన కావాలంటే అది SCENES లో పెట్టు, KEYWORDS లో కాదు.
 
 SCENES: ప్రతి వాక్యానికి 15-25 పదాల దృశ్య వర్ణన (ఆంగ్లంలో) — AI image generation కోసం, scientific/documentary/educational style లో, realistic గా. SUBJECT ప్రస్తావిస్తే అదే వర్ణన వాడు.
 
