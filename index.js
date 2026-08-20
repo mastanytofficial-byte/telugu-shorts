@@ -1263,10 +1263,24 @@ async function fetchPexelsVideo(query, startIndex = 0, excludeIds = new Set()) {
   throw new Error(`No usable portrait video file found among candidates for "${query}"`);
 }
 
-// Splits a script into its individual sentences (by period) — used to fetch
-// one image per sentence instead of a handful of generic images for the
-// whole script, so what's on screen actually matches what's being said at
-// that moment.
+// Splits a script into its individual sentences (by ., !, or ?) — used to
+// fetch one image per sentence instead of a handful of generic images for
+// the whole script, so what's on screen actually matches what's being said
+// at that moment.
+//
+// CONFIRMED REAL BUG (found via production log analysis, run #274): this
+// only split on "." for years — but beat 1 (the hook) always ends in "?"
+// per the guard's own schema, and "?"/"!" were never in the boundary set.
+// Every video's hook therefore silently fused with beat 2 (buildup) into
+// one oversized "sentence": one run logged that merged unit alone running
+// 21s of a 59s video (vs. 7-12s for the other four, correctly-split
+// sentences) — nearly a third of the video parked on a single static
+// image. It also meant the natural pause after the hook's question mark
+// was never inserted: generateAudioForScript() only places its longest,
+// sentence-boundary silence gap BETWEEN separate sentences from this
+// function, so the hook ran straight into the buildup with no breath —
+// the exact "reading a paragraph, not telling a fact" symptom reported
+// earlier, at the one place (the hook) it would be most noticeable.
 function splitIntoSentences(script) {
   // Protect "..." from being shattered by the period-based split below —
   // verified this was a real bug: "..." split into three separate "."
@@ -1281,7 +1295,7 @@ function splitIntoSentences(script) {
   const protectedText = script
     .replace(/\.\.\./g, ELLIPSIS_PLACEHOLDER)
     .replace(/(\d)\.(\d)/g, `$1${DECIMAL_PLACEHOLDER}$2`);
-  const parts = protectedText.split(/(?<=\.)\s*|\n+/).map(s => s.trim()).filter(Boolean);
+  const parts = protectedText.split(/(?<=[.!?।])\s*|\n+/).map(s => s.trim()).filter(Boolean);
   return parts.map(s => s.split(ELLIPSIS_PLACEHOLDER).join('...').split(DECIMAL_PLACEHOLDER).join('.'));
 }
 
