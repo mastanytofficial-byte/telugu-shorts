@@ -840,7 +840,17 @@ ${beatsJSON}
     if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount && optimizedQuestionCount === originalQuestionCount) {
       script = optimized;
     } else {
-      log('⚠️ WARNING: punctuation optimizer changed too many words or the question count — rejecting its output, keeping the original script.');
+      // Diagnostic detail per check, plus the raw rejected output — without
+      // this, a rejection here silently falls back to the unoptimized
+      // (comma-sparse, run-on-sounding) script with no way to tell WHY the
+      // optimizer's attempt was rejected on a given run.
+      const reasons = [];
+      if (!optimized) reasons.push('empty output');
+      const wc = (s) => s.split(/\s+/).filter(Boolean).length;
+      if (optimized && !wordsPreserved(script, optimized)) reasons.push(`word count drifted (original ${wc(script)}, optimized ${wc(optimized)})`);
+      if (optimizedLineCount !== originalLineCount) reasons.push(`line count changed (${originalLineCount} -> ${optimizedLineCount})`);
+      if (optimizedQuestionCount !== originalQuestionCount) reasons.push(`question mark count changed (${originalQuestionCount} -> ${optimizedQuestionCount})`);
+      log(`⚠️ WARNING: punctuation optimizer output rejected (${reasons.join('; ')}) — keeping the original script. Rejected output was: ${(optimized || '').slice(0, 300)}`);
     }
   } catch (e) {
     log(`WARNING: punctuation optimizer call failed (${e.message}) — continuing with the unoptimized script.`);
