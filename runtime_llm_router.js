@@ -40,7 +40,18 @@ function getPrompt(options) { const body = getBody(options); const messages = bo
 function makeResponseLike(original, data) { return new Response(JSON.stringify(data), { status: original.status, statusText: original.statusText, headers: original.headers }); }
 function frozenGroqResponse(original) { return makeResponseLike(original, { choices: [{ message: { role: 'assistant', content: frozenNarration }, finish_reason: 'stop' }] }); }
 function isFinalNarrationPrompt(prompt) { return /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(prompt) && (/STORY BEATS/i.test(prompt) || /high-retention storyteller/i.test(prompt) || /FINAL NARRATION:/i.test(prompt)); }
-function isDownstreamNarrationRewrite(prompt) { return /Speech Punctuation Optimizer/i.test(prompt) || /పదాలు ఏమీ మార్చకుండా, కేవలం punctuation మాత్రమే/i.test(prompt) || (/story beats/i.test(prompt) && /word count/i.test(prompt)) || /ఖచ్చితంగా \d+-\d+ తెలుగు పదాలు/i.test(prompt); }
+// NOTE: this intentionally does NOT match the Speech Punctuation Optimizer
+// prompt (index.js's buildPunctuationOptimizerPrompt) — that call is
+// word-preserving by construction and index.js's own wordsPreserved() check
+// already rejects its output if it drifts, so it's safe to let it actually
+// reach Groq instead of being frozen out. What this DOES need to keep
+// blocking is the OTHER escape hatch: index.js's word-count retry prompts
+// (generateContent's "STRICT... word count"/beats-based rewrite prompts),
+// which are plain rewrite requests that don't carry the
+// "VERIFIED FACT — ACCURACY GROUNDING:" marker and so would bypass the V14
+// guard's validation entirely if allowed through after a script was already
+// captured as frozenNarration.
+function isDownstreamNarrationRewrite(prompt) { return (/story beats/i.test(prompt) && /word count/i.test(prompt)) || /ఖచ్చితంగా \d+-\d+ తెలుగు పదాలు/i.test(prompt); }
 function normalizeTechnicalSpeech(text) {
   let value = String(text || '');
   const words = ['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
@@ -78,7 +89,15 @@ global.fetch = async function protectedFetch(url, options = {}) {
   if (!isFinalNarrationPrompt(prompt)) {
     const body = getBody(options);
     if (body) {
-      const capped = { ...body, max_tokens: Math.min(Number(body.max_tokens) || 1800, 1800) };
+      // gpt-oss models spend hidden reasoning tokens out of the SAME
+      // max_tokens budget unless reasoning_effort is capped — without this,
+      // a call can burn the whole 1800-token cap on invisible reasoning and
+      // come back with finish_reason:'length' and empty visible content
+      // (observed for real on the punctuation-optimizer call). The final
+      // narration path already sets this in narration_quality_guard_v14.js's
+      // own request(); every other Groq call routed through here needs the
+      // same treatment.
+      const capped = { ...body, max_tokens: Math.min(Number(body.max_tokens) || 1800, 1800), reasoning_effort: body.reasoning_effort || 'low', include_reasoning: false };
       delete capped.max_completion_tokens;
       requestOptions = { ...options, body: JSON.stringify(capped) };
     }
@@ -93,7 +112,7 @@ global.fetch = async function protectedFetch(url, options = {}) {
       const normalized = frozenNarration.replace(/\.\.\./g, '');
       const sentenceCount = (normalized.match(/[.!?।]+/g) || []).length;
       if (sentenceCount !== 6) throw new Error(`Final narration boundary returned ${sentenceCount} sentences; expected exactly 6.`);
-      if (/\b(?:hook|fact|explanation|context|meaning|conclusion)\s*:/i.test(frozenNarration)) throw new Error('Structural narration label leaked into final script.');
+      if (/\b(?:hook|buildup|reveal|detail|twist|ending)\s*:/i.test(frozenNarration)) throw new Error('Structural narration label leaked into final script.');
       console.log(`${EXPECTED_GUARD}: immutable final narration captured — 6 sentences.`);
     }
   }

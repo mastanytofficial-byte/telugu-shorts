@@ -32,16 +32,45 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Cache ffmpeg apt packages
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          # Only the .deb files, not the whole archives dir — `lock` and `partial/`
+          # in there are root-owned and made the cache-save step fail (permission
+          # denied trying to tar them) on the first run this was added.
+          path: /var/cache/apt/archives/*.deb
+          key: apt-ffmpeg-${{ runner.os }}-v1
+
       - name: Ensure ffmpeg and ffprobe are available
         shell: bash
+        timeout-minutes: 15
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
             echo 'System ffmpeg and ffprobe already available.'
           else
             echo 'Installing ffmpeg package (provides both ffmpeg and ffprobe)...'
-            sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=120 -o Acquire::https::Timeout=120
-            sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=120 -o Acquire::https::Timeout=120 ffmpeg
+            # The Ubuntu archive mirror GitHub-hosted runners land on can occasionally
+            # be very slow or stall entirely (seen hanging 8+ minutes on one package).
+            # A per-attempt `timeout` caps the damage from a stalled connection instead
+            # of silently eating into the job's 60-minute budget, and the apt cache
+            # above means most runs skip the network download altogether.
+            install_ok=0
+            for attempt in 1 2 3; do
+              echo "apt-get install attempt ${attempt}/3..."
+              if timeout 240 sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+                 && timeout 240 sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 ffmpeg; then
+                install_ok=1
+                break
+              fi
+              echo "Attempt ${attempt} failed or timed out; retrying with backoff..."
+              sleep $((attempt * 15))
+            done
+            if [ "$install_ok" -ne 1 ]; then
+              echo 'ffmpeg install failed after 3 attempts.'
+              exit 1
+            fi
           fi
           command -v ffmpeg
           command -v ffprobe
@@ -75,16 +104,34 @@ jobs:
 
       - name: Save rotation and duplicate-prevention state
         shell: bash
+        env:
+          # Save back to whichever branch actually triggered this run, not a
+          # hardcoded 'main'. Production always fires on main via the cron
+          # schedule, so this is a no-op behavior change there — but a
+          # workflow_dispatch test run on a feature branch previously still
+          # force-saved its rotation/duplicate-prevention state onto main,
+          # which (a) polluted real production state with test-run data and
+          # (b) meant the feature branch's own state.json never advanced, so
+          # every test run re-read the same stale runCount and kept picking
+          # the same category.
+          TARGET_BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           test -f state.json || { echo 'state.json was not generated'; exit 1; }
           test -f last-article.json || { echo 'last-article.json was not generated'; exit 1; }
           cp state.json /tmp/state.json.generated
           cp last-article.json /tmp/last-article.json.generated
+          # npm start leaves state.json/last-article.json modified in the working
+          # tree (that's the generated content we just backed up above) — git
+          # refuses to switch branches with uncommitted changes to tracked files,
+          # so `git checkout -B ...` below intermittently failed with "local
+          # changes would be overwritten" (seen in real runs). Discard the dirty
+          # working tree now that it's safely backed up in /tmp.
+          git reset --hard HEAD
           for attempt in 1 2 3 4 5; do
-            echo "Saving state (attempt ${attempt}/5)..."
-            git fetch origin main
-            git checkout -B main origin/main
+            echo "Saving state (attempt ${attempt}/5) to branch '${TARGET_BRANCH}'..."
+            git fetch origin "$TARGET_BRANCH"
+            git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
             cp /tmp/state.json.generated state.json
             cp /tmp/last-article.json.generated last-article.json
             git add state.json last-article.json
@@ -95,12 +142,12 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git commit -m "Persist category topic and duplicate-prevention state [skip ci]"
-            if git push origin HEAD:main; then
+            if git push origin "HEAD:$TARGET_BRANCH"; then
               echo 'Rotation and duplicate-prevention state saved successfully.'
               exit 0
             fi
-            echo 'Push raced with another update; retrying from latest main...'
-            git reset --hard origin/main
+            echo "Push raced with another update; retrying from latest ${TARGET_BRANCH}..."
+            git reset --hard "origin/$TARGET_BRANCH"
             sleep $((attempt * 2))
           done
           echo 'Failed to save state after 5 attempts.'

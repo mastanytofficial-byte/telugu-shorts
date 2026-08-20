@@ -516,7 +516,7 @@ ${script}
 - **"." (period):** ఒక పూర్తి ఆలోచన ముగిసిన చోటే. ఎప్పుడూ వాక్యం మధ్యలో, ఒక పదబంధం మధ్యలో, లేదా క్రియకి ముందు వద్దు.
 - **"," (comma):** ఒక వాక్యంలో రెండు సంబంధిత భావాలు ఉన్నప్పుడు, చిన్న breath కోసం.
 - **"..." (ellipsis):** suspense/surprise/emotional pause కోసం మాత్రమే — reveal కి ముందు వాడు. **ప్రతి 2-3 వాక్యాలకు ఒకసారి కన్నా ఎక్కువ వాడకు** — overuse చేస్తే artificial గా వినిపిస్తుంది.
-- **ఏ line merge చేయకు, ఏ line split చేయకు. Original line breaks సంఖ్య మరియు క్రమం తప్పనిసరిగా అలాగే ఉంచు.**
+- **ఏ line merge చేయకు, ఏ line split చేయకు. Original line breaks సంఖ్య మరియు క్రమం తప్పనిసరిగా అలాగే ఉంచు.**\n- **కొత్త \'?\' (question mark) ఎప్పుడూ జోడించకు, తీసేయకు. Script లో ఇప్పటికే ఎన్ని \'?\' ఉన్నాయో అన్నే ఉండాలి — ఒక పొడవైన వాక్యాన్ని రెండు ప్రశ్నలుగా విడగొట్టడానికి కూడా కొత్త \'?\' పెట్టకు; అలాంటప్పుడు \'.\' లేదా \',\' తోనే విడగొట్టు.**
 - పదాలు ఒక్కటి కూడా జోడించకు, తీసేయకు, మార్చకు — కేవలం punctuation మాత్రమే మార్చు..
 
 కేవలం సరిచేసిన స్క్రిప్ట్ టెక్స్ట్ మాత్రమే ఇవ్వు — వేరే ఏమీ ముందు/వెనుక రాయకు, వివరణ వద్దు.`;
@@ -835,10 +835,12 @@ ${beatsJSON}
     const optimized = (await callLLM(punctPrompt)).trim();
     const originalLineCount = script.split(/\n+/).filter(Boolean).length;
     const optimizedLineCount = optimized.split(/\n+/).filter(Boolean).length;
-    if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount) {
+    const originalQuestionCount = (script.match(/\?/g) || []).length;
+    const optimizedQuestionCount = (optimized.match(/\?/g) || []).length;
+    if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount && optimizedQuestionCount === originalQuestionCount) {
       script = optimized;
     } else {
-      log('⚠️ WARNING: punctuation optimizer changed too many words — rejecting its output, keeping the original script.');
+      log('⚠️ WARNING: punctuation optimizer changed too many words or the question count — rejecting its output, keeping the original script.');
     }
   } catch (e) {
     log(`WARNING: punctuation optimizer call failed (${e.message}) — continuing with the unoptimized script.`);
@@ -1350,16 +1352,30 @@ async function generateAIImage(prompt, savePath, seed, style = 'photo') {
   // well-composed images seen in reference/competitor videos, instead of a
   // literal-but-flat rendering of our exact prompt text.
   const url = `${POLLINATIONS_BASE}${encodeURIComponent(styledPrompt)}?width=768&height=1365&nologo=true&enhance=true&seed=${finalSeed}`;
-  const res = await fetchWithTimeout(url, {}, 20000); // enhance adds a processing pass, so a bit more time than before
-  if (!res.ok) {
+  // Pollinations is free/unauthenticated and enforces a tight rate limit —
+  // real runs showed it 429 on literally every request after the first
+  // (back-to-back sentence calls with no spacing), silently degrading
+  // every abstract-category video to generic Pexels stock footage instead
+  // of the purpose-generated images this whole tier exists for. One retry
+  // after a backoff recovers most of these instead of giving up immediately.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const res = await fetchWithTimeout(url, {}, 20000); // enhance adds a processing pass, so a bit more time than before
+    if (res.ok) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 5000) {
+        throw new Error(`Pollinations image suspiciously small (${buf.length} bytes) — likely an error response, not a real image`);
+      }
+      fs.writeFileSync(savePath, buf);
+      return savePath;
+    }
+    if (res.status === 429 && attempt < 2) {
+      const retryAfter = Number(res.headers.get('retry-after')) || 8;
+      log(`  Pollinations rate-limited (429) — waiting ${retryAfter}s before one retry.`);
+      await sleep(retryAfter * 1000);
+      continue;
+    }
     throw new Error(`Pollinations returned HTTP ${res.status}`);
   }
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length < 5000) {
-    throw new Error(`Pollinations image suspiciously small (${buf.length} bytes) — likely an error response, not a real image`);
-  }
-  fs.writeFileSync(savePath, buf);
-  return savePath;
 }
 
 // EXPERIMENTAL, best-effort: generates real (if brief) AI video via a
@@ -1438,6 +1454,11 @@ async function fetchImagesPerSentence(sentences, category, outline) {
       clips.push({ path: result.path, type: 'video' });
     };
     const tryAIImage = async () => {
+      // Space out back-to-back Pollinations calls — firing one per sentence
+      // with zero delay is what triggered its rate limit on real runs
+      // (every call after the first came back 429). A short proactive gap
+      // costs a couple seconds total but avoids that almost entirely.
+      if (i > 0) await sleep(3000);
       const aiPath = path.join(WORK_DIR, `ai_image_${i}.jpg`);
       const style = preferAIImageFirst ? 'illustration' : 'photo';
       await generateAIImage(scene, aiPath, characterSeed, style);
