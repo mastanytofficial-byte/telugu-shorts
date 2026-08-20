@@ -121,6 +121,13 @@ jobs:
           test -f last-article.json || { echo 'last-article.json was not generated'; exit 1; }
           cp state.json /tmp/state.json.generated
           cp last-article.json /tmp/last-article.json.generated
+          # npm start leaves state.json/last-article.json modified in the working
+          # tree (that's the generated content we just backed up above) — git
+          # refuses to switch branches with uncommitted changes to tracked files,
+          # so `git checkout -B ...` below intermittently failed with "local
+          # changes would be overwritten" (seen in real runs). Discard the dirty
+          # working tree now that it's safely backed up in /tmp.
+          git reset --hard HEAD
           for attempt in 1 2 3 4 5; do
             echo "Saving state (attempt ${attempt}/5) to branch '${TARGET_BRANCH}'..."
             git fetch origin "$TARGET_BRANCH"
