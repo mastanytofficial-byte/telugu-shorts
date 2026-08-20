@@ -26,6 +26,15 @@ const YT_CLIENT_ID = process.env.YT_CLIENT_ID;
 const YT_CLIENT_SECRET = process.env.YT_CLIENT_SECRET;
 const YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
 
+// Reuses the SAME TTS-notation safety check (fraction glyphs, math/currency/
+// percent symbols, superscript exponents, wrong terminology, second-person
+// address) that the narration guard runs on the initial generation. Without
+// this, a later text-mutating stage — e.g. the punctuation optimizer below,
+// which is only checked for word/line/question-count preservation — could
+// silently reintroduce exactly the notation the guard was written to keep
+// out, since count-preservation alone doesn't guarantee TTS-safe content.
+const { styleErrors } = require('./narration_quality_guard_v14.js');
+
 const STATE_FILE = path.join(__dirname, 'state.json');
 const WORK_DIR = path.join(__dirname, 'work');
 
@@ -837,7 +846,8 @@ ${beatsJSON}
     const optimizedLineCount = optimized.split(/\n+/).filter(Boolean).length;
     const originalQuestionCount = (script.match(/\?/g) || []).length;
     const optimizedQuestionCount = (optimized.match(/\?/g) || []).length;
-    if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount && optimizedQuestionCount === originalQuestionCount) {
+    const notationError = optimized ? styleErrors(optimized) : '';
+    if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount && optimizedQuestionCount === originalQuestionCount && !notationError) {
       script = optimized;
     } else {
       // Diagnostic detail per check, plus the raw rejected output — without
@@ -850,6 +860,7 @@ ${beatsJSON}
       if (optimized && !wordsPreserved(script, optimized)) reasons.push(`word count drifted (original ${wc(script)}, optimized ${wc(optimized)})`);
       if (optimizedLineCount !== originalLineCount) reasons.push(`line count changed (${originalLineCount} -> ${optimizedLineCount})`);
       if (optimizedQuestionCount !== originalQuestionCount) reasons.push(`question mark count changed (${originalQuestionCount} -> ${optimizedQuestionCount})`);
+      if (notationError) reasons.push(`introduced TTS-unsafe notation (${notationError})`);
       log(`⚠️ WARNING: punctuation optimizer output rejected (${reasons.join('; ')}) — keeping the original script. Rejected output was: ${(optimized || '').slice(0, 300)}`);
     }
   } catch (e) {
