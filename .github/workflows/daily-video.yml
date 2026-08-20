@@ -36,7 +36,10 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/cache@v4
         with:
-          path: /var/cache/apt/archives
+          # Only the .deb files, not the whole archives dir — `lock` and `partial/`
+          # in there are root-owned and made the cache-save step fail (permission
+          # denied trying to tar them) on the first run this was added.
+          path: /var/cache/apt/archives/*.deb
           key: apt-ffmpeg-${{ runner.os }}-v1
 
       - name: Ensure ffmpeg and ffprobe are available
