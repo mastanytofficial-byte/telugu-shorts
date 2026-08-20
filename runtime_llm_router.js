@@ -89,7 +89,15 @@ global.fetch = async function protectedFetch(url, options = {}) {
   if (!isFinalNarrationPrompt(prompt)) {
     const body = getBody(options);
     if (body) {
-      const capped = { ...body, max_tokens: Math.min(Number(body.max_tokens) || 1800, 1800) };
+      // gpt-oss models spend hidden reasoning tokens out of the SAME
+      // max_tokens budget unless reasoning_effort is capped — without this,
+      // a call can burn the whole 1800-token cap on invisible reasoning and
+      // come back with finish_reason:'length' and empty visible content
+      // (observed for real on the punctuation-optimizer call). The final
+      // narration path already sets this in narration_quality_guard_v14.js's
+      // own request(); every other Groq call routed through here needs the
+      // same treatment.
+      const capped = { ...body, max_tokens: Math.min(Number(body.max_tokens) || 1800, 1800), reasoning_effort: body.reasoning_effort || 'low', include_reasoning: false };
       delete capped.max_completion_tokens;
       requestOptions = { ...options, body: JSON.stringify(capped) };
     }
