@@ -365,6 +365,16 @@ function ensureSentenceBreaks(text, maxLen = 140) {
 // prompted into reliable word-to-emoji matching for Telugu content, so
 // this is deterministic instead — category-level relevance, zero risk of
 // a wrong pick.
+// Re-enabled spoken CTA, appended AFTER metadata extraction (so it never
+// pollutes title/hook generation) and AFTER the punctuation optimizer (so
+// it can't be rewritten/mangled by that pass). Uses "ఫాలో" not
+// "సబ్‌స్క్రైబ్" deliberately — main()'s CTA-detection logic keys off the
+// literal substring "సబ్‌స్క్రైబ్" to fold a CTA sentence's time into the
+// last slide with no image of its own; using a different word here lets
+// this sentence flow through the normal per-sentence pipeline instead, so
+// it gets its own TTS clause AND its own matching image, per request.
+const SPOKEN_CTA_SENTENCE = 'ఇలాంటి మరిన్ని amazing facts కోసం మన ఛానల్ ని ఫాలో చేయండి!';
+
 const CATEGORY_EMOJI = {
   mindblowing: '🤯',
   psychology: '🧠',
@@ -915,9 +925,7 @@ ${beatsJSON}
   title = `${title} ${categoryEmoji}`.trim();
   hookEmoji = `${hookEmoji} ${categoryEmoji}`.trim();
 
-  // Spoken CTA is intentionally disabled. The video already has a visual CTA button;
-  // narration should end on the fact's strongest takeaway, not a templated subscription line.
-  script = script.trim();
+  script = `${script.trim()} ${SPOKEN_CTA_SENTENCE}`;
   log(`Title: ${title}`);
   log(`Keywords: ${keywords}`);
   log(`Hook emoji line: ${hookEmoji}`);
@@ -1308,7 +1316,8 @@ SCENES: ప్రతి వాక్యానికి 15-25 పదాల దృ
 నియమాలు:
 - పైన ఇచ్చిన **మూలం fact లోని నిర్దిష్ట పేర్లు/వస్తువులు/సంఖ్యలనే** వాడు — స్క్రిప్ట్ వాక్యం అస్పష్టంగా ఉన్నా, మూలం fact లో ఉన్న నిర్దిష్ట విషయాన్నే keyword/scene లో పెట్టు (ఉదా. మూలంలో "గ్రీన్‌ల్యాండ్ సొరచేప" అని ఉంటే, కేవలం "shark" అని కాకుండా "Greenland shark" అనే వాడు).
 - పదాలు direct గా అనువదించకు, నిజమైన దృశ్యం రాయి (ఉదా. వైద్య "గుండె" కి "heart" వద్దు — romance ఫోటోలు వస్తాయి — "doctor checking heart with stethoscope" రాయి). భావోద్వేగాలను/నైరూప్య భావనలను (mystery, importance) మాటలుగా వాడకు, దృశ్యంగా చూపించు.
-- మనుషులు కనిపించే scene అయితే, దేశం చెప్పకపోతే ఎప్పుడూ "Indian"/"South Indian" నేపథ్యం వాడు, Western look వద్దు. (జంతువులు/వస్తువులు/ప్రదేశాలకి ఇది వర్తించదు — అవి ఎక్కడివైతే అక్కడివే చూపించు.)${outlineContext}
+- మనుషులు కనిపించే scene అయితే, దేశం చెప్పకపోతే ఎప్పుడూ "Indian"/"South Indian" నేపథ్యం వాడు, Western look వద్దు. (జంతువులు/వస్తువులు/ప్రదేశాలకి ఇది వర్తించదు — అవి ఎక్కడివైతే అక్కడివే చూపించు.)
+- **చివరి వాక్యం ఎప్పుడూ "ఫాలో చేయండి" అనే channel CTA** (fact లో భాగం కాదు) — దీనికి fact subject తో సంబంధం లేని generic "social media follow/notification" దృశ్యం వాడు (ఉదా. "phone screen notification bell", "hand tapping follow button on smartphone", "social media app icons glowing") — fact యొక్క literal keyword వాడకు.${outlineContext}
 
 వాక్యాలు:
 ${numbered}
