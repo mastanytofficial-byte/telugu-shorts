@@ -613,6 +613,36 @@ function numbersPreserved(original, optimized, digitMatchCount) {
   return diff <= budget;
 }
 
+function buildTenglishOptimizerPrompt(script) {
+  return `కింద ఇచ్చిన తెలుగు స్క్రిప్ట్ ప్రస్తుతం పూర్తిగా అచ్చ (శుద్ధ) తెలుగులో ఉంది — ఇది కొన్నిసార్లు వ్యాసం చదివినట్టు, textbook లా వినిపిస్తుంది. నిజమైన తెలుగు YouTube content మాట్లాడేటట్టు, **కింద చెప్పిన 2 రకాల పదాలను మాత్రమే** ఆంగ్లంలోకి మార్చు:
+
+${script}
+
+మార్చవలసినవి — ఇవి మాత్రమే:
+1. reaction/intensifier పదాలు — ఉదా. "ఆసక్తికరమైన/ఆసక్తికరంగా" → "interesting", "ఆశ్చర్యకరమైన" → "shocking" లేదా "surprising", "అద్భుతమైన" → "amazing".
+2. రోజువారీ తెలుగు పదం లేని modern/technical/scientific పదాలు (ఉదా. quantum, encryption, AI, electron) — ఇవి ఇప్పటికే ఆంగ్లంలో ఉంటే మార్చకుండా అలాగే ఉంచు.
+
+ఖచ్చితమైన నియమాలు:
+- పైన చెప్పిన 2 రకాలు తప్ప వేరే ఏ పదం మార్చకు — సూర్యుడు, నీళ్లు, పెద్ద, చిన్న లాంటి రోజువారీ తెలుగు పదాలను ఎప్పుడూ ఆంగ్లంలోకి మార్చకు.
+- ఏ వాక్యాన్ని పూర్తిగా ఆంగ్లంలోకి మార్చకు — grammar, verbs, sentence structure ఖచ్చితంగా తెలుగులోనే ఉండాలి. ఆంగ్ల పదం వాక్యం మధ్యలో ఒక్కటే వాడు (ఉదా. "ఇది చాలా interesting విషయం" — ఇలా), పూర్తి వాక్యం ఆంగ్లంలో వద్దు.
+- స్క్రిప్ట్‌లో పైన చెప్పిన 2 రకాల పదాలు అసలు లేకపోతే, ఏమీ మార్చకుండా స్క్రిప్ట్‌ని అలాగే యథాతథంగా తిరిగి ఇవ్వు — బలవంతంగా ఏదైనా ఆంగ్లం జొప్పించకు.
+- పదాలు జోడించకు, తీసేయకు — కేవలం పైన చెప్పిన 2 రకాల పదాలను మాత్రమే replace చేయి. Punctuation, line breaks, sentence count, question mark count అన్నీ ఖచ్చితంగా అలాగే ఉంచు.
+
+కేవలం సరిచేసిన స్క్రిప్ట్ టెక్స్ట్ మాత్రమే ఇవ్వు — వేరే ఏమీ ముందు/వెనుక రాయకు, వివరణ వద్దు.`;
+}
+
+// Catches a runaway full-English rewrite: the Tenglish pass should swap a
+// handful of individual words, not translate whole sentences. If the
+// proportion of Telugu-script characters drops sharply, something went much
+// further than asked — reject regardless of what the other checks say.
+function teluguRatioPreserved(original, optimized) {
+  const teluguChars = (s) => (s.match(/[ఀ-౿]/g) || []).length;
+  const totalChars = (s) => s.replace(/\s/g, '').length;
+  const originalRatio = teluguChars(original) / Math.max(1, totalChars(original));
+  const optimizedRatio = teluguChars(optimized) / Math.max(1, totalChars(optimized));
+  return optimizedRatio >= originalRatio * 0.75;
+}
+
 function buildMetadataPrompt(script) {
   return `కింద ఇచ్చిన తెలుగు narration ని చదివి, దాని metadata ఇవ్వు:
 
@@ -911,6 +941,42 @@ ${beatsJSON}
     } catch (e) {
       log(`⚠️ WARNING: number auto-correction call failed (${e.message}) — keeping the original script with ASCII-digit numbers (TTS will likely mispronounce them digit-by-digit).`);
     }
+  }
+
+  // Optional style pass: natural Tenglish (English) code-mixing for reaction/
+  // intensifier words and modern/technical terms with no common Telugu
+  // equivalent — user feedback that pure "shuddha Telugu" can sound stiff/
+  // textbook for this audience. Two earlier attempts folded this into the
+  // giant one-shot generation prompt above (which already juggles 20+
+  // competing constraints — word count, grounding, notation, terminology)
+  // and it had ZERO measurable effect across two real test runs (#281,
+  // #284) — the model never prioritized it there. This is a dedicated,
+  // single-purpose pass instead, same architecture as the punctuation and
+  // number optimizers above, so it isn't competing with anything else.
+  // Purely cosmetic and optional: on any doubt it falls back to the
+  // original all-Telugu script — never blocks or fails the run.
+  try {
+    const tenglishPrompt = buildTenglishOptimizerPrompt(script);
+    const styled = (await callLLM(tenglishPrompt)).trim();
+    const styledLineCount = styled.split(/\n+/).filter(Boolean).length;
+    const scriptLineCount = script.split(/\n+/).filter(Boolean).length;
+    const styledQuestionCount = (styled.match(/\?/g) || []).length;
+    const scriptQuestionCount = (script.match(/\?/g) || []).length;
+    const tenglishNotationError = styled ? styleErrors(styled) : '';
+    if (styled && wordsPreserved(script, styled) && teluguRatioPreserved(script, styled) && styledLineCount === scriptLineCount && styledQuestionCount === scriptQuestionCount && !tenglishNotationError) {
+      script = styled;
+    } else {
+      const reasons = [];
+      if (!styled) reasons.push('empty output');
+      if (styled && !wordsPreserved(script, styled)) reasons.push('word count drifted');
+      if (styled && !teluguRatioPreserved(script, styled)) reasons.push('Telugu-character ratio dropped too far (likely rewrote whole sentences into English)');
+      if (styledLineCount !== scriptLineCount) reasons.push(`line count changed (${scriptLineCount} -> ${styledLineCount})`);
+      if (styledQuestionCount !== scriptQuestionCount) reasons.push(`question mark count changed (${scriptQuestionCount} -> ${styledQuestionCount})`);
+      if (tenglishNotationError) reasons.push(`introduced TTS-unsafe notation (${tenglishNotationError})`);
+      log(`  Tenglish style pass skipped (${reasons.join('; ')}) — keeping the all-Telugu script (not a defect, just no natural code-mixing this time).`);
+    }
+  } catch (e) {
+    log(`  Tenglish style pass call failed (${e.message}) — keeping the all-Telugu script.`);
   }
 
   // Defensive: strip any stray markers/CTA-like ending the model wrote
