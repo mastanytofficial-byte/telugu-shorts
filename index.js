@@ -364,22 +364,6 @@ const WORD_COUNT_TARGETS = {
   ocean: { min: 85, max: 115 }
 };
 
-// Rotating, warmer CTA variations — a single fixed robotic "follow, like,
-// share, subscribe" checklist repeated identically on every video starts
-// to feel templated to a returning viewer. These read more like a genuine,
-// appreciative invitation than a command list, while still covering
-// like/share/subscribe (matching the on-screen LIKE/SHARE/SUBSCRIBE
-// button). Each still contains 'సబ్‌స్క్రైబ్' (Telugu script) so the
-// existing CTA-detection/trim logic (which checks for that substring)
-// keeps working across all variants.
-const CTA_VARIATIONS = [
-  'ఇలాంటి Amazing Facts కోసం సబ్‌స్క్రైబ్ చేయండి.'
-];
-
-function pickCTA(runCount) {
-  return CTA_VARIATIONS[runCount % CTA_VARIATIONS.length];
-}
-
 // Strips the "హుక్:/వివరణ:/Twist:" labels and flattens the outline into one
 // compact line — used ONLY as Stage-2 grounding text. The JSON beats already
 // carry the hook/question/reveal/twist/ending structure, so Stage-2 doesn't
@@ -551,20 +535,23 @@ ${script}
 
 **ముఖ్యం — Title మరియు Hook connected గా ఉండాలి:** ముందు HOOK ని ఈ narration యొక్క **మొదటి 1-2 వాక్యాల్లో ఉన్న అసలైన ఆలోచననే** (కొత్తది కల్పించకుండా) తీసుకుని రాయి. తర్వాత TITLE ని **అదే HOOK యొక్క సంక్షిప్త వెర్షన్‌గా** రాయి — TITLE వేరే కోణం (ఉదా. మధ్యలో వచ్చే ఒక వివరం) ఎంచుకోకూడదు, HOOK కి కొనసాగింపుగానే అనిపించాలి.
 
-ఖచ్చితంగా ఈ 3-లైన్ల ఫార్మాట్‌లో మాత్రమే ఇవ్వు, ఇదే క్రమంలో, మరేమీ రాయకు:
+ఖచ్చితంగా ఈ 4-లైన్ల ఫార్మాట్‌లో మాత్రమే ఇవ్వు, ఇదే క్రమంలో, మరేమీ రాయకు:
 HOOK: (ఈ narration మొదటి వాక్యాల్లోని అసలైన ఆలోచననే, 15 తెలుగు పదాల లోపు ప్రశ్నగా రాయి, emoji వద్దు)
 TITLE: (పైన రాసిన HOOK యొక్క 5-8 పదాల సంక్షిప్త వెర్షన్, అదే విషయం మీదే, emoji వద్దు)
-KEYWORDS: (ఈ కంటెంట్‌కి సరిపోయే 3 నిర్దిష్టమైన, దృశ్యమానమైన ఆంగ్ల keywords — abstract పదాలు కాకుండా (ఉదా. "wisdom", "life" వద్దు), కళ్ళకి కనిపించే నిర్దిష్ట scene/object/action పదాలు వాడు, ఉదా: "elderly woman smiling", "children playing park", "mother holding baby". Content కి నేరుగా సంబంధం ఉండాలి.)`;
+KEYWORDS: (ఈ కంటెంట్‌కి సరిపోయే 3 నిర్దిష్టమైన, దృశ్యమానమైన ఆంగ్ల keywords — abstract పదాలు కాకుండా (ఉదా. "wisdom", "life" వద్దు), కళ్ళకి కనిపించే నిర్దిష్ట scene/object/action పదాలు వాడు, ఉదా: "elderly woman smiling", "children playing park", "mother holding baby". Content కి నేరుగా సంబంధం ఉండాలి.)
+TEASER: (video description లో పెట్టడానికి, ఈ నిర్దిష్ట fact గురించి curiosity పెంచే 1 తెలుగు వాక్యం, 12 పదాల లోపు, చివర్లో ఒక సంబంధిత emoji — fact ని reveal/spoil చేయకూడదు, ఈ video యొక్క నిర్దిష్ట విషయాన్ని (పైన TITLE లో ఉన్నదే) ప్రస్తావించాలి, వేరే వీడియోలకి కూడా వర్తించే generic వాక్యం రాయకూడదు)`;
 }
 
 function parseMetadata(raw) {
   const titleMatch = raw.match(/TITLE:\s*(.+)/i);
   const keywordsMatch = raw.match(/KEYWORDS:\s*(.+)/i);
   const hookMatch = raw.match(/HOOK:\s*(.+)/i);
+  const teaserMatch = raw.match(/TEASER:\s*(.+)/i);
   return {
     title: titleMatch ? titleMatch[1].trim() : null,
     keywords: keywordsMatch ? keywordsMatch[1].trim() : null,
-    hookEmoji: hookMatch ? hookMatch[1].trim() : null
+    hookEmoji: hookMatch ? hookMatch[1].trim() : null,
+    teaser: teaserMatch ? teaserMatch[1].trim() : null
   };
 }
 
@@ -729,7 +716,7 @@ function tryParseStoryBeatsJSON(raw) {
   }
 }
 
-async function generateContent(category, recentTitles, outline, ctaSentence) {
+async function generateContent(category, recentTitles, outline) {
   log(`Generating ${category} content via Groq...`);
   const beats = await generateStoryBeats(outline);
   const beatsJSON = JSON.stringify(beats);
@@ -872,7 +859,7 @@ ${beatsJSON}
   // at once.
   const metadataPrompt = buildMetadataPrompt(script);
   const metaRaw = await callLLM(metadataPrompt);
-  let { title, keywords, hookEmoji } = parseMetadata(metaRaw);
+  let { title, keywords, hookEmoji, teaser } = parseMetadata(metaRaw);
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
   if (!hookEmoji) hookEmoji = title;
@@ -887,8 +874,9 @@ ${beatsJSON}
   log(`Title: ${title}`);
   log(`Keywords: ${keywords}`);
   log(`Hook emoji line: ${hookEmoji}`);
+  log(`Teaser: ${teaser || '(none — description will fall back to the rotating generic bank)'}`);
   log(`Script (${script.length} chars): ${script}`);
-  return { title, keywords, hookEmoji, script };
+  return { title, keywords, hookEmoji, teaser, script };
 }
 
 // FALLBACK ONLY: used if Groq ever fails to return a usable TITLE line.
@@ -1877,13 +1865,21 @@ const DESCRIPTION_TEASERS = [
 ];
 
 // Short, structured 3-line description (hook / curiosity teaser / CTA) plus
-// 5 lowercase hashtags (2026 best-practice range), per spec. Built
-// programmatically (fixed teaser bank + templated CTA) except the hook
-// line, which needs to be content-aware for its emoji placement — that
-// part comes from Groq's HOOK field, kept separate from the spoken SCRIPT.
-function buildDescription(hookEmoji, category, runCount) {
+// 5 lowercase hashtags (2026 best-practice range), per spec. The hook line
+// comes from Groq's HOOK field, kept separate from the spoken SCRIPT.
+//
+// The teaser line is now ALSO Groq-generated per video (buildMetadataPrompt's
+// TEASER field), content-aware to that specific fact — not picked from the
+// small fixed DESCRIPTION_TEASERS bank below. With 2 uploads/day, a 5-line
+// rotating bank repeats the exact same sentence verbatim every ~2.5 days
+// across the whole public catalog — a literal, externally-checkable
+// "templated/mass-produced content" signal that YouTube's monetization
+// policy on repetitious/inauthentic content specifically looks for. The
+// bank is kept only as a defensive fallback for the rare case Groq's
+// TEASER field fails to parse.
+function buildDescription(hookEmoji, category, runCount, teaser) {
   const line1 = hookEmoji;
-  const line2 = DESCRIPTION_TEASERS[runCount % DESCRIPTION_TEASERS.length];
+  const line2 = teaser || DESCRIPTION_TEASERS[runCount % DESCRIPTION_TEASERS.length];
   const line3 = 'మరిన్ని facts కోసం Subscribe చేయండి! 🔔';
   const hashtags = [...BASE_HASHTAGS, ...(CATEGORY_HASHTAGS[category] || [])].slice(0, 5).join(' ');
 
@@ -2006,8 +2002,7 @@ async function main() {
     }
   }
 
-  const ctaSentence = pickCTA(runCount);
-  const { title, hookEmoji, script } = await generateContent(category, usedTitles, outline, ctaSentence);
+  const { title, hookEmoji, teaser, script } = await generateContent(category, usedTitles, outline);
   const allSentences = splitIntoSentences(script);
   let { audioPath, sentenceDurations, silenceGap } = await generateAudioForScript(allSentences);
 
@@ -2106,7 +2101,7 @@ async function main() {
   const videoId = await uploadToYouTube(
     videoPath,
     title,
-    buildDescription(hookEmoji, category, runCount),
+    buildDescription(hookEmoji, category, runCount, teaser),
     category
   );
 
