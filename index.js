@@ -33,7 +33,7 @@ const YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
 // which is only checked for word/line/question-count preservation — could
 // silently reintroduce exactly the notation the guard was written to keep
 // out, since count-preservation alone doesn't guarantee TTS-safe content.
-const { styleErrors } = require('./narration_quality_guard_v14.js');
+const { styleErrors, hasBareDigits } = require('./narration_quality_guard_v14.js');
 
 const STATE_FILE = path.join(__dirname, 'state.json');
 const WORK_DIR = path.join(__dirname, 'work');
@@ -587,6 +587,32 @@ function wordsPreserved(original, optimized) {
   return diff <= Math.max(3, Math.ceil(originalWords.length * 0.05)); // allow small tolerance (~5%, min 3 words)
 }
 
+function buildNumberOptimizerPrompt(script) {
+  return `కింద ఇచ్చిన తెలుగు స్క్రిప్ట్ లో ఆంగ్ల అంకెలుగా (0-9 digits) రాసిన ప్రతి సంఖ్యను తెలుగు మాటల్లోకి మార్చు — వేరే ఏమీ మార్చకు:
+
+${script}
+
+నియమాలు:
+- ప్రతి అంకెల సంఖ్యను (సంవత్సరాలు, లెక్కలు, శాతం, కొలతలు సహా) తెలుగు మాటల్లోకి మార్చు. ఉదా: 1920 → వెయ్యి తొమ్మిది వందల ఇరవై, 24 → ఇరవై నాలుగు, 2000 → రెండు వేల, 1000 → వెయ్యి.
+- మినహాయింపు: మోడల్/వెర్షన్ పేర్లలో భాగమైన సంఖ్యలు మాత్రమే అలాగే ఉంచు (ఉదా. 'AES-256', 'iOS 15' — ఇవి పేర్లు, పరిమాణాలు కావు).
+- సంఖ్యలు తప్ప వేరే ఏ పదం జోడించకు, తీసేయకు, మార్చకు. Punctuation, line breaks, sentence structure — అన్నీ ఖచ్చితంగా అలాగే ఉంచు.
+
+కేవలం సరిచేసిన స్క్రిప్ట్ టెక్స్ట్ మాత్రమే ఇవ్వు — వేరే ఏమీ ముందు/వెనుక రాయకు, వివరణ వద్దు.`;
+}
+
+// The punctuation optimizer's wordsPreserved() assumes a punctuation-only
+// edit, but spelling a number out in Telugu genuinely adds words (1920 -> 4
+// words) — a flat 5% tolerance would reject legitimate conversions on a
+// script with more than one or two numbers. Budgets extra room per actual
+// digit-run found, on top of the same baseline tolerance, so the check stays
+// tight for anything else the model might try to sneak in.
+function numbersPreserved(original, optimized, digitMatchCount) {
+  const stripPunct = (s) => s.replace(/[.,…!?"']/g, '').replace(/\.\.\./g, '').split(/\s+/).filter(Boolean);
+  const diff = Math.abs(stripPunct(original).length - stripPunct(optimized).length);
+  const budget = Math.max(3, Math.ceil(stripPunct(original).length * 0.05)) + digitMatchCount * 4;
+  return diff <= budget;
+}
+
 function buildMetadataPrompt(script) {
   return `కింద ఇచ్చిన తెలుగు narration ని చదివి, దాని metadata ఇవ్వు:
 
@@ -848,13 +874,43 @@ ${beatsJSON}
   }
   script = bestScript;
 
-  // Safety-net detection: numbers 1000+ written as digits get mispronounced
-  // digit-by-digit by TTS ("10,000" → "సున్నా సున్నా సున్నా సున్నా" instead
-  // of "పది వేలు") — verified this happening in a real generated script
-  // despite the prompt rule against it.
-  const largeNumberMatch = script.match(/\b\d{4,}\b|\b\d{1,3}(?:,\d{3})+\b/);
-  if (largeNumberMatch) {
-    log(`⚠️ WARNING: script contains a large number as digits ("${largeNumberMatch[0]}") — TTS will likely mispronounce this digit-by-digit instead of as a proper number. This should have been written in Telugu words.`);
+  // Safety-net correction: numbers written as digits get mispronounced
+  // digit-by-digit by TTS ("1920" → "1-9-2-0" instead of "వెయ్యి తొమ్మిది
+  // వందల ఇరవై") — verified happening in real generated scripts (e.g. run
+  // #284: "1920లో", "24 శాతం") despite the prompt rule against it. A
+  // hard-reject-in-the-generation-loop attempt at this (run #285) proved
+  // unsafe — under real Groq rate-limit pressure it burned the whole retry
+  // budget and failed the run outright when a fact's number resisted
+  // rewriting. This is a dedicated, non-blocking correction pass instead
+  // (same pattern as the punctuation optimizer above): on any doubt it
+  // falls back to the original digit-bearing script with a warning, same
+  // as the previous warn-only behavior — never worse, often better.
+  if (hasBareDigits(script)) {
+    const digitMatchCount = (script.match(/\d{2,}/g) || []).length;
+    try {
+      const numberPrompt = buildNumberOptimizerPrompt(script);
+      const corrected = (await callLLM(numberPrompt)).trim();
+      const correctedLineCount = corrected.split(/\n+/).filter(Boolean).length;
+      const originalLineCount = script.split(/\n+/).filter(Boolean).length;
+      const correctedQuestionCount = (corrected.match(/\?/g) || []).length;
+      const originalQuestionCount = (script.match(/\?/g) || []).length;
+      const notationError = corrected ? styleErrors(corrected) : '';
+      if (corrected && !hasBareDigits(corrected) && numbersPreserved(script, corrected, digitMatchCount) && correctedLineCount === originalLineCount && correctedQuestionCount === originalQuestionCount && !notationError) {
+        log(`  Auto-corrected ASCII-digit numbers to Telugu words.`);
+        script = corrected;
+      } else {
+        const reasons = [];
+        if (!corrected) reasons.push('empty output');
+        if (corrected && hasBareDigits(corrected)) reasons.push('still contains bare digits after correction');
+        if (corrected && !numbersPreserved(script, corrected, digitMatchCount)) reasons.push('word count drifted beyond the expected number-expansion budget');
+        if (correctedLineCount !== originalLineCount) reasons.push(`line count changed (${originalLineCount} -> ${correctedLineCount})`);
+        if (correctedQuestionCount !== originalQuestionCount) reasons.push(`question mark count changed (${originalQuestionCount} -> ${correctedQuestionCount})`);
+        if (notationError) reasons.push(`introduced TTS-unsafe notation (${notationError})`);
+        log(`⚠️ WARNING: number auto-correction rejected (${reasons.join('; ')}) — keeping the original script with ASCII-digit numbers (TTS will likely mispronounce them digit-by-digit). Rejected output was: ${(corrected || '').slice(0, 300)}`);
+      }
+    } catch (e) {
+      log(`⚠️ WARNING: number auto-correction call failed (${e.message}) — keeping the original script with ASCII-digit numbers (TTS will likely mispronounce them digit-by-digit).`);
+    }
   }
 
   // Defensive: strip any stray markers/CTA-like ending the model wrote
