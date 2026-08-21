@@ -207,6 +207,8 @@ async function checkSubjectRepeat(candidate, category, discoveredFacts) {
   const recentList = recent.map((f, i) => `${i + 1}. ${f.slice(0, 200).replace(/\s+/g, ' ')}`).join('\n');
   const prompt = `కింద ఇచ్చిన కొత్త fact candidate యొక్క ప్రధాన విషయం (subject — ఏ జంతువు/వస్తువు/దృగ్విషయం గురించి చెప్తుందో) ఇటీవల ఇదే category లో వాడిన fact ల ప్రధాన విషయాలలో దేనితోనైనా సరిపోతుందో లేదో చెప్పు. Angle/topic వేరైనా (ఉదా. ఒకటి వలస గురించి, ఇంకోటి శబ్దాల గురించి), ప్రధాన subject (జంతువు/వస్తువు) ఒకటే అయితే repeat గా లెక్కించు.
 
+**ముఖ్యం — SUBJECT ఎప్పుడూ ఒక నిర్దిష్ట, పేరున్న దృగ్విషయం/జంతువు/వస్తువు అయి ఉండాలి** (ఉదా. "Dunning-Kruger Effect", "Bystander Effect", "Greenland shark", "AES-256 encryption") — "humans", "psychology", "the brain", "the mind" లాంటి విస్తృత, category-level పదాలు ఎప్పుడూ SUBJECT గా వాడకు, ఎందుకంటే ఇవి ఆ category లోని దాదాపు ప్రతి fact కీ వర్తించి, తప్పుగా prati fact నీ repeat గా ఫ్లాగ్ చేస్తాయి. ఉదా: "Dunning-Kruger Effect" మరియు "Bystander Effect" రెండూ మనుషుల ప్రవర్తన గురించే అయినా repeat **కాదు** — ఇవి వేర్వేరు నిర్దిష్ట దృగ్విషయాలు; కానీ "తిమింగల వలస" మరియు "తిమింగల గీతలు" repeat **అవుతుంది** — రెండూ ఒకే నిర్దిష్ట జంతువు (whale) గురించే.
+
 కొత్త candidate:
 ${candidate.slice(0, 400)}
 
@@ -215,7 +217,7 @@ ${recentList}
 
 ఖచ్చితంగా ఈ ఫార్మాట్‌లో మాత్రమే ఇవ్వు, వేరే ఏమీ రాయకు:
 REPEAT: (YES లేదా NO)
-SUBJECT: (repeat అయితే ఏ subject overlap అయ్యిందో ఒక్క పదం/పదబంధంలో ఆంగ్లంలో రాయి; repeat కాకపోతే ఖాళీగా వదిలేయి)`;
+SUBJECT: (repeat అయితే ఏ నిర్దిష్ట subject overlap అయ్యిందో ఒక్క పదం/పదబంధంలో ఆంగ్లంలో రాయి — ఎప్పుడూ broad category పేరు కాదు; repeat కాకపోతే ఖాళీగా వదిలేయి)`;
   try {
     const raw = await callLLM(prompt);
     const repeatMatch = raw.match(/REPEAT:\s*(YES|NO)/i);
