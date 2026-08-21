@@ -188,6 +188,48 @@ async function checkFactSaturation(outline) {
   }
 }
 
+// Local, YouTube-API-independent duplicate-SUBJECT guard. checkFactSaturation
+// above (searching real YouTube results) is the more authoritative check,
+// but it has been silently failing on EVERY real run with "Insufficient
+// Permission" — the upload-only OAuth token has no search scope — meaning
+// it has provided zero actual protection since it was added, failing open
+// every single time. This is a defense-in-depth check using our OWN stored
+// history instead, which needs no external permission at all: a real
+// duplicate slipped through exactly this gap — "Marine Migration Patterns"
+// and "Whale Songs" are different TOPIC_BANK labels (so the topic-level
+// dedup didn't catch it), but both generated facts ended up being about
+// whales specifically. An LLM comparison (not naive keyword matching) is
+// used because the overlap is conceptual ("వలస" vs "గీతలు" share no words
+// but both are about the same animal), not textual.
+async function checkSubjectRepeat(candidate, category, discoveredFacts) {
+  const recent = ((discoveredFacts && discoveredFacts[category]) || []).slice(-8);
+  if (recent.length === 0) return { repeat: false, subject: '' };
+  const recentList = recent.map((f, i) => `${i + 1}. ${f.slice(0, 200).replace(/\s+/g, ' ')}`).join('\n');
+  const prompt = `కింద ఇచ్చిన కొత్త fact candidate యొక్క ప్రధాన విషయం (subject — ఏ జంతువు/వస్తువు/దృగ్విషయం గురించి చెప్తుందో) ఇటీవల ఇదే category లో వాడిన fact ల ప్రధాన విషయాలలో దేనితోనైనా సరిపోతుందో లేదో చెప్పు. Angle/topic వేరైనా (ఉదా. ఒకటి వలస గురించి, ఇంకోటి శబ్దాల గురించి), ప్రధాన subject (జంతువు/వస్తువు) ఒకటే అయితే repeat గా లెక్కించు.
+
+కొత్త candidate:
+${candidate.slice(0, 400)}
+
+ఇటీవలి facts (ఇదే category లో):
+${recentList}
+
+ఖచ్చితంగా ఈ ఫార్మాట్‌లో మాత్రమే ఇవ్వు, వేరే ఏమీ రాయకు:
+REPEAT: (YES లేదా NO)
+SUBJECT: (repeat అయితే ఏ subject overlap అయ్యిందో ఒక్క పదం/పదబంధంలో ఆంగ్లంలో రాయి; repeat కాకపోతే ఖాళీగా వదిలేయి)`;
+  try {
+    const raw = await callLLM(prompt);
+    const repeatMatch = raw.match(/REPEAT:\s*(YES|NO)/i);
+    const subjectMatch = raw.match(/SUBJECT:\s*(.+)/i);
+    return {
+      repeat: repeatMatch ? repeatMatch[1].toUpperCase() === 'YES' : false,
+      subject: subjectMatch ? subjectMatch[1].trim() : ''
+    };
+  } catch (e) {
+    log(`  WARNING: subject-repeat check failed (${e.message}) — proceeding without this check (failing open).`);
+    return { repeat: false, subject: '' };
+  }
+}
+
 // Resolves the outline to use for this run: picks a specific TOPIC (not
 // just a broad category — see TOPIC_BANK) and tries a fresh, self-verified
 // fact about it from Groq, retrying up to 6 times (a new topic each
@@ -245,6 +287,11 @@ async function getOrGrowFactOutline(category, discoveredFacts, usedTopics) {
           const existingResults = await checkFactSaturation(candidate);
           if (existingResults > SATURATION_THRESHOLD) {
             log(`  Fact is already well-covered on YouTube (~${existingResults} results > ${SATURATION_THRESHOLD} threshold) — trying a different fact.`);
+            continue;
+          }
+          const { repeat, subject } = await checkSubjectRepeat(candidate, category, discoveredFacts);
+          if (repeat) {
+            log(`  Fact's subject ("${subject}") repeats a recently covered subject in "${category}" — trying a different fact.`);
             continue;
           }
           if (score > bestScore) {
