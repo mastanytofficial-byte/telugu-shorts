@@ -973,7 +973,7 @@ ${beatsJSON}
       if (styledLineCount !== scriptLineCount) reasons.push(`line count changed (${scriptLineCount} -> ${styledLineCount})`);
       if (styledQuestionCount !== scriptQuestionCount) reasons.push(`question mark count changed (${scriptQuestionCount} -> ${styledQuestionCount})`);
       if (tenglishNotationError) reasons.push(`introduced TTS-unsafe notation (${tenglishNotationError})`);
-      log(`  Tenglish style pass skipped (${reasons.join('; ')}) — keeping the all-Telugu script (not a defect, just no natural code-mixing this time).`);
+      log(`  Tenglish style pass skipped (${reasons.join('; ')}) — keeping the all-Telugu script (not a defect, just no natural code-mixing this time). Rejected output was: ${(styled || '').slice(0, 400)}`);
     }
   } catch (e) {
     log(`  Tenglish style pass call failed (${e.message}) — keeping the all-Telugu script.`);
