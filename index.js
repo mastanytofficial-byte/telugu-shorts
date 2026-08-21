@@ -593,7 +593,7 @@ function buildNumberOptimizerPrompt(script) {
 ${script}
 
 నియమాలు:
-- ప్రతి అంకెల సంఖ్యను (సంవత్సరాలు, లెక్కలు, శాతం, కొలతలు సహా) తెలుగు మాటల్లోకి మార్చు — **సాధారణ నియమం:** ముందుగా thousands భాగం చెప్పు (సరిగ్గా 1000 అయితే ఎప్పుడూ 'వెయ్యి', 2000/3000 వంటి multiples అయితే 'X వేల' — 'ఒక్కటి వేల' అని ఎప్పుడూ రాయకు); తర్వాత వందల అంకె 0 కాకుండా ఉంటేనే 'Y వందల' అని చెప్పు, 0 అయితే ఆ భాగాన్ని పూర్తిగా వదిలేయి; తర్వాత మిగిలిన పదులు+units భాగం 0 కాకుండా ఉంటేనే చెప్పు, 0 అయితే వదిలేయి — మధ్యలో ఉన్న సున్నా భాగాలను ఎప్పుడూ 'సున్నా' అని పలకవద్దు లేదా అంకెలవారీగా చదవకు. ఉదా: 1920 → వెయ్యి తొమ్మిది వందల ఇరవై, 24 → ఇరవై నాలుగు, 1000 → వెయ్యి, 1009 → వెయ్యి తొమ్మిది, 1045 → వెయ్యి నలభై ఐదు, 1200 → వెయ్యి రెండు వందల, 1201 → వెయ్యి రెండు వందల ఒకటి, 1500 → వెయ్యి ఐదు వందల, 2000 → రెండు వేల.
+- ప్రతి అంకెల సంఖ్యను (సంవత్సరాలు, లెక్కలు, శాతం, కొలతలు సహా) తెలుగు మాటల్లోకి మార్చు — **సాధారణ నియమం (తెలుగు లక్ష/కోటి పద్ధతిలో — ఆంగ్ల million పద్ధతిలో కాదు):** పెద్ద భాగం నుండి చిన్న భాగం వరకు వరుసగా చెప్పు, ప్రతి భాగం 0 అయితే పూర్తిగా వదిలేయి — కోట్ల భాగం (సరిగ్గా 1 కోటి అయితే 'కోటి', ఎక్కువైతే 'X కోట్లు'), లక్షల భాగం (సరిగ్గా 1 లక్ష అయితే 'లక్ష', ఎక్కువైతే 'X లక్షలు'), వేల భాగం (సరిగ్గా 1000 అయితే ఎప్పుడూ 'వెయ్యి' — 'ఒక్కటి వేల' అని ఎప్పుడూ రాయకు, ఎక్కువైతే 'X వేల'), వందల భాగం (0 కాకుండా ఉంటేనే 'Y వందల'), చివరగా పదులు+units భాగం (0 కాకుండా ఉంటేనే) — మధ్యలో ఉన్న సున్నా భాగాలను ఎప్పుడూ 'సున్నా' అని పలకవద్దు లేదా అంకెలవారీగా చదవకు. 'వంద వేల' అని ఎప్పుడూ రాయకు — అది 'లక్ష'. ఉదా: 1920 → వెయ్యి తొమ్మిది వందల ఇరవై, 24 → ఇరవై నాలుగు, 1000 → వెయ్యి, 1009 → వెయ్యి తొమ్మిది, 1500 → వెయ్యి ఐదు వందల, 2000 → రెండు వేల, 10000 → పది వేల, 100000 → లక్ష, 150000 → లక్ష యాభై వేల, 500000 → ఐదు లక్షలు, 10000000 → కోటి.
 - మినహాయింపు: మోడల్/వెర్షన్ పేర్లలో భాగమైన సంఖ్యలు మాత్రమే అలాగే ఉంచు (ఉదా. 'AES 256', 'iOS 15' — ఇవి పేర్లు, పరిమాణాలు కావు; మధ్యలో హైఫన్ మాత్రం వద్దు — 'AES-256' కాదు, 'AES 256' — హైఫన్ సంఖ్యకి ఆనుకుని ఉంటే TTS దాన్ని 'మైనస్' అని చదువుతుంది).
 - సంఖ్యలు తప్ప వేరే ఏ పదం జోడించకు, తీసేయకు, మార్చకు. Punctuation, line breaks, sentence structure — అన్నీ ఖచ్చితంగా అలాగే ఉంచు.
 
@@ -602,14 +602,16 @@ ${script}
 
 // The punctuation optimizer's wordsPreserved() assumes a punctuation-only
 // edit, but spelling a number out in Telugu genuinely adds words (1920 -> 4
-// words) — a flat 5% tolerance would reject legitimate conversions on a
-// script with more than one or two numbers. Budgets extra room per actual
-// digit-run found, on top of the same baseline tolerance, so the check stays
-// tight for anything else the model might try to sneak in.
+// words, and a lakh/crore-scale number like 1234567 -> up to 9 words:
+// "పన్నెండు లక్షల ముప్పై నాలుగు వేల ఐదు వందల అరవై ఏడు") — a flat 5%
+// tolerance would reject legitimate conversions on a script with more than
+// one or two numbers. Budgets extra room per actual digit-run found, on top
+// of the same baseline tolerance, so the check stays tight for anything else
+// the model might try to sneak in.
 function numbersPreserved(original, optimized, digitMatchCount) {
   const stripPunct = (s) => s.replace(/[.,…!?"']/g, '').replace(/\.\.\./g, '').split(/\s+/).filter(Boolean);
   const diff = Math.abs(stripPunct(original).length - stripPunct(optimized).length);
-  const budget = Math.max(3, Math.ceil(stripPunct(original).length * 0.05)) + digitMatchCount * 4;
+  const budget = Math.max(3, Math.ceil(stripPunct(original).length * 0.05)) + digitMatchCount * 9;
   return diff <= budget;
 }
 
