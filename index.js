@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { google } = require('googleapis');
+const puppeteer = require('puppeteer');
 
 // .trim() defends against a real, confirmed symptom: the key worked when
 // tested directly in Groq's Playground, but failed with "Invalid API Key"
@@ -1589,19 +1590,6 @@ function buildRealVideoClip(videoPath, duration, outPath) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
-// libass/drawtext look up fonts by their EMBEDDED family name, not the
-// filename — detect it at runtime with fc-scan so text rendering works
-// regardless of what the .ttf file happens to be named.
-function getFontFamilyName(fontPath, fallback) {
-  try {
-    const name = execSync(`fc-scan --format "%{family}\n" "${fontPath}"`).toString().trim().split('\n')[0];
-    return name || fallback;
-  } catch (e) {
-    log(`WARNING: fc-scan failed for ${fontPath} (${e.message}), using fallback family name "${fallback}".`);
-    return fallback;
-  }
-}
-
 // Wraps text at a max character count per line so thumbnail text fits the
 // frame width at a large, readable size.
 function wrapText(text, maxCharsPerLine) {
@@ -1621,28 +1609,63 @@ function wrapText(text, maxCharsPerLine) {
   return lines;
 }
 
+// Renders the wrapped Telugu text to a transparent 720x1280 PNG using
+// headless Chromium (already a project dependency via puppeteer), then
+// composites that PNG onto the frame with a plain ffmpeg overlay — no text
+// shaping happens inside ffmpeg at all.
+//
+// CONFIRMED REAL BUG (found via a user-shared screenshot of a live
+// thumbnail): the previous approach rendered text through ffmpeg's
+// subtitles/libass filter specifically to avoid a known drawtext glyph-
+// corruption issue — but libass's own Indic-script shaping turned out to
+// be broken too, for the same underlying reason (Telugu needs matras/
+// conjuncts reordered and combined, which libass doesn't reliably do):
+// "ఉప్పు" (a geminated conjunct) rendered as "ఉపవు", "వెల్‌స్ఫ్రై" broke
+// apart, and a vowel sign appeared as a floating stray glyph. This is the
+// same root class of bug that was worked around by disabling on-screen
+// captions entirely — but unlike an ffmpeg text filter, Chromium's text
+// stack (Skia + HarfBuzz + ICU) is the same one every Android phone and
+// Chrome browser renders Telugu with correctly, verified here against the
+// exact garbled sentence from the screenshot before shipping.
+async function renderTeluguTextPNG(text, outPngPath) {
+  const fontPath = path.join(__dirname, 'fonts', 'NotoSansTelugu-Bold.ttf');
+  const fontData = fs.readFileSync(fontPath).toString('base64');
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = `<!DOCTYPE html><html><head><style>
+@font-face { font-family: 'NotoTelugu'; src: url(data:font/ttf;base64,${fontData}) format('truetype'); font-weight: bold; }
+html, body { margin: 0; padding: 0; width: 720px; height: 1280px; background: transparent; overflow: hidden; }
+.wrap { position: absolute; left: 0; right: 0; bottom: 500px; display: flex; justify-content: center; }
+.box {
+  font-family: 'NotoTelugu'; font-weight: bold; font-size: 52px; color: #ffffff;
+  -webkit-text-stroke: 3px #000000; paint-order: stroke fill;
+  background: rgba(0,0,0,0.69); border-radius: 12px;
+  max-width: 620px; padding: 24px 32px; box-sizing: border-box;
+  line-height: 1.32; text-align: center; white-space: pre-wrap;
+}
+</style></head><body><div class="wrap"><div class="box">${escaped}</div></div></body></html>`;
+
+  const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 720, height: 1280, deviceScaleFactor: 1 });
+    await page.setContent(html);
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: outPngPath, omitBackground: true });
+  } finally {
+    await browser.close();
+  }
+}
+
 // Builds a custom thumbnail: a frame from the video's own first slide
 // (image or video) with bold, high-contrast hook-text overlaid — shown
 // ONLY in YouTube's feed/search preview, never during playback (kept
 // completely separate from the on-screen-text-free video itself).
-//
-// Uses the subtitles/libass rendering path, NOT drawtext — testing showed
-// drawtext produces corrupted/overlapping glyphs for some Telugu conjuncts
-// (e.g. "చంద్రుడు" rendering with a garbled ending), the same class of bug
-// from this project's original on-screen-text era. libass (via harfbuzz)
-// shapes Telugu conjuncts correctly, which is why the disabled subtitle
-// feature used it too.
-function buildThumbnail(mediaPath, mediaType, hookText, outPath) {
-  const fontsDir = path.join(__dirname, 'fonts');
-  const fontPathBoldCandidate = path.join(fontsDir, 'NotoSansTelugu-Bold.ttf');
-  const fontPathBold = fs.existsSync(fontPathBoldCandidate) ? fontPathBoldCandidate : path.join(fontsDir, 'NotoSansTelugu-Regular.ttf');
-  const fontFamily = getFontFamilyName(fontPathBold, 'Noto Sans Telugu');
-
-  // Strip emoji before wrapping — libass can't render most emoji glyphs
-  // reliably either, and they'd show as tofu boxes on the thumbnail.
+async function buildThumbnail(mediaPath, mediaType, hookText, outPath) {
+  // Strip emoji before wrapping — Chromium CAN render most emoji, but the
+  // font here doesn't cover them, so they'd show as tofu boxes.
   const cleanText = hookText.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim();
   const lines = wrapText(cleanText, 24);
-  const assText = lines.join('\\N');
+  const wrappedText = lines.join('\n');
 
   const frameOut = path.join(WORK_DIR, 'thumb_frame.jpg');
   if (mediaType === 'video') {
@@ -1651,23 +1674,12 @@ function buildThumbnail(mediaPath, mediaType, hookText, outPath) {
     execSync(`ffmpeg -y -i "${mediaPath}" -vf "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280" -frames:v 1 "${frameOut}"`, { stdio: 'inherit' });
   }
 
-  const assPath = path.join(WORK_DIR, 'thumbnail.ass');
-  const assContent = `[Script Info]
-ScriptType: v4.00+
-PlayResX: 720
-PlayResY: 1280
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Thumb,${fontFamily},54,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,3,0,2,2,50,50,500,1
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.00,0:00:05.00,Thumb,,0,0,0,,${assText}
-`;
-  fs.writeFileSync(assPath, assContent, 'utf8');
+  const textPngPath = path.join(WORK_DIR, 'thumb_text.png');
+  await renderTeluguTextPNG(wrappedText, textPngPath);
 
-  const filters = `eq=contrast=1.1:saturation=1.15,subtitles='${assPath}':fontsdir='${fontsDir}'`;
-  execSync(`ffmpeg -y -i "${frameOut}" -vf "${filters}" -frames:v 1 -update 1 -q:v 2 "${outPath}"`, { stdio: 'inherit' });
-  log(`Thumbnail built: ${outPath} (font family "${fontFamily}")`);
+  const filters = `eq=contrast=1.1:saturation=1.15[bg];[bg][1:v]overlay=0:0`;
+  execSync(`ffmpeg -y -i "${frameOut}" -i "${textPngPath}" -filter_complex "${filters}" -frames:v 1 -update 1 -q:v 2 "${outPath}"`, { stdio: 'inherit' });
+  log(`Thumbnail built: ${outPath} (Chromium-rendered Telugu text overlay)`);
   return outPath;
 }
 
@@ -2110,7 +2122,7 @@ async function main() {
   // must never be treated as the run failing.
   try {
     const thumbnailPath = path.join(WORK_DIR, 'thumbnail.jpg');
-    buildThumbnail(imagePaths[0].path, imagePaths[0].type, hookEmoji, thumbnailPath);
+    await buildThumbnail(imagePaths[0].path, imagePaths[0].type, hookEmoji, thumbnailPath);
     await uploadThumbnail(videoId, thumbnailPath);
   } catch (e) {
     log(`WARNING: thumbnail generation failed (${e.message}) — video is live with YouTube's auto-selected thumbnail instead.`);
