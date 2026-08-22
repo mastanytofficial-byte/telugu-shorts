@@ -2029,6 +2029,43 @@ function sanitizeForYouTube(text, maxLen) {
   return cleaned.slice(0, maxLen).trim();
 }
 
+// Deterministic gate before upload. Everything upstream (buildVideo's zero-
+// media-items guard, per-clip placeholder fallback, NaN-duration sanitizing)
+// only guarantees that ffmpeg's mux command exited successfully — it does
+// NOT guarantee the muxed output actually contains a real audio track, or
+// that its length matches the narration it's supposed to be synced to. Until
+// now nothing checked this: buildVideo's return value went straight into
+// uploadToYouTube with zero verification in between, so a video with a
+// missing/truncated audio stream or a badly wrong duration would still ship
+// live and public with no warning anywhere in the logs. This never changes
+// what a successful run produces — it only turns a silent bad upload into a
+// loud, caught failure before anything goes public.
+function validateFinalVideo(videoPath, audioPath) {
+  if (!fs.existsSync(videoPath) || fs.statSync(videoPath).size === 0) {
+    throw new Error(`Final video validation failed: "${videoPath}" is missing or empty — refusing to upload.`);
+  }
+  const streams = execSync(`ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "${videoPath}"`).toString().trim().split('\n').map(s => s.trim()).filter(Boolean);
+  if (!streams.includes('audio')) {
+    throw new Error(`Final video validation failed: "${videoPath}" has no audio stream — refusing to upload a silent video.`);
+  }
+  if (!streams.includes('video')) {
+    throw new Error(`Final video validation failed: "${videoPath}" has no video stream — refusing to upload.`);
+  }
+  const videoDuration = getAudioDuration(videoPath); // ffprobe format=duration works for any container, not just audio-only files
+  if (!isFinite(videoDuration) || videoDuration <= 0) {
+    throw new Error(`Final video validation failed: could not determine a valid duration for "${videoPath}" (got ${videoDuration}) — refusing to upload.`);
+  }
+  // Matches buildVideo's own internal `duration` computation exactly, so this
+  // check catches any drift introduced between that computation and the
+  // final muxed file, not just a hardcoded guess.
+  const expectedDuration = getAudioDuration(audioPath) + 0.3;
+  const drift = Math.abs(videoDuration - expectedDuration);
+  if (drift > 2) {
+    throw new Error(`Final video validation failed: video duration (${videoDuration.toFixed(2)}s) drifted from the expected narration-matched duration (${expectedDuration.toFixed(2)}s) by ${drift.toFixed(2)}s — refusing to upload a desynced video.`);
+  }
+  log(`Final video validated: audio+video streams present, duration ${videoDuration.toFixed(2)}s (expected ~${expectedDuration.toFixed(2)}s).`);
+}
+
 async function uploadToYouTube(videoPath, title, description, category) {
   log('Uploading to YouTube...');
   const oauth2Client = new google.auth.OAuth2(YT_CLIENT_ID, YT_CLIENT_SECRET);
@@ -2215,6 +2252,7 @@ async function main() {
   keptDurations[keptDurations.length - 1] += 0.3;
 
   const videoPath = buildVideo(imagePaths, audioPath, keptDurations, ctaAudioDuration);
+  validateFinalVideo(videoPath, audioPath);
 
   const videoId = await uploadToYouTube(
     videoPath,
