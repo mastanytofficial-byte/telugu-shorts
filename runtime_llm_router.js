@@ -34,7 +34,11 @@ const guard = require(QUALITY_GUARD);
 if (!guard || guard.marker !== EXPECTED_GUARD) throw new Error(`Narration quality guard ${EXPECTED_GUARD} failed to load — refusing to run.`);
 
 let frozenNarration = '';
-function isGroq(url) { return String(url).includes('api.groq.com/openai/v1/chat/completions'); }
+// Best-effort provider swap (2026-08-22): Groq's gpt-oss-120b/20b -> Gemini's
+// OpenAI-compat endpoint (see index.js's callLLM comment for why). Must stay
+// in sync with the URL index.js's callLLM and narration_quality_guard_v14.js's
+// isGroq() both check.
+function isGroq(url) { return String(url).includes('generativelanguage.googleapis.com/v1beta/openai/chat/completions'); }
 function getBody(options) { try { return JSON.parse(String(options.body || '{}')); } catch (_) { return null; } }
 function getPrompt(options) { const body = getBody(options); const messages = body && Array.isArray(body.messages) ? body.messages : []; const last = messages[messages.length - 1]; return last && typeof last.content === 'string' ? last.content : ''; }
 function makeResponseLike(original, data) { return new Response(JSON.stringify(data), { status: original.status, statusText: original.statusText, headers: original.headers }); }
@@ -89,16 +93,20 @@ global.fetch = async function protectedFetch(url, options = {}) {
   if (!isFinalNarrationPrompt(prompt)) {
     const body = getBody(options);
     if (body) {
-      // gpt-oss models spend hidden reasoning tokens out of the SAME
-      // max_tokens budget unless reasoning_effort is capped — without this,
-      // a call can burn the whole 1800-token cap on invisible reasoning and
-      // come back with finish_reason:'length' and empty visible content
-      // (observed for real on the punctuation-optimizer call). The final
-      // narration path already sets this in narration_quality_guard_v14.js's
-      // own request(); every other Groq call routed through here needs the
-      // same treatment.
-      const capped = { ...body, max_tokens: Math.min(Number(body.max_tokens) || 1800, 1800), reasoning_effort: body.reasoning_effort || 'low', include_reasoning: false };
+      // gpt-oss models used to spend hidden reasoning tokens out of the SAME
+      // max_tokens budget unless reasoning_effort was capped, burning the
+      // whole 1800-token cap on invisible reasoning with nothing visible
+      // left over. Gemini's OpenAI-compat layer hasn't been confirmed to
+      // have (or lack) the same failure mode, and reasoning_effort/
+      // include_reasoning are gpt-oss-specific fields not part of the
+      // standard OpenAI schema Gemini's compat layer documents — dropped to
+      // avoid an unknown-field risk on a provider this hasn't been tested
+      // against yet. The max_tokens cap itself is kept as a generic safety
+      // limit regardless of provider.
+      const capped = { ...body, max_tokens: Math.min(Number(body.max_tokens) || 1800, 1800) };
       delete capped.max_completion_tokens;
+      delete capped.reasoning_effort;
+      delete capped.include_reasoning;
       requestOptions = { ...options, body: JSON.stringify(capped) };
     }
   }

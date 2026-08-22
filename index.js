@@ -20,6 +20,13 @@ const GROQ_API_KEY_RAW = process.env.GROQ_API_KEY || '';
 // stray leading/trailing space or newline getting included when the
 // secret value was pasted, silently making it different from the real key.
 const GROQ_API_KEY = GROQ_API_KEY_RAW.trim();
+// User decision (best-effort switch after repeated Groq rate-limit/daily-
+// limit failures on gpt-oss-120b/20b): callLLM() below now calls Gemini's
+// OpenAI-compatibility endpoint instead of Groq directly. Kept as a
+// separate constant (not reusing GROQ_API_KEY) since the secret is already
+// present in the workflow env under this name.
+const GEMINI_API_KEY_RAW = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = GEMINI_API_KEY_RAW.trim();
 const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY;
 const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
 const YT_CLIENT_ID = process.env.YT_CLIENT_ID;
@@ -784,34 +791,37 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// gpt-oss-120b (not llama-3.3-70b, which has a reported Aug 16, 2026
-// deprecation date on Groq) — we have direct prior experience with
-// gpt-oss-120b successfully producing valid output, even though it needs
-// the <think>-stripping below. Our narration prompt already carries the
-// specific storytelling techniques (fact-specific curiosity,
-// reveal pacing, natural spoken Telugu, and no forced scenarios)
-// that actually drive output style — switching providers doesn't change
-// this prompt, which is intentional per explicit user discussion.
-const GROQ_MODEL = 'openai/gpt-oss-120b';
-// Fallback: openai/gpt-oss-20b — Groq's own official docs list this as a
-// currently-supported, actively-recommended model. Deliberately NOT
-// qwen/qwen3.6-27b (explicitly marked "preview, not production" by Groq's
-// own docs, AND confirmed via this project's own earlier testing to
-// produce corrupted Telugu — English fragments spliced mid-word). Same
-// gpt-oss family as primary, so likely shares similar language handling.
-const GROQ_FALLBACK_MODEL = 'openai/gpt-oss-20b';
+// User decision (best-effort switch, 2026-08-22): repeated Groq gpt-oss-
+// 120b/20b failures today were caused by (a) a small, weak model juggling
+// 20+ simultaneous hard constraints (exact word count, 6-beat structure,
+// number-formatting rules, banned words, source-grounding, JSON schema)
+// and (b) Groq's free-tier daily/per-minute limits getting exhausted
+// mid-run, forcing reliance on the even-weaker fallback. Switching to
+// Gemini via its OpenAI-compatibility endpoint (same request/response
+// shape as Groq/OpenAI, so the rest of this codebase — guardedFetch,
+// protectedFetch, response_format json_schema — needed no redesign, just
+// a different URL/key/model). gemini-2.5-flash's free tier (as of this
+// change: ~10 RPM / 500 RPD) is far more generous than what Groq's
+// gpt-oss-120b was giving us today, and a materially stronger model.
+// NOT verified against a live call yet — this is the best-effort attempt
+// the user explicitly asked for, to be validated by a real test run.
+const GEMINI_MODEL = 'gemini-2.5-flash';
+// Fallback: gemini-2.5-flash-lite — same family, lighter/faster, for the
+// same "primary exhausted, don't fail the whole run" role GROQ_FALLBACK_MODEL
+// played before.
+const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 // Only the primary's DAILY limit triggers a switch (remembered for the
 // rest of the run) — kept to this one clear condition rather than the
 // multi-condition trigger logic (rate-limit + payment-required + ...) that
 // caused real bugs during the Cerebras attempt.
 let primaryModelExhaustedThisRun = false;
 
-async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRun ? GROQ_FALLBACK_MODEL : GROQ_MODEL)) {
-  const res = await fetchWithTimeout('https://api.groq.com/openai/v1/chat/completions', {
+async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRun ? GEMINI_FALLBACK_MODEL : GEMINI_MODEL)) {
+  const res = await fetchWithTimeout('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${GROQ_API_KEY}`
+      'Authorization': `Bearer ${GEMINI_API_KEY}`
     },
     body: JSON.stringify({
       model,
@@ -823,39 +833,44 @@ async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRu
 
   if (!data.choices || !data.choices[0]) {
     const errorMessage = (data.error && data.error.message) || '';
-    const isRateLimit = data.error && data.error.code === 'rate_limit_exceeded';
-    const isDailyLimit = /tokens per day|TPD/i.test(errorMessage);
+    // Keyed primarily off the HTTP status (429 is the universal rate-limit
+    // signal across OpenAI-compatible providers) rather than Groq-specific
+    // error-message substrings, since Gemini's compat layer's exact error
+    // shape hasn't been confirmed against a live call yet — status code is
+    // the one thing guaranteed stable across providers.
+    const isRateLimit = res.status === 429 || (data.error && data.error.code === 'rate_limit_exceeded');
+    const isDailyLimit = /tokens per day|TPD|per[- ]day|daily/i.test(errorMessage);
 
     if (isRateLimit && isDailyLimit) {
-      if (model === GROQ_MODEL) {
+      if (model === GEMINI_MODEL) {
         primaryModelExhaustedThisRun = true;
-        log(`WARNING: "${GROQ_MODEL}" daily limit reached — switching to fallback model "${GROQ_FALLBACK_MODEL}" for the rest of this run.`);
-        return callLLM(prompt, 1, GROQ_FALLBACK_MODEL);
+        log(`WARNING: "${GEMINI_MODEL}" daily limit reached — switching to fallback model "${GEMINI_FALLBACK_MODEL}" for the rest of this run.`);
+        return callLLM(prompt, 1, GEMINI_FALLBACK_MODEL);
       }
       // Fallback's daily budget is ALSO exhausted — the reset window can
       // be hours away, so retrying here would just waste time before
       // failing anyway. Fail fast with a clear message instead.
-      throw new Error(`Groq DAILY token limit reached on both "${GROQ_MODEL}" and fallback "${GROQ_FALLBACK_MODEL}" — this run cannot continue today. ${errorMessage}`);
+      throw new Error(`Gemini DAILY limit reached on both "${GEMINI_MODEL}" and fallback "${GEMINI_FALLBACK_MODEL}" — this run cannot continue today. ${errorMessage}`);
     }
 
     // Per-minute rate limit is short-lived — a brief wait and retry
     // succeeds almost every time.
     if (isRateLimit && attempt <= 3) {
       const waitMs = 15000 * attempt; // 15s, 30s, 45s
-      log(`WARNING: Groq rate limit hit (attempt ${attempt}/3) — waiting ${waitMs / 1000}s before retrying.`);
+      log(`WARNING: Gemini rate limit hit (attempt ${attempt}/3) — waiting ${waitMs / 1000}s before retrying.`);
       await sleep(waitMs);
       return callLLM(prompt, attempt + 1, model);
     }
-    throw new Error(`Groq did not return content (model: ${model}): ` + JSON.stringify(data));
+    throw new Error(`Gemini did not return content (model: ${model}): ` + JSON.stringify(data));
   }
 
   let content = (data.choices[0].message.content || '').trim();
-  // Defensive safety net: strip any stray <think>...</think> block —
-  // gpt-oss models are known to leak their reasoning/planning text without
-  // this.
+  // Defensive safety net kept from the Groq/gpt-oss era: strip any stray
+  // <think>...</think> block, in case Gemini's compat layer ever surfaces
+  // its own reasoning/thinking trace the same way.
   content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   if (!content) {
-    throw new Error('Groq returned an empty response (finish_reason: ' + (data.choices[0].finish_reason || 'unknown') + ')');
+    throw new Error('Gemini returned an empty response (finish_reason: ' + (data.choices[0].finish_reason || 'unknown') + ')');
   }
   // Small proactive spacing after every call, throttling our own request
   // rate across a run's multiple calls.
@@ -2332,6 +2347,7 @@ async function main() {
   if (!fs.existsSync(WORK_DIR)) fs.mkdirSync(WORK_DIR, { recursive: true });
 
   checkSecret('GROQ_API_KEY', GROQ_API_KEY_RAW);
+  checkSecret('GEMINI_API_KEY', GEMINI_API_KEY_RAW);
   checkSecret('GOOGLE_TTS_API_KEY', GOOGLE_TTS_API_KEY);
   checkSecret('PEXELS_API_KEY', PEXELS_API_KEY);
   checkSecret('YT_CLIENT_ID', YT_CLIENT_ID);
