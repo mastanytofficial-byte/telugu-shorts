@@ -1585,7 +1585,14 @@ async function fetchImagesPerSentence(sentences, category, outline) {
   const clips = [];
   const usedVideoIds = new Set();
   const usedPexelsIds = new Set(); // avoid repeating the same stock photo within this video
+  // Tracked so the caller can decide what to do about it — previously this
+  // only ever showed up as a per-sentence log line nobody watches in an
+  // automated cron run, indistinguishable from a correct match in the final
+  // video.
+  let fallbackKeywordCount = 0;
   for (let i = 0; i < sentences.length; i++) {
+    const usedFallbackKeyword = !keywords[i];
+    if (usedFallbackKeyword) fallbackKeywordCount++;
     const keyword = keywords[i] || FALLBACK_KEYWORDS[category];
     const sceneBase = scenes[i] || keyword;
     const scene = character ? `${character}. ${sceneBase}` : sceneBase;
@@ -1668,7 +1675,7 @@ async function fetchImagesPerSentence(sentences, category, outline) {
       clips.push(null);
     }
   }
-  return clips;
+  return { clips, fallbackKeywordCount };
 }
 
 // Renders one still image as a short Ken-Burns (slow zoom) video clip.
@@ -1915,6 +1922,7 @@ function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
   // Step 1: one clip per sentence — real video is looped/trimmed to length,
   // a still image gets a Ken-Burns pan/zoom (alternating in/out for variety).
   const clipPaths = [];
+  let placeholderCount = 0; // tracked so the caller can gate on it instead of this being a silent visual failure
   for (let i = 0; i < n; i++) {
     const clipPath = path.join(WORK_DIR, `clip_${i}.mp4`);
     try {
@@ -1926,6 +1934,7 @@ function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
     } catch (e) {
       log(`WARNING: clip_${i} (${mediaItems[i].type}) failed to build (${e.message}) — using a plain placeholder for this slide instead of failing the whole video.`);
       buildPlaceholderClip(durations[i], clipPath);
+      placeholderCount++;
     }
     let actualDur = getAudioDuration(clipPath); // works for video streams too via ffprobe format=duration
     log(`  clip_${i} (${mediaItems[i].type}): target ${durations[i].toFixed(2)}s, actual ${actualDur.toFixed(2)}s${Math.abs(actualDur - durations[i]) > 1 ? ' ⚠️ MISMATCH — correcting' : ''}`);
@@ -1998,7 +2007,7 @@ function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
 
   execSync(cmd, { stdio: 'inherit' });
   log(`Video saved to ${outPath}`);
-  return outPath;
+  return { outPath, placeholderCount };
 }
 
 // 2026 research consensus: 3-5 highly relevant hashtags perform BEST —
@@ -2256,16 +2265,22 @@ async function main() {
   }
 
   log(`Fetching one content-matched image per sentence (${imageSentences.length} sentences)...`);
-  const rawImagePaths = await fetchImagesPerSentence(imageSentences, category, outline);
+  const { clips: rawImagePaths, fallbackKeywordCount } = await fetchImagesPerSentence(imageSentences, category, outline);
 
   // Drop any sentence whose image totally failed, redistributing its share
   // of time to the remaining successful slides so there's no dead/black gap.
+  // droppedSentenceCount is tracked for the visual-quality gate below — a
+  // dropped sentence means that beat of the narration has NO matching
+  // visual at all, previously invisible beyond a per-sentence log line.
   const imagePaths = [];
   const keptDurations = [];
+  let droppedSentenceCount = 0;
   for (let i = 0; i < rawImagePaths.length; i++) {
     if (rawImagePaths[i]) {
       imagePaths.push(rawImagePaths[i]);
       keptDurations.push(imageDurations[i]);
+    } else {
+      droppedSentenceCount++;
     }
   }
   if (imagePaths.length === 0) {
@@ -2287,8 +2302,42 @@ async function main() {
   // the sum of our durations matches exactly.
   keptDurations[keptDurations.length - 1] += 0.3;
 
-  const videoPath = buildVideo(imagePaths, audioPath, keptDurations, ctaAudioDuration);
+  const { outPath: videoPath, placeholderCount } = buildVideo(imagePaths, audioPath, keptDurations, ctaAudioDuration);
   validateFinalVideo(videoPath, audioPath);
+
+  // Visual-quality gate. Two severities, previously both silent beyond a log
+  // line an automated cron run never surfaces:
+  // - A placeholder clip (a flat color card standing in for a slide whose
+  //   encoding failed) is unambiguously broken — the existing per-clip
+  //   redistribution has no way to hide a card that's actually on screen —
+  //   so this always fails the run. Rare by construction (only reached
+  //   after a valid source file already passed size/ffprobe checks).
+  // - Every sentence's image failing (the imagePaths.length===0 branch
+  //   above, now recovered with ONE generic image stretched across the
+  //   whole video) is a severe, system-level failure, not a per-sentence
+  //   fluke — also always fails the run rather than shipping a single
+  //   static image for 60-80 seconds.
+  // - A PARTIAL drop (some sentences failed, most succeeded) is different:
+  //   the redistribution above was specifically designed to make this
+  //   imperceptible (durations rebalanced across survivors, no dead gap),
+  //   so failing the whole run over one absorbed slide would be far more
+  //   disruptive than the defect itself — this is downgraded to a visible
+  //   warning instead, avoiding the kind of over-aggressive hard-reject
+  //   that already caused a real regression once this session (run #285).
+  const allSentencesDropped = droppedSentenceCount > 0 && droppedSentenceCount === rawImagePaths.length;
+  if (allSentencesDropped || placeholderCount > 0) {
+    throw new Error(`Visual quality gate failed: ${droppedSentenceCount} of ${rawImagePaths.length} sentence(s) had no usable image/video at all, and ${placeholderCount} slide(s) fell back to a blank placeholder card — refusing to upload a video with missing/broken visuals.`);
+  }
+  if (droppedSentenceCount > 0) {
+    log(`⚠️ WARNING: ${droppedSentenceCount} of ${rawImagePaths.length} sentence(s) had no usable image/video and were dropped — their time was redistributed to neighboring slides, so the video has fewer distinct visuals than sentences.`);
+  }
+  // A fallback keyword (generic category search term instead of a sentence-
+  // specific one) is a milder defect — the slide still has a real, on-topic-
+  // ish image, just less precisely matched — so this is surfaced as a clear
+  // warning rather than blocking the upload over it.
+  if (fallbackKeywordCount > 0) {
+    log(`⚠️ WARNING: ${fallbackKeywordCount} sentence(s) used a generic fallback image keyword instead of a sentence-specific one (per-sentence keyword parsing failed) — those slides' visuals may be less precisely matched to their narration.`);
+  }
 
   const videoId = await uploadToYouTube(
     videoPath,
