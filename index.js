@@ -654,20 +654,34 @@ function teluguRatioPreserved(original, optimized) {
 // semantically wrong. None of grounded()/styleErrors() (notation/number
 // rules) or the digit/Tenglish passes above check whether a word is a real,
 // correctly-used Telugu word at all — that gap is what this pass targets.
+//
+// A follow-up real shipped script (run #293) then slipped past the first
+// version of this check entirely: its hook asked "ఒకే చిత్రాన్ని చూసి మన
+// మెదడు సజీవం లేదా చల్లటి అనిపించగలదా?" — "సజీవం" ("alive") is a perfectly
+// real, plausible Telugu word taken alone, so a word-by-word isolated check
+// passed it. Only reading the REST of the script reveals the fact is
+// specifically about warm-vs-cool color perception ("వెచ్చని ఎరుపు... చల్లని
+// నీలం" appears two sentences later, and the separately-generated Title even
+// correctly says "ఉష్ణత" i.e. temperature) — "సజీవం" should have been
+// "వెచ్చగా/వేడిగా" (warm). This is a distinct, harder failure mode: a word
+// that is individually fine but contradicts the theme/claim the rest of the
+// SAME script establishes. Category 3 below targets this specifically by
+// requiring the whole script be read first, before judging any one sentence.
 // Same non-blocking architecture as the digit/Tenglish passes: a narrow,
 // single-purpose review call with a tight preservation check, falling back
 // to the original script on any doubt.
 function buildWordValidityOptimizerPrompt(script) {
-  return `కింద ఇచ్చిన తెలుగు స్క్రిప్ట్ ని జాగ్రత్తగా, పదం పదం గా చదివి, ప్రతి పదం (a) నిజంగా ఉన్న తెలుగు పదమేనా మరియు (b) ఆ context లో సరైన అర్థంతో వాడబడిందా అని verify చేయి:
+  return `కింద ఇచ్చిన తెలుగు స్క్రిప్ట్ ని మొదట పూర్తిగా చదివి, ఇది దేని గురించో (అసలు fact/theme ఏంటో) అర్థం చేసుకో. తర్వాత మళ్ళీ పదం పదం గా చదివి, ప్రతి పదం (a) నిజంగా ఉన్న తెలుగు పదమేనా, (b) ఆ ఒక్క వాక్యం context లో సరైన అర్థంతో వాడబడిందా, మరియు (c) స్క్రిప్ట్ మొత్తం ఏర్పరిచే theme/claim కి విరుద్ధంగా లేదా అని verify చేయి:
 
 ${script}
 
-వెతకవలసిన 2 రకాల తప్పులు:
+వెతకవలసిన 3 రకాల తప్పులు:
 1. నిజంగా లేని/విరిగిపోయిన/అర్థం లేని పదం (garbled లేదా invented word) — ఉదా. గతంలో ఒక script లో "సముద్రపు వర్షాభి" అని వచ్చింది, కానీ "వర్షాభి" తెలుగులో నిజమైన పదమే కాదు (బహుశా "వర్షారణ్యాలు" అనే పదం అసంపూర్తిగా వచ్చింది) — సరైనది: "సముద్రపు వర్షారణ్యాలు" (rainforests of the sea).
-2. నిజమైన తెలుగు పదమే, కానీ ఈ context కి సరిపోని/అసహజమైన అర్థంలో వాడబడింది — ఉదా. గతంలో "జీవ వైవిధ్యం ఎలా పేలుతుంది?" అని వచ్చింది — "పేలడం" అంటే బాంబు/టైర్ పేలడం లాంటి అర్థం, జీవవైవిధ్యానికి సరిపోదు — సరైనది: "జీవ వైవిధ్యం ఎలా పొంగిపొర్లుతుంది?" (thrives/overflows అనే సహజమైన అర్థం).
+2. నిజమైన తెలుగు పదమే, కానీ ఆ ఒక్క వాక్యం context కి సరిపోని/అసహజమైన అర్థంలో వాడబడింది — ఉదా. గతంలో "జీవ వైవిధ్యం ఎలా పేలుతుంది?" అని వచ్చింది — "పేలడం" అంటే బాంబు/టైర్ పేలడం లాంటి అర్థం, జీవవైవిధ్యానికి సరిపోదు — సరైనది: "జీవ వైవిధ్యం ఎలా పొంగిపొర్లుతుంది?" (thrives/overflows అనే సహజమైన అర్థం).
+3. ఆ వాక్యంలో ఒంటరిగా చూస్తే సరైనట్టు అనిపించే నిజమైన పదమే, కానీ స్క్రిప్ట్‌లో మిగతా చోట్ల ఏర్పడే అసలు theme/fact కి విరుద్ధంగా ఉంది — ఉదా. గతంలో ఒక script హుక్ లో "ఒకే చిత్రాన్ని చూసి మన మెదడు సజీవం లేదా చల్లటి అనిపించగలదా?" అని వచ్చింది — "సజీవం" (alive) అనేది నిజమైన పదమే, ఆ వాక్యం ఒంటరిగా చదివితే తప్పు అనిపించదు, కానీ ఆ స్క్రిప్ట్ మొత్తం "వెచ్చని (warm) vs చల్లని (cool) రంగు perception" గురించి — తర్వాతి వాక్యాల్లో "వెచ్చని ఎరుపు", "చల్లని నీలం" అని స్పష్టంగా ఉంది — కాబట్టి "సజీవం" కి బదులు "వెచ్చగా" లేదా "వేడిగా" రావాలి, ఎందుకంటే "చల్లటి" కి సహజ వ్యతిరేక పదం అదే, "సజీవం" కాదు. ఇలాంటి తప్పుని పట్టుకోవాలంటే స్క్రిప్ట్ మొత్తం చదివిన తర్వాతే ఏ ఒక్క వాక్యాన్ని judge చేయాలి, వాక్యాన్ని ఒంటరిగా చూసి కాదు.
 
 ఖచ్చితమైన నియమాలు:
-- పైన చెప్పిన 2 రకాల తప్పులు ఉన్న చోట మాత్రమే, ఆ ఒక్క పదం/పదబంధాన్ని మాత్రమే సరైన, సహజమైన తెలుగు పదం/పదబంధంతో replace చేయి — వాక్యంలో మిగతా భాగం ఖచ్చితంగా అలాగే ఉంచు.
+- పైన చెప్పిన 3 రకాల తప్పులు ఉన్న చోట మాత్రమే, ఆ ఒక్క పదం/పదబంధాన్ని మాత్రమే సరైన, సహజమైన, స్క్రిప్ట్ యొక్క నిజమైన theme కి సరిపోయే తెలుగు పదం/పదబంధంతో replace చేయి — వాక్యంలో మిగతా భాగం ఖచ్చితంగా అలాగే ఉంచు.
 - స్క్రిప్ట్‌లో ఇలాంటి తప్పు ఏమీ లేకపోతే, ఏమీ మార్చకుండా స్క్రిప్ట్‌ని అలాగే యథాతథంగా తిరిగి ఇవ్వు — అనవసరంగా ఏదైనా మార్చకు, రీ-రైట్ చేయకు.
 - సంఖ్యలు, పేర్లు, ఆంగ్ల technical పదాలు, English loanwords (అవి ఇప్పటికే సరైనవే అయితే) వీటిని ముట్టుకోకు.
 - పదాలు మొత్తం సంఖ్య పెద్దగా మారకూడదు — వాక్య నిర్మాణం, పదాల క్రమం, sentence/line count, '?' సంఖ్య అన్నీ ఖచ్చితంగా అలాగే ఉంచు.
