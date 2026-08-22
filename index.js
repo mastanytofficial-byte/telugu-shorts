@@ -1082,7 +1082,8 @@ ${beatsJSON}
     const styledQuestionCount = (styled.match(/\?/g) || []).length;
     const scriptQuestionCount = (script.match(/\?/g) || []).length;
     const tenglishNotationError = styled ? styleErrors(styled) : '';
-    if (styled && wordsPreserved(script, styled) && teluguRatioPreserved(script, styled) && styledLineCount === scriptLineCount && styledQuestionCount === scriptQuestionCount && !tenglishNotationError) {
+    const tenglishReintroducedDigits = styled ? hasBareDigits(styled) : false;
+    if (styled && wordsPreserved(script, styled) && teluguRatioPreserved(script, styled) && styledLineCount === scriptLineCount && styledQuestionCount === scriptQuestionCount && !tenglishNotationError && !tenglishReintroducedDigits) {
       script = styled;
     } else {
       const reasons = [];
@@ -1092,6 +1093,7 @@ ${beatsJSON}
       if (styledLineCount !== scriptLineCount) reasons.push(`line count changed (${scriptLineCount} -> ${styledLineCount})`);
       if (styledQuestionCount !== scriptQuestionCount) reasons.push(`question mark count changed (${scriptQuestionCount} -> ${styledQuestionCount})`);
       if (tenglishNotationError) reasons.push(`introduced TTS-unsafe notation (${tenglishNotationError})`);
+      if (tenglishReintroducedDigits) reasons.push('reintroduced ASCII-digit numbers that the earlier digit-correction pass had already converted to Telugu words');
       log(`  Tenglish style pass skipped (${reasons.join('; ')}) — keeping the all-Telugu script (not a defect, just no natural code-mixing this time). Rejected output was: ${(styled || '').slice(0, 400)}`);
     }
   } catch (e) {
@@ -1114,7 +1116,8 @@ ${beatsJSON}
     const scriptQuestionCount = (script.match(/\?/g) || []).length;
     const validityNotationError = corrected ? styleErrors(corrected) : '';
     const validityNumbersOk = corrected ? noNewNumbersIntroduced(script, corrected) : false;
-    if (corrected && wordsPreserved(script, corrected) && teluguRatioPreserved(script, corrected) && correctedLineCount === scriptLineCount && correctedQuestionCount === scriptQuestionCount && !validityNotationError && validityNumbersOk) {
+    const validityReintroducedDigits = corrected ? hasBareDigits(corrected) : false;
+    if (corrected && wordsPreserved(script, corrected) && teluguRatioPreserved(script, corrected) && correctedLineCount === scriptLineCount && correctedQuestionCount === scriptQuestionCount && !validityNotationError && validityNumbersOk && !validityReintroducedDigits) {
       if (corrected !== script) log(`  Word-validity pass corrected a garbled/misused word.`);
       script = corrected;
     } else {
@@ -1126,6 +1129,7 @@ ${beatsJSON}
       if (correctedQuestionCount !== scriptQuestionCount) reasons.push(`question mark count changed (${scriptQuestionCount} -> ${correctedQuestionCount})`);
       if (validityNotationError) reasons.push(`introduced TTS-unsafe notation (${validityNotationError})`);
       if (corrected && !validityNumbersOk) reasons.push('introduced a number not already present in the original script');
+      if (validityReintroducedDigits) reasons.push('reintroduced ASCII-digit numbers that the earlier digit-correction pass had already converted to Telugu words');
       log(`  Word-validity pass skipped (${reasons.join('; ')}) — keeping the script as-is. Rejected output was: ${(corrected || '').slice(0, 400)}`);
     }
   } catch (e) {
@@ -1168,7 +1172,8 @@ ${beatsJSON}
     const originalQuestionCount = (script.match(/\?/g) || []).length;
     const optimizedQuestionCount = (optimized.match(/\?/g) || []).length;
     const notationError = optimized ? styleErrors(optimized) : '';
-    if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount && optimizedQuestionCount === originalQuestionCount && !notationError) {
+    const punctReintroducedDigits = optimized ? hasBareDigits(optimized) : false;
+    if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount && optimizedQuestionCount === originalQuestionCount && !notationError && !punctReintroducedDigits) {
       script = optimized;
     } else {
       // Diagnostic detail per check, plus the raw rejected output — without
@@ -1182,6 +1187,7 @@ ${beatsJSON}
       if (optimizedLineCount !== originalLineCount) reasons.push(`line count changed (${originalLineCount} -> ${optimizedLineCount})`);
       if (optimizedQuestionCount !== originalQuestionCount) reasons.push(`question mark count changed (${originalQuestionCount} -> ${optimizedQuestionCount})`);
       if (notationError) reasons.push(`introduced TTS-unsafe notation (${notationError})`);
+      if (punctReintroducedDigits) reasons.push('reintroduced ASCII-digit numbers that the earlier digit-correction pass had already converted to Telugu words');
       log(`⚠️ WARNING: punctuation optimizer output rejected (${reasons.join('; ')}) — keeping the original script. Rejected output was: ${(optimized || '').slice(0, 300)}`);
     }
   } catch (e) {
