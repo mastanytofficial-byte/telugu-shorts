@@ -645,6 +645,36 @@ function teluguRatioPreserved(original, optimized) {
   return optimizedRatio >= originalRatio * 0.75;
 }
 
+// A real shipped script (run #292) contained "సముద్రపు వర్షాభి" — "వర్షాభి"
+// is not a real Telugu word at all (likely a garbled/truncated attempt at
+// "వర్షారణ్యాలు", the "rainforests of the sea" metaphor for coral reefs) —
+// and, separately, "జీవ వైవిధ్యం ఎలా పేలుతుంది" used "పేలుతుంది" (lit.
+// "explodes/bursts", normally for bombs/tires/anger) on biodiversity, which
+// no existing check caught since it's grammatically well-formed, just
+// semantically wrong. None of grounded()/styleErrors() (notation/number
+// rules) or the digit/Tenglish passes above check whether a word is a real,
+// correctly-used Telugu word at all — that gap is what this pass targets.
+// Same non-blocking architecture as the digit/Tenglish passes: a narrow,
+// single-purpose review call with a tight preservation check, falling back
+// to the original script on any doubt.
+function buildWordValidityOptimizerPrompt(script) {
+  return `కింద ఇచ్చిన తెలుగు స్క్రిప్ట్ ని జాగ్రత్తగా, పదం పదం గా చదివి, ప్రతి పదం (a) నిజంగా ఉన్న తెలుగు పదమేనా మరియు (b) ఆ context లో సరైన అర్థంతో వాడబడిందా అని verify చేయి:
+
+${script}
+
+వెతకవలసిన 2 రకాల తప్పులు:
+1. నిజంగా లేని/విరిగిపోయిన/అర్థం లేని పదం (garbled లేదా invented word) — ఉదా. గతంలో ఒక script లో "సముద్రపు వర్షాభి" అని వచ్చింది, కానీ "వర్షాభి" తెలుగులో నిజమైన పదమే కాదు (బహుశా "వర్షారణ్యాలు" అనే పదం అసంపూర్తిగా వచ్చింది) — సరైనది: "సముద్రపు వర్షారణ్యాలు" (rainforests of the sea).
+2. నిజమైన తెలుగు పదమే, కానీ ఈ context కి సరిపోని/అసహజమైన అర్థంలో వాడబడింది — ఉదా. గతంలో "జీవ వైవిధ్యం ఎలా పేలుతుంది?" అని వచ్చింది — "పేలడం" అంటే బాంబు/టైర్ పేలడం లాంటి అర్థం, జీవవైవిధ్యానికి సరిపోదు — సరైనది: "జీవ వైవిధ్యం ఎలా పొంగిపొర్లుతుంది?" (thrives/overflows అనే సహజమైన అర్థం).
+
+ఖచ్చితమైన నియమాలు:
+- పైన చెప్పిన 2 రకాల తప్పులు ఉన్న చోట మాత్రమే, ఆ ఒక్క పదం/పదబంధాన్ని మాత్రమే సరైన, సహజమైన తెలుగు పదం/పదబంధంతో replace చేయి — వాక్యంలో మిగతా భాగం ఖచ్చితంగా అలాగే ఉంచు.
+- స్క్రిప్ట్‌లో ఇలాంటి తప్పు ఏమీ లేకపోతే, ఏమీ మార్చకుండా స్క్రిప్ట్‌ని అలాగే యథాతథంగా తిరిగి ఇవ్వు — అనవసరంగా ఏదైనా మార్చకు, రీ-రైట్ చేయకు.
+- సంఖ్యలు, పేర్లు, ఆంగ్ల technical పదాలు, English loanwords (అవి ఇప్పటికే సరైనవే అయితే) వీటిని ముట్టుకోకు.
+- పదాలు మొత్తం సంఖ్య పెద్దగా మారకూడదు — వాక్య నిర్మాణం, పదాల క్రమం, sentence/line count, '?' సంఖ్య అన్నీ ఖచ్చితంగా అలాగే ఉంచు.
+
+కేవలం సరిచేసిన స్క్రిప్ట్ టెక్స్ట్ మాత్రమే ఇవ్వు — వేరే ఏమీ ముందు/వెనుక రాయకు, వివరణ వద్దు.`;
+}
+
 function buildMetadataPrompt(script) {
   return `కింద ఇచ్చిన తెలుగు narration ని చదివి, దాని metadata ఇవ్వు:
 
@@ -979,6 +1009,38 @@ ${beatsJSON}
     }
   } catch (e) {
     log(`  Tenglish style pass call failed (${e.message}) — keeping the all-Telugu script.`);
+  }
+
+  // Word-validity/naturalness pass: catches garbled/non-existent Telugu
+  // words and real words used with a semantically wrong meaning for the
+  // context — a real shipped script (run #292) had both ("వర్షాభి", a
+  // non-word, and "పేలుతుంది"/"explodes" misapplied to biodiversity), and
+  // no other check here verifies actual word validity/meaning. Same
+  // non-blocking pattern as the digit/Tenglish passes: on any doubt, fall
+  // back to the pre-pass script rather than risk a bad rewrite.
+  try {
+    const validityPrompt = buildWordValidityOptimizerPrompt(script);
+    const corrected = (await callLLM(validityPrompt)).trim();
+    const correctedLineCount = corrected.split(/\n+/).filter(Boolean).length;
+    const scriptLineCount = script.split(/\n+/).filter(Boolean).length;
+    const correctedQuestionCount = (corrected.match(/\?/g) || []).length;
+    const scriptQuestionCount = (script.match(/\?/g) || []).length;
+    const validityNotationError = corrected ? styleErrors(corrected) : '';
+    if (corrected && wordsPreserved(script, corrected) && teluguRatioPreserved(script, corrected) && correctedLineCount === scriptLineCount && correctedQuestionCount === scriptQuestionCount && !validityNotationError) {
+      if (corrected !== script) log(`  Word-validity pass corrected a garbled/misused word.`);
+      script = corrected;
+    } else {
+      const reasons = [];
+      if (!corrected) reasons.push('empty output');
+      if (corrected && !wordsPreserved(script, corrected)) reasons.push('word count drifted');
+      if (corrected && !teluguRatioPreserved(script, corrected)) reasons.push('Telugu-character ratio dropped too far');
+      if (correctedLineCount !== scriptLineCount) reasons.push(`line count changed (${scriptLineCount} -> ${correctedLineCount})`);
+      if (correctedQuestionCount !== scriptQuestionCount) reasons.push(`question mark count changed (${scriptQuestionCount} -> ${correctedQuestionCount})`);
+      if (validityNotationError) reasons.push(`introduced TTS-unsafe notation (${validityNotationError})`);
+      log(`  Word-validity pass skipped (${reasons.join('; ')}) — keeping the script as-is. Rejected output was: ${(corrected || '').slice(0, 400)}`);
+    }
+  } catch (e) {
+    log(`  Word-validity pass call failed (${e.message}) — keeping the script as-is.`);
   }
 
   // Defensive: strip any stray markers/CTA-like ending the model wrote
