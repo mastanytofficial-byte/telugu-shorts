@@ -791,6 +791,16 @@ function fixMeekuTelusaGrammar(text) {
   return String(text || '').replace(/మీరు(\s*\.{0,3}\s*)తెలుసా/g, 'మీకు$1తెలుసా');
 }
 
+// Real bug (run #306): the primary generation model spelled 12 as
+// "పన్నెడు" — not a real Telugu word — instead of "పన్నెండు" (it appeared
+// twice, both times meaning "12 days"), and the word-validity pass's LLM
+// call didn't catch it (that check isn't guaranteed to catch every garbled
+// word every time). "పన్నెడు" has no other meaning in Telugu, so this is a
+// safe, unambiguous direct correction rather than relying on an LLM pass.
+function fixKnownNumberWordTypos(text) {
+  return String(text || '').replace(/పన్నెడు/g, 'పన్నెండు');
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -1151,6 +1161,7 @@ ${beatsJSON}
   // anyway, despite being told not to.
   script = script.replace(/\[[A-Z]+\]/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   script = fixMeekuTelusaGrammar(script);
+  script = fixKnownNumberWordTypos(script);
   const existingSentences = splitIntoSentences(script);
   if (existingSentences.length > 0 && existingSentences[existingSentences.length - 1].includes('సబ్‌స్క్రైబ్')) {
     existingSentences.pop();
@@ -1210,6 +1221,7 @@ ${beatsJSON}
   // passes above are supposed to touch wording this specifically, but this
   // is cheap insurance against any of them reintroducing it.
   script = fixMeekuTelusaGrammar(script);
+  script = fixKnownNumberWordTypos(script);
 
   // CALL C: metadata (title/keywords/hook) extracted from the FINISHED,
   // optimized narration — a much simpler task than generating everything
@@ -1220,9 +1232,9 @@ ${beatsJSON}
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
   if (!hookEmoji) hookEmoji = title;
-  title = fixMeekuTelusaGrammar(title);
-  hookEmoji = fixMeekuTelusaGrammar(hookEmoji);
-  if (teaser) teaser = fixMeekuTelusaGrammar(teaser);
+  title = fixKnownNumberWordTypos(fixMeekuTelusaGrammar(title));
+  hookEmoji = fixKnownNumberWordTypos(fixMeekuTelusaGrammar(hookEmoji));
+  if (teaser) teaser = fixKnownNumberWordTypos(fixMeekuTelusaGrammar(teaser));
 
   const categoryEmoji = CATEGORY_EMOJI[category] || '';
   title = `${title} ${categoryEmoji}`.trim();
