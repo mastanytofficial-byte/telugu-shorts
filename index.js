@@ -838,6 +838,20 @@ async function callLLM(prompt, attempt = 1, model = (primaryModelExhaustedThisRu
 
   if (!data.choices || !data.choices[0]) {
     const errorMessage = (data.error && data.error.message) || '';
+    // Real bug (run #302): Gemini returns the SAME HTTP 429 /
+    // RESOURCE_EXHAUSTED status for a depleted prepaid billing balance as
+    // for an ordinary short-lived per-minute rate limit — but retrying a
+    // billing exhaustion can NEVER succeed within the same run (no amount
+    // of waiting refills a $0 balance), unlike a real rate limit which
+    // clears in seconds. The retry-with-backoff loop below treated it as
+    // the latter, burning 3 escalating waits (15s+30s+45s = 90s) on EVERY
+    // single attempt across every topic/category tried — 18 wasted retries
+    // stretched a run out to 27 minutes before finally giving up. Checked
+    // first and fails immediately, with no retry at all, since backoff
+    // cannot help here.
+    if (/prepayment credit|prepaid credit|please go to ai studio|manage your project and billing/i.test(errorMessage)) {
+      throw new Error(`Gemini billing/prepaid credits exhausted for the API key in use — this cannot be fixed by retrying, it needs a billing/API-key change at https://ai.studio/projects. ${errorMessage}`);
+    }
     // Keyed primarily off the HTTP status (429 is the universal rate-limit
     // signal across OpenAI-compatible providers) rather than Groq-specific
     // error-message substrings, since Gemini's compat layer's exact error
