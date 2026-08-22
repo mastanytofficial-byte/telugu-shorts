@@ -78,7 +78,13 @@ const FACT_SUBNICHES = ['mindblowing', 'psychology', 'earth_space', 'animal', 'm
 // Stars?" is a far more constrained, reliably-answerable task than "find
 // a rare space fact nobody's heard of."
 const TOPIC_BANK = {
-  mindblowing: ['Quantum Entanglement', 'Placebo Effect', 'Butterfly Effect', 'Mandela Effect', 'Deja Vu', 'Optical Illusions', 'Fibonacci Sequence', 'Speed of Light', 'Human Consciousness', 'Parallel Universes', 'Time Dilation', 'Chaos Theory', 'Synesthesia', 'Photographic Memory', 'Sleep Paralysis'],
+  // "Chaos Theory" removed (real user complaint on run #306's shipped
+  // video): it's substantively the same underlying idea as "Butterfly
+  // Effect" (already in this list) but its natural explanation needs heavy
+  // math/physics jargon (Lyapunov exponent, attractor) that translates into
+  // dry, lecture-like narration however "surprising" the raw number is —
+  // "Butterfly Effect" covers this territory without forcing that jargon.
+  mindblowing: ['Quantum Entanglement', 'Placebo Effect', 'Butterfly Effect', 'Mandela Effect', 'Deja Vu', 'Optical Illusions', 'Fibonacci Sequence', 'Speed of Light', 'Human Consciousness', 'Parallel Universes', 'Time Dilation', 'Synesthesia', 'Photographic Memory', 'Sleep Paralysis'],
   psychology: ['Confirmation Bias', 'Stockholm Syndrome', 'Bystander Effect', 'Cognitive Dissonance', 'Dunning-Kruger Effect', 'False Memories', 'Groupthink', 'Halo Effect', 'Imposter Syndrome', 'Peer Pressure', 'Selective Attention', 'Social Proof', 'Zeigarnik Effect', 'Anchoring Bias', 'Mirror Neurons'],
   earth_space: ['Neutron Stars', 'Black Holes', 'Pulsars', 'Magnetars', 'Europa', 'Titan', "Saturn's Rings", 'Solar Flares', 'Aurora Borealis', 'Tectonic Plates', 'Volcanic Eruptions', 'Ocean Currents', "Earth's Magnetic Field", 'Meteor Showers', 'Comets'],
   animal: ['Octopus Camouflage', 'Elephant Memory', 'Dolphin Communication', 'Bee Waggle Dance', 'Migratory Birds', 'Chameleon Vision', 'Tardigrades', 'Mimic Octopus', 'Electric Eels', 'Bioluminescence', 'Ant Colonies', 'Wolf Pack Hierarchy', 'Cuttlefish Intelligence', 'Platypus Biology', 'Axolotl Regeneration'],
@@ -158,7 +164,7 @@ Fact: ${outline}
 
 1) ACCURACY: ఇందులో స్పష్టంగా తప్పు కావొచ్చు అని గుర్తించదగ్గ నిర్దిష్ట సంఖ్య/పేరు/వాదన ఉందా?
 
-2) VIRAL APPEAL (0-100): Scroll-stopping power, curiosity, shock value, emotional reaction, shareability, comment potential, తెలుగు audience relevance, visual potential, retention potential, originality — వీటన్నింటినీ కలిపి ఆలోచించి ఒక మొత్తం స్కోరు ఇవ్వు.
+2) VIRAL APPEAL (0-100): Scroll-stopping power, curiosity, shock value, emotional reaction, shareability, comment potential, తెలుగు audience relevance, visual potential, retention potential, originality — వీటన్నింటినీ కలిపి ఆలోచించి ఒక మొత్తం స్కోరు ఇవ్వు. **ముఖ్యమైన negative factor:** ఈ fact ని అర్థమయ్యేలా చెప్పడానికి భారీగా technical/mathematical/scientific jargon (ఉదా. 'exponent', 'attractor', ప్రత్యేక సాంకేతిక పదజాలం) తప్పనిసరిగా అవసరమైతే, స్కోరు గణనీయంగా తగ్గించు — అంకె ఎంత ఆశ్చర్యకరంగా ఉన్నా, jargon-heavy వివరణ వినడానికి ఆసక్తికరంగా కాకుండా ఒక పాఠంలా/lecture లా అనిపిస్తుంది. ఒక సాధారణ వ్యక్తికి, రోజువారీ మాటల్లో, ఒక్క jargon term కూడా అవసరం లేకుండా ఈ fact ని పూర్తిగా చెప్పగలిగితేనే ఎక్కువ స్కోరు ఇవ్వు.
 
 ఖచ్చితంగా ఈ 2-లైన్ల ఫార్మాట్‌లో మాత్రమే జవాబు ఇవ్వు:
 ACCURACY: VERIFIED (సాధారణంగా నమ్మదగినదైతే — చిన్న అనిశ్చితి ఉన్నా ఫర్వాలేదు) లేదా REJECTED (ఏదైనా స్పష్టమైన, నిర్దిష్టమైన తప్పు కారణం ఉంటేనే)
