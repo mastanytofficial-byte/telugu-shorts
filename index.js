@@ -112,9 +112,23 @@ function pickCategory(runCount) {
 // anymore, per user decision). Returns
 // null if the model itself signals uncertainty (explicitly told to do so
 // rather than guess), so nothing shaky ever gets persisted.
+//
+// The viral-appeal criteria below are deliberately the SAME ones
+// verifyFactOutline() scores against (scroll-stopping power, curiosity,
+// shock value, emotional reaction, shareability, comment potential, Telugu
+// audience relevance, visual potential, retention potential, originality)
+// — user feedback: rather than generating an arbitrary fact and hoping it
+// scores well downstream (getOrGrowFactOutline's loop then burns a Groq
+// call per retry when it doesn't, worsening the rate-limit pressure behind
+// today's real failures), aim the generation step itself at what it will
+// actually be scored on, so more attempts clear HIGH_SCORE_THRESHOLD on
+// the first try and fewer retries are needed. This can't guarantee a high
+// score (verifyFactOutline still independently checks, and the retry loop
+// still exists as a safety net) — but it directly targets the same bar
+// instead of leaving it to chance.
 async function generateNewFactOutline(category, topic, existingOutlines) {
   const existingSummaries = existingOutlines.map(o => o.split('.')[0]).join(' | ');
-  const prompt = `"${topic}" గురించి అత్యంత ఆశ్చర్యపరిచే, verified fact ఒకటి తెలుగులో ఇవ్వు — ఇది widely-established, నిజమైన సమాచారం అయ్యుండాలి (కల్పితం కాదు).
+  const prompt = `"${topic}" గురించి ఒక verified fact తెలుగులో ఇవ్వు — ఇది widely-established, నిజమైన సమాచారం అయ్యుండాలి (కల్పితం కాదు), మరియు ఈ కింద చెప్పిన అన్ని విషయాల్లోనూ బలంగా ఉండాలి: scroll ఆపేంత ఆసక్తి, curiosity, shock value, emotional reaction, shareability (ఎవరికైనా చెప్పాలనిపించేలా), comment చేయాలనిపించే విధంగా, తెలుగు audience కి relevant గా, visual గా చూపించదగ్గ విధంగా (images/videos దొరికేలా), చివరి వరకు చూసేలా (retention), మరియు ఇంతకుముందు YouTube Shorts లో సాధారణంగా చూడని కొత్తదనం (originality) — ఇవన్నీ satisfy చేసే fact నే ఎంచుకో, కేవలం "నిజం మరియు ఆశ్చర్యకరం" అనే కనీస బార్ కాదు.
 
 ఇప్పటికే వాడినవి (వేరేది ఎంచుకో): ${existingSummaries}
 
