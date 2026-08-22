@@ -780,6 +780,17 @@ function parseMetadata(raw) {
   };
 }
 
+// Real bug (run #305 shipped title/thumbnail): "మీరు తెలుసా?" instead of
+// "మీకు తెలుసా?" — తెలుసు is an experiencer verb that always takes a dative
+// subject ("X-కి తెలుసు" = "known to X"), so "మీరు తెలుసా" (nominative) is
+// not valid Telugu for "do you know?" regardless of surrounding wording.
+// This is a deterministic, unambiguous substitution (there is no reading
+// where "మీరు తెలుసా" is the intended correct form), so it's auto-corrected
+// directly rather than routed through an LLM regenerate/optimizer pass.
+function fixMeekuTelusaGrammar(text) {
+  return String(text || '').replace(/మీరు(\s*\.{0,3}\s*)తెలుసా/g, 'మీకు$1తెలుసా');
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -1139,6 +1150,7 @@ ${beatsJSON}
   // Defensive: strip any stray markers/CTA-like ending the model wrote
   // anyway, despite being told not to.
   script = script.replace(/\[[A-Z]+\]/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  script = fixMeekuTelusaGrammar(script);
   const existingSentences = splitIntoSentences(script);
   if (existingSentences.length > 0 && existingSentences[existingSentences.length - 1].includes('సబ్‌స్క్రైబ్')) {
     existingSentences.pop();
@@ -1194,6 +1206,11 @@ ${beatsJSON}
     log(`WARNING: punctuation optimizer call failed (${e.message}) — continuing with the unoptimized script.`);
   }
 
+  // Final re-check before the script is used for metadata/TTS: none of the
+  // passes above are supposed to touch wording this specifically, but this
+  // is cheap insurance against any of them reintroducing it.
+  script = fixMeekuTelusaGrammar(script);
+
   // CALL C: metadata (title/keywords/hook) extracted from the FINISHED,
   // optimized narration — a much simpler task than generating everything
   // at once.
@@ -1203,6 +1220,9 @@ ${beatsJSON}
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
   if (!hookEmoji) hookEmoji = title;
+  title = fixMeekuTelusaGrammar(title);
+  hookEmoji = fixMeekuTelusaGrammar(hookEmoji);
+  if (teaser) teaser = fixMeekuTelusaGrammar(teaser);
 
   const categoryEmoji = CATEGORY_EMOJI[category] || '';
   title = `${title} ${categoryEmoji}`.trim();
