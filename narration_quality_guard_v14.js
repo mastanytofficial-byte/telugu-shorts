@@ -15,7 +15,68 @@ function words(s){return String(s||'').split(/\s+/).filter(Boolean).length;}
 // pause WITHIN one beat (retention pacing), not a beat break either — both are excluded.
 function oneSentence(s){s=String(s||'').trim();if(!s)return false;const t=s.replace(/(\d)\.(\d)/g,'$1$2').replace(/\.{2,}|…/g,'');return !/[.!?।]/.test(t);}
 function nums(s){return (String(s||'').match(/\b\d+(?:\.\d+)?\b/g)||[]).map(Number);}
-function grounded(script,source){const allowed=new Set(nums(source));for(const n of nums(script))if(!allowed.has(n))return 'unsupported number introduced';if(/(?:^|\s)कि(?:\s|$)|\b(?:hook|buildup|reveal|detail|twist|ending)\s*:/i.test(script))return 'language or structural contamination detected';const tokens=(source.toLowerCase().match(/[a-z0-9]{4,}|[ఀ-౿]{4,}/g)||[]),low=script.toLowerCase(),hits=tokens.filter(t=>low.includes(t));if(tokens.length>=3&&new Set(hits).size<2)return 'script is insufficiently grounded in verified source';return '';}
+
+// Deterministic Telugu number-word -> numeric value parser. grounded()'s
+// number check below only ever looked at ASCII digits, but the guard now
+// requires every number in the script to be spelled out in Telugu words —
+// which made that check permanently blind to a script inventing or
+// misremembering a number, as long as it spelled the wrong number out
+// correctly. Real bug this exists to catch: a script stated the speed of
+// light as "మూడు వందల తొంభై తొమ్మిది వేల ఏడు వందల తొంభై రెండు" (399,792)
+// when the true value is 299,792 — and the figure wasn't even in that run's
+// verified source at all (the model added it from general knowledge and
+// misremembered it).
+//
+// Scope is DELIBERATELY narrow: only phrases with an explicit place-value
+// marker (వందల/వేల/వెయ్యి/లక్ష/కోటి) are reported. A bare small number
+// (1-99, no marker) is never reported — words like "ఒక"/"ఒకటి" (a/one),
+// "రెండు" etc. are extremely common ordinary Telugu words outside numeric-
+// fact contexts (indefinite articles, idioms like "ఒకటి రెండు రోజుల్లో" =
+// "in a day or two"). Flagging every such word as "a number requiring
+// grounding" would false-positive constantly and risk exactly the kind of
+// hard-reject regression already hit once this session (run #285: a
+// validator that fires too often burns the whole bounded retry budget). A
+// fully marker-scaled phrase like "మూడు వందల ..." is essentially never
+// accidental, so it's safe to treat as a real, confidently-parsed number.
+const TELUGU_UNITS={'సున్నా':0,'ఒకటి':1,'ఒక':1,'రెండు':2,'మూడు':3,'నాలుగు':4,'ఐదు':5,'ఆరు':6,'ఏడు':7,'ఎనిమిది':8,'తొమ్మిది':9};
+const TELUGU_TEENS={'పది':10,'పదకొండు':11,'పన్నెండు':12,'పదమూడు':13,'పద్నాలుగు':14,'పదిహేను':15,'పదిహేనూ':15,'పదహారు':16,'పదిహేడు':17,'పద్దెనిమిది':18,'పందొమ్మిది':19};
+const TELUGU_TENS={'ఇరవై':20,'ముప్పై':30,'నలభై':40,'యాభై':50,'అరవై':60,'డెబ్బై':70,'ఎనభై':80,'తొంభై':90};
+const HUNDRED_WORDS=new Set(['వందల','వందలు','వంద']);
+const THOUSAND_MULT_WORDS=new Set(['వేల','వేలు']);
+const LAKH_MULT_WORDS=new Set(['లక్షల','లక్షలు']);
+const CRORE_MULT_WORDS=new Set(['కోట్ల','కోట్లు']);
+const BARE_HUNDRED=new Set(['వంద']);
+const BARE_THOUSAND=new Set(['వెయ్యి']);
+const BARE_LAKH=new Set(['లక్ష']);
+const BARE_CRORE=new Set(['కోటి']);
+// Telugu case markers attach directly onto a word with no space (e.g.
+// "1920లో" = "in 1920", spoken "...ఇరవైలో" — a real example seen in
+// production). Without stripping these the trailing word of a phrase
+// silently fails to match. Kept to a small set of common, unambiguous
+// 2-character markers so an unrelated word can't coincidentally lose a
+// syllable and match a number by accident.
+const CASE_SUFFIXES=['లో','కి','కు','ని','గా','తో'];
+function teluguDictHas(dict,w){return dict instanceof Set?dict.has(w):Object.prototype.hasOwnProperty.call(dict,w);}
+function teluguResolve(token,dict){if(teluguDictHas(dict,token))return token;for(const suf of CASE_SUFFIXES){if(token.length>suf.length&&token.endsWith(suf)){const base=token.slice(0,-suf.length);if(teluguDictHas(dict,base))return base;}}return null;}
+function teluguTokens(text){return String(text||'').replace(/[.,!?।…"'“”]/g,' ').split(/\s+/).filter(Boolean);}
+function parseSmallNumber(tokens,i){if(i>=tokens.length)return null;const w=tokens[i];let base=teluguResolve(w,TELUGU_TEENS);if(base)return{value:TELUGU_TEENS[base],next:i+1};base=teluguResolve(w,TELUGU_TENS);if(base){const tensVal=TELUGU_TENS[base],nextW=tokens[i+1],unitBase=nextW?teluguResolve(nextW,TELUGU_UNITS):null;if(unitBase&&TELUGU_UNITS[unitBase]!==0)return{value:tensVal+TELUGU_UNITS[unitBase],next:i+2};return{value:tensVal,next:i+1};}base=teluguResolve(w,TELUGU_UNITS);if(base)return{value:TELUGU_UNITS[base],next:i+1};return null;}
+function parseHundredGroup(tokens,i){if(i>=tokens.length)return null;if(teluguResolve(tokens[i],BARE_HUNDRED))return{value:100,next:i+1};const base=teluguResolve(tokens[i],TELUGU_UNITS);if(base&&TELUGU_UNITS[base]>=1&&TELUGU_UNITS[base]<=9){const markerBase=tokens[i+1]?teluguResolve(tokens[i+1],HUNDRED_WORDS):null;if(markerBase)return{value:TELUGU_UNITS[base]*100,next:i+2};}return null;}
+// A full 1-999 count: optional hundred-group + optional tens/units remainder
+// (e.g. "మూడు వందల తొంభై తొమ్మిది" = 399) — the multiplier count that can
+// precede వేల/లక్షల/కోట్ల. A plain 0-99 count alone isn't enough: the real
+// speed-of-light bug this parser exists to catch is exactly a 3-digit count
+// before వేల ("399 వేల").
+function parseUpToThousand(tokens,i){let idx=i,value=0,matched=false;const hundred=parseHundredGroup(tokens,idx);if(hundred){value+=hundred.value;idx=hundred.next;matched=true;}const small=parseSmallNumber(tokens,idx);if(small){value+=small.value;idx=small.next;matched=true;}if(!matched)return null;return{value,next:idx};}
+function parseScaleGroup(tokens,i,markerWords,scale,bareWords){if(i>=tokens.length)return null;if(teluguResolve(tokens[i],bareWords))return{value:scale,next:i+1};const count=parseUpToThousand(tokens,i);if(count&&count.value>=1){const markerBase=tokens[count.next]?teluguResolve(tokens[count.next],markerWords):null;if(markerBase)return{value:count.value*scale,next:count.next+1};}return null;}
+// Walks place-value tiers strictly in descending order (crore -> lakh ->
+// thousand -> hundred -> tens/units), each optional but consumed at most
+// once. Returns null if nothing matched, or if the match never included an
+// explicit scale marker (see module comment on why bare tens/units alone
+// are never confident enough to report).
+function parseNumberAt(tokens,i){let idx=i,value=0,hasScaleMarker=false;const crore=parseScaleGroup(tokens,idx,CRORE_MULT_WORDS,10000000,BARE_CRORE);if(crore){value+=crore.value;idx=crore.next;hasScaleMarker=true;}const lakh=parseScaleGroup(tokens,idx,LAKH_MULT_WORDS,100000,BARE_LAKH);if(lakh){value+=lakh.value;idx=lakh.next;hasScaleMarker=true;}const thousand=parseScaleGroup(tokens,idx,THOUSAND_MULT_WORDS,1000,BARE_THOUSAND);if(thousand){value+=thousand.value;idx=thousand.next;hasScaleMarker=true;}const hundred=parseHundredGroup(tokens,idx);if(hundred){value+=hundred.value;idx=hundred.next;hasScaleMarker=true;}const small=parseSmallNumber(tokens,idx);if(small){value+=small.value;idx=small.next;}if(idx===i||!hasScaleMarker)return null;return{value,next:idx};}
+function parseTeluguNumbers(text){const tokens=teluguTokens(text);const results=[];let i=0;while(i<tokens.length){const m=parseNumberAt(tokens,i);if(m){results.push(m.value);i=m.next;}else{i++;}}return results;}
+
+function grounded(script,source){const allowed=new Set(nums(source));for(const n of nums(script))if(!allowed.has(n))return 'unsupported number introduced';for(const n of parseTeluguNumbers(script))if(!allowed.has(n))return `unsupported number introduced (Telugu word-form: ${n})`;if(/(?:^|\s)कि(?:\s|$)|\b(?:hook|buildup|reveal|detail|twist|ending)\s*:/i.test(script))return 'language or structural contamination detected';const tokens=(source.toLowerCase().match(/[a-z0-9]{4,}|[ఀ-౿]{4,}/g)||[]),low=script.toLowerCase(),hits=tokens.filter(t=>low.includes(t));if(tokens.length>=3&&new Set(hits).size<2)return 'script is insufficiently grounded in verified source';return '';}
 // Retention-critical clickbait clichés only — genuine suspense connectors (అసలు విషయం ఏంటంటే etc.) are now allowed and expected by makePrompt's storyteller flow, so they are NOT banned here.
 function clickbait(script){return /నమ్మలేకపోతారు|లైక్ చేయండి|సబ్‌స్క్రైబ్/i.test(script)?'generic clickbait cliché detected':'';}
 // Two concrete mistakes observed in a real generated script: (1) 'వక్రీభవించడం' is an optical-refraction-only term, wrongly used for a physical/orbital path bending; (2) mid-script direct viewer address ('నువ్వు...తున్నావు') breaking the third-person narrator voice the rest of the script uses.
