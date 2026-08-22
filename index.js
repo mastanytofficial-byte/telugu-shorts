@@ -800,16 +800,21 @@ function sleep(ms) {
 // Gemini via its OpenAI-compatibility endpoint (same request/response
 // shape as Groq/OpenAI, so the rest of this codebase — guardedFetch,
 // protectedFetch, response_format json_schema — needed no redesign, just
-// a different URL/key/model). gemini-2.5-flash's free tier (as of this
-// change: ~10 RPM / 500 RPD) is far more generous than what Groq's
-// gpt-oss-120b was giving us today, and a materially stronger model.
-// NOT verified against a live call yet — this is the best-effort attempt
-// the user explicitly asked for, to be validated by a real test run.
-const GEMINI_MODEL = 'gemini-2.5-flash';
-// Fallback: gemini-2.5-flash-lite — same family, lighter/faster, for the
-// same "primary exhausted, don't fail the whole run" role GROQ_FALLBACK_MODEL
-// played before.
-const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+// a different URL/key/model).
+//
+// gemini-2.5-flash (the first model tried here) turned out to be already
+// retired by the time of this change — a real live run (#301) failed
+// immediately with "This model models/gemini-2.5-flash is no longer
+// available to new users. Please update your code to use
+// models/gemini-3.6-flash", straight from Gemini's own API error. Using
+// that exact recommended replacement as primary, and gemini-3.5-flash-lite
+// (the lite model Google shipped alongside 3.6-flash, per their own
+// announcement, since no 3.6-flash-lite exists) as fallback.
+const GEMINI_MODEL = 'gemini-3.6-flash';
+// Fallback: gemini-3.5-flash-lite — lighter/faster sibling shipped in the
+// same release as gemini-3.6-flash, for the same "primary exhausted, don't
+// fail the whole run" role GROQ_FALLBACK_MODEL played before.
+const GEMINI_FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 // Only the primary's DAILY limit triggers a switch (remembered for the
 // rest of the run) — kept to this one clear condition rather than the
 // multi-condition trigger logic (rate-limit + payment-required + ...) that

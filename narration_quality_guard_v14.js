@@ -5,8 +5,12 @@ const GUARD_MARKER = 'NARRATION_QUALITY_GUARD_V14';
 // (best-effort provider swap, 2026-08-22 — see index.js's callLLM comment
 // for why). Model names/URL must stay in sync with index.js's
 // GEMINI_MODEL/GEMINI_FALLBACK_MODEL and the fetch URL there.
-const PRIMARY_MODEL = 'gemini-2.5-flash';
-const FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+// gemini-2.5-flash was already retired (real run #301: API returned "no
+// longer available to new users, use models/gemini-3.6-flash") — updated
+// to the exact model the live error recommended. Must stay in sync with
+// index.js's GEMINI_MODEL/GEMINI_FALLBACK_MODEL.
+const PRIMARY_MODEL = 'gemini-3.6-flash';
+const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 if (!PREVIOUS || PREVIOUS.__NARRATION_QUALITY_GUARD_V14__) { module.exports = { enabled:true, marker:GUARD_MARKER, styleErrors:styleErrors, hasBareDigits:hasBareDigits, extractBareDigitNumbers:extractBareDigitNumbers, teluguTextContainsNumber:teluguTextContainsNumber, nums:nums, parseTeluguNumbers:parseTeluguNumbers }; return; }
 function isGroq(url,options){return String(url).includes('generativelanguage.googleapis.com/v1beta/openai/chat/completions')&&String(options?.method||'GET').toUpperCase()==='POST';}
 function isNarrationPrompt(p){return /VERIFIED FACT\s*[—-]\s*ACCURACY GROUNDING:/i.test(String(p||''));}
