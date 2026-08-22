@@ -1877,6 +1877,41 @@ function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
     execSync(`ffmpeg -y -f lavfi -i "color=c=0x1a1a2e:s=720x1280:d=${duration.toFixed(2)}:r=${fps}" -c:v libx264 -pix_fmt yuv420p "${outPath}"`, { stdio: 'inherit' });
   }
 
+  // buildImageClip/buildRealVideoClip/buildPlaceholderClip all target their
+  // requested duration precisely under normal conditions (exact frame count,
+  // -t cutoff, lavfi d= respectively) — but an unusual source video (odd
+  // framerate, a decode hiccup) can still drift. Before this, a drift over 1s
+  // only produced a "⚠️ MISMATCH" log line that nothing acted on: the clip
+  // went into the concat list exactly as built, silently desyncing that one
+  // sentence's visual from its narration by however much it was off, with no
+  // signal beyond a log line nobody watches in an automated cron run. This
+  // corrects the clip file itself — trims if too long, freeze-frame-pads if
+  // too short — so what actually reaches concat always matches its intended
+  // slot. Wrapped defensively: if the correction pass itself fails for any
+  // reason, fall back to the original (already-logged) clip rather than
+  // letting a correction bug break a run that would otherwise have shipped
+  // with just a minor, pre-existing drift.
+  function enforceClipDuration(clipPath, targetDuration, actualDuration) {
+    const drift = actualDuration - targetDuration;
+    if (Math.abs(drift) <= 0.15) return actualDuration; // within normal encoding rounding
+    const fixedPath = clipPath + '.fixed.mp4';
+    try {
+      if (drift > 0) {
+        execSync(`ffmpeg -y -i "${clipPath}" -t ${targetDuration.toFixed(2)} -c copy "${fixedPath}"`, { stdio: 'inherit' });
+      } else {
+        execSync(`ffmpeg -y -i "${clipPath}" -vf "tpad=stop_mode=clone:stop_duration=${(-drift).toFixed(2)}" -c:v libx264 -pix_fmt yuv420p -t ${targetDuration.toFixed(2)} "${fixedPath}"`, { stdio: 'inherit' });
+      }
+      fs.renameSync(fixedPath, clipPath);
+      const correctedDur = getAudioDuration(clipPath);
+      log(`  clip duration corrected: was ${actualDuration.toFixed(2)}s (target ${targetDuration.toFixed(2)}s), now ${correctedDur.toFixed(2)}s.`);
+      return correctedDur;
+    } catch (e) {
+      log(`WARNING: clip duration correction failed (${e.message}) — leaving the clip at its original ${actualDuration.toFixed(2)}s.`);
+      try { fs.unlinkSync(fixedPath); } catch {}
+      return actualDuration;
+    }
+  }
+
   // Step 1: one clip per sentence — real video is looped/trimmed to length,
   // a still image gets a Ken-Burns pan/zoom (alternating in/out for variety).
   const clipPaths = [];
@@ -1892,8 +1927,9 @@ function buildVideo(mediaItems, audioPath, customDurations, ctaDuration) {
       log(`WARNING: clip_${i} (${mediaItems[i].type}) failed to build (${e.message}) — using a plain placeholder for this slide instead of failing the whole video.`);
       buildPlaceholderClip(durations[i], clipPath);
     }
-    const actualDur = getAudioDuration(clipPath); // works for video streams too via ffprobe format=duration
-    log(`  clip_${i} (${mediaItems[i].type}): target ${durations[i].toFixed(2)}s, actual ${actualDur.toFixed(2)}s${Math.abs(actualDur - durations[i]) > 1 ? ' ⚠️ MISMATCH' : ''}`);
+    let actualDur = getAudioDuration(clipPath); // works for video streams too via ffprobe format=duration
+    log(`  clip_${i} (${mediaItems[i].type}): target ${durations[i].toFixed(2)}s, actual ${actualDur.toFixed(2)}s${Math.abs(actualDur - durations[i]) > 1 ? ' ⚠️ MISMATCH — correcting' : ''}`);
+    actualDur = enforceClipDuration(clipPath, durations[i], actualDur);
     clipPaths.push(clipPath);
   }
 
