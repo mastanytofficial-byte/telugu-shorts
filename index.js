@@ -33,7 +33,7 @@ const YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
 // which is only checked for word/line/question-count preservation — could
 // silently reintroduce exactly the notation the guard was written to keep
 // out, since count-preservation alone doesn't guarantee TTS-safe content.
-const { styleErrors, hasBareDigits } = require('./narration_quality_guard_v14.js');
+const { styleErrors, hasBareDigits, extractBareDigitNumbers, teluguTextContainsNumber } = require('./narration_quality_guard_v14.js');
 
 const STATE_FILE = path.join(__dirname, 'state.json');
 const WORK_DIR = path.join(__dirname, 'work');
@@ -971,7 +971,15 @@ ${beatsJSON}
       const correctedQuestionCount = (corrected.match(/\?/g) || []).length;
       const originalQuestionCount = (script.match(/\?/g) || []).length;
       const notationError = corrected ? styleErrors(corrected) : '';
-      if (corrected && !hasBareDigits(corrected) && numbersPreserved(script, corrected, digitMatchCount) && correctedLineCount === originalLineCount && correctedQuestionCount === originalQuestionCount && !notationError) {
+      // Real bug (run #294): the LLM conversion itself silently changed a
+      // number's VALUE ("1974" -> "వెయ్యి తొమ్మిది వందల నాలుగు"/1904) —
+      // nothing above checks that the converted Telugu words still mean the
+      // same number as the original digits, only the shape of the output.
+      // Verify every original digit-run's value is still findable, as that
+      // exact value, somewhere in the corrected text.
+      const originalNumberValues = corrected ? extractBareDigitNumbers(script) : [];
+      const numbersValueMatch = corrected ? originalNumberValues.every(n => teluguTextContainsNumber(corrected, n)) : false;
+      if (corrected && !hasBareDigits(corrected) && numbersPreserved(script, corrected, digitMatchCount) && numbersValueMatch && correctedLineCount === originalLineCount && correctedQuestionCount === originalQuestionCount && !notationError) {
         log(`  Auto-corrected ASCII-digit numbers to Telugu words.`);
         script = corrected;
       } else {
@@ -979,6 +987,7 @@ ${beatsJSON}
         if (!corrected) reasons.push('empty output');
         if (corrected && hasBareDigits(corrected)) reasons.push('still contains bare digits after correction');
         if (corrected && !numbersPreserved(script, corrected, digitMatchCount)) reasons.push('word count drifted beyond the expected number-expansion budget');
+        if (corrected && !numbersValueMatch) reasons.push('a converted number\'s value did not match the original digits (likely a conversion mistake)');
         if (correctedLineCount !== originalLineCount) reasons.push(`line count changed (${originalLineCount} -> ${correctedLineCount})`);
         if (correctedQuestionCount !== originalQuestionCount) reasons.push(`question mark count changed (${originalQuestionCount} -> ${correctedQuestionCount})`);
         if (notationError) reasons.push(`introduced TTS-unsafe notation (${notationError})`);
