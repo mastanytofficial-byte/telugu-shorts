@@ -33,7 +33,7 @@ const YT_REFRESH_TOKEN = process.env.YT_REFRESH_TOKEN;
 // which is only checked for word/line/question-count preservation — could
 // silently reintroduce exactly the notation the guard was written to keep
 // out, since count-preservation alone doesn't guarantee TTS-safe content.
-const { styleErrors, hasBareDigits, extractBareDigitNumbers, teluguTextContainsNumber } = require('./narration_quality_guard_v14.js');
+const { styleErrors, hasBareDigits, extractBareDigitNumbers, teluguTextContainsNumber, nums, parseTeluguNumbers } = require('./narration_quality_guard_v14.js');
 
 const STATE_FILE = path.join(__dirname, 'state.json');
 const WORK_DIR = path.join(__dirname, 'work');
@@ -568,7 +568,7 @@ ${script}
 - **"." (period):** ఒక పూర్తి ఆలోచన ముగిసిన చోటే. ఎప్పుడూ వాక్యం మధ్యలో, ఒక పదబంధం మధ్యలో, లేదా క్రియకి ముందు వద్దు.
 - **"," (comma):** ఒక వాక్యంలో రెండు సంబంధిత భావాలు ఉన్నప్పుడు, చిన్న breath కోసం.
 - **"..." (ellipsis):** suspense/surprise/emotional pause కోసం మాత్రమే — reveal కి ముందు వాడు. **ప్రతి 2-3 వాక్యాలకు ఒకసారి కన్నా ఎక్కువ వాడకు** — overuse చేస్తే artificial గా వినిపిస్తుంది. **"మీకు తెలుసా", "మీరు నమ్మగలరా" వంటి opening interjection తర్వాత ఎప్పుడూ "," బదులు "..." వాడు** — ఉదా. "మీకు తెలుసా, వైకింగ్స్‌లు..." అనేది వ్యాసం చదివినట్టు వినిపిస్తుంది; "మీకు తెలుసా... వైకింగ్స్‌లు..." అనేది storyteller ఆగి చెప్తున్నట్టు వినిపిస్తుంది — ఇదే target.
-- **ఏ line merge చేయకు, ఏ line split చేయకు. Original line breaks సంఖ్య మరియు క్రమం తప్పనిసరిగా అలాగే ఉంచు.**\n- **కొత్త \'?\' (question mark) ఎప్పుడూ జోడించకు, తీసేయకు. Script లో ఇప్పటికే ఎన్ని \'?\' ఉన్నాయో అన్నే ఉండాలి — ఒక పొడవైన వాక్యాన్ని రెండు ప్రశ్నలుగా విడగొట్టడానికి కూడా కొత్త \'?\' పెట్టకు; అలాంటప్పుడు \'.\' లేదా \',\' తోనే విడగొట్టు.**
+- **ఏ line merge చేయకు, ఏ line split చేయకు. Original line breaks సంఖ్య మరియు క్రమం తప్పనిసరిగా అలాగే ఉంచు. కొత్త newline (\\n) ఎప్పుడూ ఎక్కడా జోడించకు — ఎన్ని sentences ఉన్నా, పైన ఇచ్చిన స్క్రిప్ట్ ఎన్ని lines లో ఉందో (సాధారణంగా ఒకే ఒక్క line, ఒకే paragraph గా) అవుట్‌పుట్ కూడా అంతే lines లో, అదే paragraph గా ఉండాలి — ప్రతి వాక్యాన్ని కొత్త line లో పెట్టడం ఖచ్చితంగా తప్పు.**\n- **కొత్త \'?\' (question mark) ఎప్పుడూ జోడించకు, తీసేయకు. Script లో ఇప్పటికే ఎన్ని \'?\' ఉన్నాయో అన్నే ఉండాలి — ఒక పొడవైన వాక్యాన్ని రెండు ప్రశ్నలుగా విడగొట్టడానికి కూడా కొత్త \'?\' పెట్టకు; అలాంటప్పుడు \'.\' లేదా \',\' తోనే విడగొట్టు.**
 - పదాలు ఒక్కటి కూడా జోడించకు, తీసేయకు, మార్చకు — కేవలం punctuation మాత్రమే మార్చు..
 
 కేవలం సరిచేసిన స్క్రిప్ట్ టెక్స్ట్ మాత్రమే ఇవ్వు — వేరే ఏమీ ముందు/వెనుక రాయకు, వివరణ వద్దు.`;
@@ -646,6 +646,21 @@ function teluguRatioPreserved(original, optimized) {
   return optimizedRatio >= originalRatio * 0.75;
 }
 
+// Backstop for the word-validity pass's category-4 fix (contradicting
+// numbers about the same quantity): the prompt tells the model to only pick
+// between numbers ALREADY in the script, never invent a new one, but that's
+// still just a prompt instruction. This verifies it deterministically — any
+// number (ASCII digit or Telugu word-form) appearing in `optimized` must
+// already have appeared in `original`, so this pass can never introduce a
+// fresh, ungrounded value the earlier grounding check inside the guard
+// never had a chance to see (that check only ever runs on the pre-optimizer
+// script).
+function noNewNumbersIntroduced(original, optimized) {
+  const allowed = new Set([...nums(original), ...parseTeluguNumbers(original)]);
+  const introduced = [...nums(optimized), ...parseTeluguNumbers(optimized)];
+  return introduced.every((n) => allowed.has(n));
+}
+
 // A real shipped script (run #292) contained "సముద్రపు వర్షాభి" — "వర్షాభి"
 // is not a real Telugu word at all (likely a garbled/truncated attempt at
 // "వర్షారణ్యాలు", the "rainforests of the sea" metaphor for coral reefs) —
@@ -668,6 +683,19 @@ function teluguRatioPreserved(original, optimized) {
 // that is individually fine but contradicts the theme/claim the rest of the
 // SAME script establishes. Category 3 below targets this specifically by
 // requiring the whole script be read first, before judging any one sentence.
+// A third real shipped script (run #297) then produced "వాతావరణ ఒత్తిడి
+// ఒక బార్ స్థాయిలో ఉంది ఇది 1.5 బార్ ఒత్తిడితో సముద్ర మట్టానికి
+// సమానంగా ఉంటుంది" — 1 bar and 1.5 bar stated as the same Titan-atmosphere
+// pressure in the same breath. Neither grounded() (each number individually
+// matched something in the source, so nothing looked "unsupported") nor the
+// digit-value check (no ASCII digits were converted here, both numbers were
+// already correct in isolation) can catch this — it's a category of its
+// own: two numbers each fine on their own, contradicting each other within
+// the script. Category 4 below targets this, constrained to only pick
+// between numbers ALREADY in the script (never inventing a new one) so it
+// can't introduce a fresh ungrounded value the earlier grounding check never
+// saw.
+//
 // Same non-blocking architecture as the digit/Tenglish passes: a narrow,
 // single-purpose review call with a tight preservation check, falling back
 // to the original script on any doubt.
@@ -676,15 +704,16 @@ function buildWordValidityOptimizerPrompt(script) {
 
 ${script}
 
-వెతకవలసిన 3 రకాల తప్పులు:
+వెతకవలసిన 4 రకాల తప్పులు:
 1. నిజంగా లేని/విరిగిపోయిన/అర్థం లేని పదం (garbled లేదా invented word) — ఉదా. గతంలో ఒక script లో "సముద్రపు వర్షాభి" అని వచ్చింది, కానీ "వర్షాభి" తెలుగులో నిజమైన పదమే కాదు (బహుశా "వర్షారణ్యాలు" అనే పదం అసంపూర్తిగా వచ్చింది) — సరైనది: "సముద్రపు వర్షారణ్యాలు" (rainforests of the sea).
 2. నిజమైన తెలుగు పదమే, కానీ ఆ ఒక్క వాక్యం context కి సరిపోని/అసహజమైన అర్థంలో వాడబడింది — ఉదా. గతంలో "జీవ వైవిధ్యం ఎలా పేలుతుంది?" అని వచ్చింది — "పేలడం" అంటే బాంబు/టైర్ పేలడం లాంటి అర్థం, జీవవైవిధ్యానికి సరిపోదు — సరైనది: "జీవ వైవిధ్యం ఎలా పొంగిపొర్లుతుంది?" (thrives/overflows అనే సహజమైన అర్థం).
 3. ఆ వాక్యంలో ఒంటరిగా చూస్తే సరైనట్టు అనిపించే నిజమైన పదమే, కానీ స్క్రిప్ట్‌లో మిగతా చోట్ల ఏర్పడే అసలు theme/fact కి విరుద్ధంగా ఉంది — ఉదా. గతంలో ఒక script హుక్ లో "ఒకే చిత్రాన్ని చూసి మన మెదడు సజీవం లేదా చల్లటి అనిపించగలదా?" అని వచ్చింది — "సజీవం" (alive) అనేది నిజమైన పదమే, ఆ వాక్యం ఒంటరిగా చదివితే తప్పు అనిపించదు, కానీ ఆ స్క్రిప్ట్ మొత్తం "వెచ్చని (warm) vs చల్లని (cool) రంగు perception" గురించి — తర్వాతి వాక్యాల్లో "వెచ్చని ఎరుపు", "చల్లని నీలం" అని స్పష్టంగా ఉంది — కాబట్టి "సజీవం" కి బదులు "వెచ్చగా" లేదా "వేడిగా" రావాలి, ఎందుకంటే "చల్లటి" కి సహజ వ్యతిరేక పదం అదే, "సజీవం" కాదు. ఇలాంటి తప్పుని పట్టుకోవాలంటే స్క్రిప్ట్ మొత్తం చదివిన తర్వాతే ఏ ఒక్క వాక్యాన్ని judge చేయాలి, వాక్యాన్ని ఒంటరిగా చూసి కాదు.
+4. అదే విషయం (measurement/quantity) గురించి script లో వేర్వేరు చోట్ల (లేదా అదే వాక్యంలో) పరస్పర విరుద్ధమైన సంఖ్యలు ఇవ్వడం — ఉదా. గతంలో ఒక script లో "వాతావరణ ఒత్తిడి ఒక బార్ స్థాయిలో ఉంది ఇది 1.5 బార్ ఒత్తిడితో సముద్ర మట్టానికి సమానంగా ఉంటుంది" అని వచ్చింది — ఇదే వాక్యంలో ఒకసారి "1 bar", వెంటనే "1.5 bar" అని అదే pressure కి రెండు వేర్వేరు సంఖ్యలు చెప్పింది, ఇది గందరగోళంగా, విరుద్ధంగా ఉంది. సరైనది: **script లో ఇప్పటికే ఉన్న ఈ రెండు సంఖ్యల్లో ఒకదాన్నే ఉంచి** (కొత్త మూడో సంఖ్య ఎప్పుడూ కల్పించకు), రెండోదాన్ని తీసేయడం ద్వారా లేదా అవి రెండు వేర్వేరు విషయాలకు (ఉదా. Titan vs భూమి) సంబంధించినవని స్పష్టమైన పోలికగా వాక్యాన్ని తిరిగి రాయడం ద్వారా ఫిక్స్ చేయి (ఉదా. "వాతావరణ ఒత్తిడి 1.5 బార్ స్థాయిలో ఉంది, ఇది భూమి సముద్ర మట్టం ఒత్తిడి కంటే ఎక్కువ").
 
 ఖచ్చితమైన నియమాలు:
-- పైన చెప్పిన 3 రకాల తప్పులు ఉన్న చోట మాత్రమే, ఆ ఒక్క పదం/పదబంధాన్ని మాత్రమే సరైన, సహజమైన, స్క్రిప్ట్ యొక్క నిజమైన theme కి సరిపోయే తెలుగు పదం/పదబంధంతో replace చేయి — వాక్యంలో మిగతా భాగం ఖచ్చితంగా అలాగే ఉంచు.
+- పైన చెప్పిన 4 రకాల తప్పులు ఉన్న చోట మాత్రమే, ఆ ఒక్క పదం/పదబంధాన్ని/వాక్యభాగాన్ని మాత్రమే సరైన, సహజమైన, స్క్రిప్ట్ యొక్క నిజమైన theme కి సరిపోయే దానితో replace చేయి — మిగతా భాగం ఖచ్చితంగా అలాగే ఉంచు.
 - స్క్రిప్ట్‌లో ఇలాంటి తప్పు ఏమీ లేకపోతే, ఏమీ మార్చకుండా స్క్రిప్ట్‌ని అలాగే యథాతథంగా తిరిగి ఇవ్వు — అనవసరంగా ఏదైనా మార్చకు, రీ-రైట్ చేయకు.
-- సంఖ్యలు, పేర్లు, ఆంగ్ల technical పదాలు, English loanwords (అవి ఇప్పటికే సరైనవే అయితే) వీటిని ముట్టుకోకు.
+- పేర్లు, ఆంగ్ల technical పదాలు, English loanwords (అవి ఇప్పటికే సరైనవే అయితే) వీటిని ముట్టుకోకు. సంఖ్యలను జోడించకు, తీసేయకు — 4వ రకం తప్పు (విరుద్ధమైన సంఖ్యలు) ఉంటే తప్ప సంఖ్యలను మార్చకు.
 - పదాలు మొత్తం సంఖ్య పెద్దగా మారకూడదు — వాక్య నిర్మాణం, పదాల క్రమం, sentence/line count, '?' సంఖ్య అన్నీ ఖచ్చితంగా అలాగే ఉంచు.
 
 కేవలం సరిచేసిన స్క్రిప్ట్ టెక్స్ట్ మాత్రమే ఇవ్వు — వేరే ఏమీ ముందు/వెనుక రాయకు, వివరణ వద్దు.`;
@@ -1050,7 +1079,8 @@ ${beatsJSON}
     const correctedQuestionCount = (corrected.match(/\?/g) || []).length;
     const scriptQuestionCount = (script.match(/\?/g) || []).length;
     const validityNotationError = corrected ? styleErrors(corrected) : '';
-    if (corrected && wordsPreserved(script, corrected) && teluguRatioPreserved(script, corrected) && correctedLineCount === scriptLineCount && correctedQuestionCount === scriptQuestionCount && !validityNotationError) {
+    const validityNumbersOk = corrected ? noNewNumbersIntroduced(script, corrected) : false;
+    if (corrected && wordsPreserved(script, corrected) && teluguRatioPreserved(script, corrected) && correctedLineCount === scriptLineCount && correctedQuestionCount === scriptQuestionCount && !validityNotationError && validityNumbersOk) {
       if (corrected !== script) log(`  Word-validity pass corrected a garbled/misused word.`);
       script = corrected;
     } else {
@@ -1061,6 +1091,7 @@ ${beatsJSON}
       if (correctedLineCount !== scriptLineCount) reasons.push(`line count changed (${scriptLineCount} -> ${correctedLineCount})`);
       if (correctedQuestionCount !== scriptQuestionCount) reasons.push(`question mark count changed (${scriptQuestionCount} -> ${correctedQuestionCount})`);
       if (validityNotationError) reasons.push(`introduced TTS-unsafe notation (${validityNotationError})`);
+      if (corrected && !validityNumbersOk) reasons.push('introduced a number not already present in the original script');
       log(`  Word-validity pass skipped (${reasons.join('; ')}) — keeping the script as-is. Rejected output was: ${(corrected || '').slice(0, 400)}`);
     }
   } catch (e) {
