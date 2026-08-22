@@ -109,7 +109,13 @@ global.fetch = async function protectedFetch(url, options = {}) {
     const content = data?.choices?.[0]?.message?.content;
     if (typeof content === 'string' && content.trim()) {
       frozenNarration = content.trim();
-      const normalized = frozenNarration.replace(/\.\.\./g, '');
+      // Same decimal-number handling as narration_quality_guard_v14.js's
+      // oneSentence() — without stripping the period between two digits, a
+      // decimal figure in a beat (e.g. "1.337 సెకన్లకు", a real pulsar spin
+      // period from a run #296 fact) gets its own periods miscounted as
+      // extra sentence boundaries, rejecting a script the guard already
+      // validated and accepted as correct.
+      const normalized = frozenNarration.replace(/(\d)\.(\d)/g, '$1$2').replace(/\.\.\./g, '');
       const sentenceCount = (normalized.match(/[.!?।]+/g) || []).length;
       if (sentenceCount !== 6) throw new Error(`Final narration boundary returned ${sentenceCount} sentences; expected exactly 6.`);
       if (/\b(?:hook|buildup|reveal|detail|twist|ending)\s*:/i.test(frozenNarration)) throw new Error('Structural narration label leaked into final script.');
