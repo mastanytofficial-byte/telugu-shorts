@@ -836,7 +836,16 @@ function fixKnownNumberWordTypos(text) {
 function fixKnownGarbledTransliterations(text) {
   return String(text || '')
     .replace(/కాంగ్రెస్మెం/g, 'కాంగ్రెస్‌మెన్')
-    .replace(/బైోమెట్రిక్/g, 'బయోమెట్రిక్');
+    .replace(/బైోమెట్రిక్/g, 'బయోమెట్రిక్')
+    // Real bug (run #313): "tidal rhythmite" (సముద్రపు అలల నమూనాల ఇసుక పొరలు
+    // — geological layers used to measure Earth's slowing rotation) came out
+    // as "రీతిమితులు", blending two REAL but unrelated Telugu morphemes —
+    // "రీతి" (manner/style) and "మితి" (measure/limit, as in పరిమితి) — that
+    // happen to sound like the English loanword's syllables, into something
+    // that reads as a real word but isn't. Correct transliteration follows
+    // the same "-ఐట్" pattern as other mineral/rock names (గ్రానైట్, కాల్సైట్).
+    .replace(/రీతిమితులు/g, 'రిథమైట్‌లు')
+    .replace(/రీతిమితి(?!లు)/g, 'రిథమైట్');
 }
 
 function sleep(ms) {
