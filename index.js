@@ -807,6 +807,20 @@ function fixKnownNumberWordTypos(text) {
   return String(text || '').replace(/పన్నెడు/g, 'పన్నెండు');
 }
 
+// Real bug (run #308): the model transliterated English loanwords with a
+// garbled vowel/consonant — "కాంగ్రెస్మెం" instead of "కాంగ్రెస్‌మెన్"
+// (Congressmen) and "బైోమెట్రిక్" instead of "బయోమెట్రిక్" (biometric) —
+// same underlying failure mode as fixKnownNumberWordTypos above (word-
+// validity pass didn't catch it), just for transliterated terms instead of
+// number words. Same fix approach: a direct, unambiguous correction for
+// each confirmed-real garbled spelling as it's found, since neither has
+// any other valid meaning in Telugu.
+function fixKnownGarbledTransliterations(text) {
+  return String(text || '')
+    .replace(/కాంగ్రెస్మెం/g, 'కాంగ్రెస్‌మెన్')
+    .replace(/బైోమెట్రిక్/g, 'బయోమెట్రిక్');
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -1168,6 +1182,7 @@ ${beatsJSON}
   script = script.replace(/\[[A-Z]+\]/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   script = fixMeekuTelusaGrammar(script);
   script = fixKnownNumberWordTypos(script);
+  script = fixKnownGarbledTransliterations(script);
   const existingSentences = splitIntoSentences(script);
   if (existingSentences.length > 0 && existingSentences[existingSentences.length - 1].includes('సబ్‌స్క్రైబ్')) {
     existingSentences.pop();
@@ -1228,6 +1243,7 @@ ${beatsJSON}
   // is cheap insurance against any of them reintroducing it.
   script = fixMeekuTelusaGrammar(script);
   script = fixKnownNumberWordTypos(script);
+  script = fixKnownGarbledTransliterations(script);
 
   // CALL C: metadata (title/keywords/hook) extracted from the FINISHED,
   // optimized narration — a much simpler task than generating everything
@@ -1238,9 +1254,9 @@ ${beatsJSON}
   if (!title) title = deriveHeadline(script);
   if (!keywords) keywords = FALLBACK_KEYWORDS[category];
   if (!hookEmoji) hookEmoji = title;
-  title = fixKnownNumberWordTypos(fixMeekuTelusaGrammar(title));
-  hookEmoji = fixKnownNumberWordTypos(fixMeekuTelusaGrammar(hookEmoji));
-  if (teaser) teaser = fixKnownNumberWordTypos(fixMeekuTelusaGrammar(teaser));
+  title = fixKnownGarbledTransliterations(fixKnownNumberWordTypos(fixMeekuTelusaGrammar(title)));
+  hookEmoji = fixKnownGarbledTransliterations(fixKnownNumberWordTypos(fixMeekuTelusaGrammar(hookEmoji)));
+  if (teaser) teaser = fixKnownGarbledTransliterations(fixKnownNumberWordTypos(fixMeekuTelusaGrammar(teaser)));
 
   const categoryEmoji = CATEGORY_EMOJI[category] || '';
   title = `${title} ${categoryEmoji}`.trim();
