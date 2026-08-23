@@ -681,6 +681,24 @@ function noNewNumbersIntroduced(original, optimized) {
   return introduced.every((n) => allowed.has(n));
 }
 
+// Real bug (run #312): when the upstream digit-correction pass itself fails
+// (its own conversion attempt is rejected as wrong and it falls back to
+// keeping the ORIGINAL script's bare digits — a correct, safe fallback),
+// every later optimizer pass's output naturally still contains those SAME
+// unavoidable bare digits. A naive hasBareDigits(optimized) check can't
+// tell that apart from run #305's actual regression (a pass turning an
+// ALREADY-correctly-converted Telugu-word number back into a bare digit),
+// so it rejected every pass this run purely for carrying forward digits
+// that were never fixed in the first place — needlessly blocking the
+// word-validity pass from ever getting a chance to catch a real, unrelated
+// error later in that same script ("బ్రెడ్ బాయ్ ఫ్రెండ్"). Only the VALUE
+// actually matters: flag it only if a bare-digit number value appears in
+// optimized that was NOT already a bare digit in the original.
+function introducesNewBareDigits(original, optimized) {
+  const originalBareDigits = new Set(extractBareDigitNumbers(original));
+  return extractBareDigitNumbers(optimized).some((n) => !originalBareDigits.has(n));
+}
+
 // A real shipped script (run #292) contained "సముద్రపు వర్షాభి" — "వర్షాభి"
 // is not a real Telugu word at all (likely a garbled/truncated attempt at
 // "వర్షారణ్యాలు", the "rainforests of the sea" metaphor for coral reefs) —
@@ -1123,7 +1141,7 @@ ${beatsJSON}
     const styledQuestionCount = (styled.match(/\?/g) || []).length;
     const scriptQuestionCount = (script.match(/\?/g) || []).length;
     const tenglishNotationError = styled ? styleErrors(styled) : '';
-    const tenglishReintroducedDigits = styled ? hasBareDigits(styled) : false;
+    const tenglishReintroducedDigits = styled ? introducesNewBareDigits(script, styled) : false;
     if (styled && wordsPreserved(script, styled) && teluguRatioPreserved(script, styled) && styledLineCount === scriptLineCount && styledQuestionCount === scriptQuestionCount && !tenglishNotationError && !tenglishReintroducedDigits) {
       script = styled;
     } else {
@@ -1157,7 +1175,7 @@ ${beatsJSON}
     const scriptQuestionCount = (script.match(/\?/g) || []).length;
     const validityNotationError = corrected ? styleErrors(corrected) : '';
     const validityNumbersOk = corrected ? noNewNumbersIntroduced(script, corrected) : false;
-    const validityReintroducedDigits = corrected ? hasBareDigits(corrected) : false;
+    const validityReintroducedDigits = corrected ? introducesNewBareDigits(script, corrected) : false;
     if (corrected && wordsPreserved(script, corrected) && teluguRatioPreserved(script, corrected) && correctedLineCount === scriptLineCount && correctedQuestionCount === scriptQuestionCount && !validityNotationError && validityNumbersOk && !validityReintroducedDigits) {
       if (corrected !== script) log(`  Word-validity pass corrected a garbled/misused word.`);
       script = corrected;
@@ -1216,7 +1234,7 @@ ${beatsJSON}
     const originalQuestionCount = (script.match(/\?/g) || []).length;
     const optimizedQuestionCount = (optimized.match(/\?/g) || []).length;
     const notationError = optimized ? styleErrors(optimized) : '';
-    const punctReintroducedDigits = optimized ? hasBareDigits(optimized) : false;
+    const punctReintroducedDigits = optimized ? introducesNewBareDigits(script, optimized) : false;
     if (optimized && wordsPreserved(script, optimized) && optimizedLineCount === originalLineCount && optimizedQuestionCount === originalQuestionCount && !notationError && !punctReintroducedDigits) {
       script = optimized;
     } else {
