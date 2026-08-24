@@ -1095,38 +1095,54 @@ ${beatsJSON}
   // as the previous warn-only behavior — never worse, often better.
   if (hasBareDigits(script)) {
     const digitMatchCount = (script.match(/\d{2,}/g) || []).length;
-    try {
-      const numberPrompt = buildNumberOptimizerPrompt(script);
-      const corrected = (await callLLM(numberPrompt)).trim();
-      const correctedLineCount = corrected.split(/\n+/).filter(Boolean).length;
-      const originalLineCount = script.split(/\n+/).filter(Boolean).length;
-      const correctedQuestionCount = (corrected.match(/\?/g) || []).length;
-      const originalQuestionCount = (script.match(/\?/g) || []).length;
-      const notationError = corrected ? styleErrors(corrected) : '';
-      // Real bug (run #294): the LLM conversion itself silently changed a
-      // number's VALUE ("1974" -> "వెయ్యి తొమ్మిది వందల నాలుగు"/1904) —
-      // nothing above checks that the converted Telugu words still mean the
-      // same number as the original digits, only the shape of the output.
-      // Verify every original digit-run's value is still findable, as that
-      // exact value, somewhere in the corrected text.
-      const originalNumberValues = corrected ? extractBareDigitNumbers(script) : [];
-      const numbersValueMatch = corrected ? originalNumberValues.every(n => teluguTextContainsNumber(corrected, n)) : false;
-      if (corrected && !hasBareDigits(corrected) && numbersPreserved(script, corrected, digitMatchCount) && numbersValueMatch && correctedLineCount === originalLineCount && correctedQuestionCount === originalQuestionCount && !notationError) {
-        log(`  Auto-corrected ASCII-digit numbers to Telugu words.`);
-        script = corrected;
-      } else {
-        const reasons = [];
-        if (!corrected) reasons.push('empty output');
-        if (corrected && hasBareDigits(corrected)) reasons.push('still contains bare digits after correction');
-        if (corrected && !numbersPreserved(script, corrected, digitMatchCount)) reasons.push('word count drifted beyond the expected number-expansion budget');
-        if (corrected && !numbersValueMatch) reasons.push('a converted number\'s value did not match the original digits (likely a conversion mistake)');
-        if (correctedLineCount !== originalLineCount) reasons.push(`line count changed (${originalLineCount} -> ${correctedLineCount})`);
-        if (correctedQuestionCount !== originalQuestionCount) reasons.push(`question mark count changed (${originalQuestionCount} -> ${correctedQuestionCount})`);
-        if (notationError) reasons.push(`introduced TTS-unsafe notation (${notationError})`);
-        log(`⚠️ WARNING: number auto-correction rejected (${reasons.join('; ')}) — keeping the original script with ASCII-digit numbers (TTS will likely mispronounce them digit-by-digit). Rejected output was: ${(corrected || '').slice(0, 300)}`);
+    // Real bug (run #319, and recurring before it): this used to try
+    // exactly once and permanently give up on rejection, shipping bare
+    // digits straight to TTS — unlike every other pass here, which at
+    // least gets a single fair attempt at the ORIGINAL script. A second
+    // attempt is cheap (one extra callLLM call, not a loop inside the
+    // narration guard's own retry budget — the run #285 "unsafe under
+    // rate-limit pressure" lesson was about hard-rejecting INSIDE that
+    // guard loop, not this) and a fresh LLM call often gets the value
+    // conversion right the second time even when the first one didn't.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const numberPrompt = buildNumberOptimizerPrompt(script);
+        const corrected = (await callLLM(numberPrompt)).trim();
+        const correctedLineCount = corrected.split(/\n+/).filter(Boolean).length;
+        const originalLineCount = script.split(/\n+/).filter(Boolean).length;
+        const correctedQuestionCount = (corrected.match(/\?/g) || []).length;
+        const originalQuestionCount = (script.match(/\?/g) || []).length;
+        const notationError = corrected ? styleErrors(corrected) : '';
+        // Real bug (run #294): the LLM conversion itself silently changed a
+        // number's VALUE ("1974" -> "వెయ్యి తొమ్మిది వందల నాలుగు"/1904) —
+        // nothing above checks that the converted Telugu words still mean the
+        // same number as the original digits, only the shape of the output.
+        // Verify every original digit-run's value is still findable, as that
+        // exact value, somewhere in the corrected text.
+        const originalNumberValues = corrected ? extractBareDigitNumbers(script) : [];
+        const numbersValueMatch = corrected ? originalNumberValues.every(n => teluguTextContainsNumber(corrected, n)) : false;
+        if (corrected && !hasBareDigits(corrected) && numbersPreserved(script, corrected, digitMatchCount) && numbersValueMatch && correctedLineCount === originalLineCount && correctedQuestionCount === originalQuestionCount && !notationError) {
+          log(`  Auto-corrected ASCII-digit numbers to Telugu words${attempt > 1 ? ` (attempt ${attempt}/2)` : ''}.`);
+          script = corrected;
+          break;
+        } else {
+          const reasons = [];
+          if (!corrected) reasons.push('empty output');
+          if (corrected && hasBareDigits(corrected)) reasons.push('still contains bare digits after correction');
+          if (corrected && !numbersPreserved(script, corrected, digitMatchCount)) reasons.push('word count drifted beyond the expected number-expansion budget');
+          if (corrected && !numbersValueMatch) reasons.push('a converted number\'s value did not match the original digits (likely a conversion mistake)');
+          if (correctedLineCount !== originalLineCount) reasons.push(`line count changed (${originalLineCount} -> ${correctedLineCount})`);
+          if (correctedQuestionCount !== originalQuestionCount) reasons.push(`question mark count changed (${originalQuestionCount} -> ${correctedQuestionCount})`);
+          if (notationError) reasons.push(`introduced TTS-unsafe notation (${notationError})`);
+          if (attempt < 2) {
+            log(`⚠️ WARNING: number auto-correction attempt ${attempt}/2 rejected (${reasons.join('; ')}) — retrying once more. Rejected output was: ${(corrected || '').slice(0, 300)}`);
+          } else {
+            log(`⚠️ WARNING: number auto-correction rejected after 2 attempts (${reasons.join('; ')}) — keeping the original script with ASCII-digit numbers (TTS will likely mispronounce them digit-by-digit). Rejected output was: ${(corrected || '').slice(0, 300)}`);
+          }
+        }
+      } catch (e) {
+        log(`⚠️ WARNING: number auto-correction call failed (attempt ${attempt}/2: ${e.message})${attempt < 2 ? ' — retrying once more.' : ' — keeping the original script with ASCII-digit numbers (TTS will likely mispronounce them digit-by-digit).'}`);
       }
-    } catch (e) {
-      log(`⚠️ WARNING: number auto-correction call failed (${e.message}) — keeping the original script with ASCII-digit numbers (TTS will likely mispronounce them digit-by-digit).`);
     }
   }
 
