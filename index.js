@@ -351,11 +351,12 @@ function loadState() {
         usedTitles: state.usedTitles || [],
         runCount: state.runCount || 0,
         discoveredFacts: state.discoveredFacts || {},
-        usedTopics: state.usedTopics || {}
+        usedTopics: state.usedTopics || {},
+        recentRuns: state.recentRuns || []
       };
     } catch (e) {}
   }
-  return { usedTitles: [], runCount: 0, discoveredFacts: {}, usedTopics: {} };
+  return { usedTitles: [], runCount: 0, discoveredFacts: {}, usedTopics: {}, recentRuns: [] };
 }
 
 // Safety net: Google's Chirp 3: HD voice rejects any single "sentence" (text
@@ -2395,8 +2396,18 @@ async function uploadToYouTube(videoPath, title, description, category) {
   return res.data.id;
 }
 
-function saveState(title, category, newlyDiscovered, topic) {
-  const { usedTitles, runCount, discoveredFacts, usedTopics } = loadState();
+// recentRuns keeps a small, bounded audit trail of exactly what shipped
+// (video ID + the literal final script text) for the last few runs. Without
+// this, verifying a completed run's actual narration after the fact means
+// either watching the uploaded YouTube video or digging through a CI job
+// log — both were confirmed unreachable from this environment (YouTube and
+// the Actions log blob-storage host are both blocked by network egress
+// policy here), and the raw log is multi-hundred-KB of ffmpeg encoder
+// output anyway, easily pushing the actual narration text out of any
+// tail-only excerpt. This is committed alongside the existing rotation
+// state (same "[skip ci]" commit), so a later check just reads state.json.
+function saveState(title, category, newlyDiscovered, topic, videoId, script) {
+  const { usedTitles, runCount, discoveredFacts, usedTopics, recentRuns } = loadState();
   let newTitles = [...usedTitles, title];
   if (newTitles.length > 50) newTitles = newTitles.slice(-50);
   const newDiscoveredFacts = { ...discoveredFacts };
@@ -2410,11 +2421,14 @@ function saveState(title, category, newlyDiscovered, topic) {
     if (updatedTopics.length > 15) updatedTopics = updatedTopics.slice(-15); // matches TOPIC_BANK size per category — keeps just "recently used"
     newUsedTopics[category] = updatedTopics;
   }
+  let newRecentRuns = [...(recentRuns || []), { videoId, title, category, script, date: new Date().toISOString() }];
+  if (newRecentRuns.length > 10) newRecentRuns = newRecentRuns.slice(-10);
   fs.writeFileSync(STATE_FILE, JSON.stringify({
     usedTitles: newTitles,
     runCount: runCount + 1,
     discoveredFacts: newDiscoveredFacts,
     usedTopics: newUsedTopics,
+    recentRuns: newRecentRuns,
     lastDate: new Date().toISOString()
   }, null, 2));
 }
@@ -2613,7 +2627,7 @@ async function main() {
     log(`WARNING: thumbnail generation failed (${e.message}) — video is live with YouTube's auto-selected thumbnail instead.`);
   }
 
-  saveState(title, category, newlyDiscovered, topic);
+  saveState(title, category, newlyDiscovered, topic, videoId, script);
   log('Done!');
 }
 
