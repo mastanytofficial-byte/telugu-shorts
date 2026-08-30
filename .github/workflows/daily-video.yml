@@ -85,6 +85,8 @@ jobs:
           node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"
 
       - name: Generate and upload video
+        id: gen
+        continue-on-error: true
         env:
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -99,7 +101,27 @@ jobs:
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: npm start
+        run: npm start 2>&1 | tee /tmp/run.log
+
+      - name: Commit debug log
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          git fetch origin ${{ github.ref_name }}
+          git checkout -B debug-log-branch origin/${{ github.ref_name }}
+          git reset --hard HEAD
+          mkdir -p debug
+          cp /tmp/run.log debug/last-run.log || echo "no log" > debug/last-run.log
+          git add debug/last-run.log
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "Add debug log [skip ci]" || echo "nothing to commit"
+          git push origin HEAD:debug-log --force
+
+      - name: Fail job if generation failed
+        if: steps.gen.outcome == 'failure'
+        run: exit 1
 
       - name: Save rotation and duplicate-prevention state
         shell: bash
